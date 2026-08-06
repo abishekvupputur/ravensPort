@@ -193,7 +193,7 @@ public partial class App : Application
         builder.Services.AddSingleton<IUiTimerFactory, AvaloniaUiTimerFactory>();
         builder.Services.AddSingleton<IClipboardService, AvaloniaClipboardService>();
         builder.Services.AddSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
-        builder.Services.AddSingleton<IHelloConsentPrompt, UnportedHelloConsentPrompt>();
+        builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
