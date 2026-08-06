@@ -1,0 +1,111 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RavensPort.UI.ViewModels"
+        x:Class="RavensPort.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="RavensPort" Width="892" Height="688" MinWidth="720" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI">
+    <!--
+        Two whole-window states rather than a banner over a disabled UI: without a reachable
+        password manager there is no configuration at all, so the tabs would be four empty grids
+        whose every control fails.
+
+        IsVisible where WPF used Visibility and a converter. Avalonia's is a bool, so the two
+        converters that existed only to bridge that gap are gone.
+    -->
+    <Grid>
+        <!--
+            Stands in for the setup page, which is a view and lands with the others.
+
+            Not a bare placeholder: it carries the single-use start, because that is the one route
+            into the app that needs no password manager, and without it there is no way to reach
+            the tabs in this build at all — which would leave the half of the shell below untested
+            until the last view is ported. Deleted when SetupView arrives.
+        -->
+        <!-- IsVisible sits on the outer panel, which is still in the window's own data context.
+             The inner one retypes to SetupViewModel, and a compiled binding takes that literally —
+             putting both on one element asks SetupViewModel for the shell's IsGated. -->
+        <Panel IsVisible="{Binding IsGated}">
+            <StackPanel x:Name="SetupPlaceholder" x:DataType="vm:SetupViewModel"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Width="420">
+                <TextBlock Text="Setup page — not ported yet" HorizontalAlignment="Center"
+                           Foreground="{StaticResource MutedTextBrush}"/>
+                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" TextAlignment="Center"
+                           Foreground="{StaticResource TextBrush}"/>
+                <Button Content="Start in single use" HorizontalAlignment="Center"
+                        Command="{Binding StartSingleUseCommand}"/>
+            </StackPanel>
+        </Panel>
+
+        <DockPanel IsVisible="{Binding IsNormal}">
+            <!--
+                Above the tabs rather than inside one: a locked vault stops every tab working, so a
+                message tucked into Settings would be found only by someone already looking for it.
+            -->
+            <Border DockPanel.Dock="Top" Background="{StaticResource AccentSelectedBgBrush}"
+                    BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1" Padding="12,8"
+                    DataContext="{Binding VaultStatus}" x:DataType="vm:VaultStatusViewModel"
+                    IsVisible="{Binding IsDegraded}">
+                <StackPanel>
+                    <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="I've unlocked it — save now" Margin="0,0,8,0"
+                                Command="{Binding SyncNowCommand}"/>
+                        <Button Content="Discard and reload from vault"
+                                Command="{Binding ReloadFromVaultCommand}"/>
+                    </StackPanel>
+
+                    <Expander Header="How do I stop this happening?" Margin="0,8,0,0"
+                              IsVisible="{Binding IsWaitingForUnlock}">
+                        <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                    </Expander>
+                </StackPanel>
+            </Border>
+
+            <!--
+                Separate from the unsaved-changes banner above: this one reports what a load
+                changed by itself — a credential dropped because its item was deleted in the
+                password manager — which the user has to be told even though nothing is pending.
+            -->
+            <Border DockPanel.Dock="Top" Background="#2A2A3A"
+                    BorderBrush="{StaticResource BorderBrush0}" BorderThickness="0,0,0,1" Padding="12,8"
+                    DataContext="{Binding VaultStatus}" x:DataType="vm:VaultStatusViewModel"
+                    IsVisible="{Binding HasNotice}">
+                <DockPanel>
+                    <Button Content="Dismiss" DockPanel.Dock="Right" VerticalAlignment="Top" Margin="8,0,0,0"
+                            Command="{Binding DismissNoticeCommand}"/>
+                    <TextBlock Text="{Binding Notice}" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextBrush}"/>
+                </DockPanel>
+            </Border>
+
+            <TabControl x:Name="TabsControl" SelectionChanged="TabControl_SelectionChanged">
+                <!-- Placeholder content. The tab views land one per commit in the next phase; what
+                     this proves is that the shell, the switching and the reload hooks work. -->
+                <TabItem Header="Credentials">
+                    <TextBlock Text="Credentials — not ported yet" Margin="16"
+                               Foreground="{StaticResource MutedTextBrush}"/>
+                </TabItem>
+                <TabItem Header="Routes">
+                    <TextBlock Text="Routes — not ported yet" Margin="16"
+                               Foreground="{StaticResource MutedTextBrush}"/>
+                </TabItem>
+                <TabItem Header="MCP Funnel">
+                    <TextBlock Text="MCP Funnel — not ported yet" Margin="16"
+                               Foreground="{StaticResource MutedTextBrush}"/>
+                </TabItem>
+                <TabItem Header="Settings">
+                    <TextBlock Text="Settings — not ported yet" Margin="16"
+                               Foreground="{StaticResource MutedTextBrush}"/>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+    </Grid>
+</Window>
