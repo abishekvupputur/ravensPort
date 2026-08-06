@@ -25,6 +25,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly ProxyConfigChangeNotifier _proxyConfigChangeNotifier;
     private readonly McpSourceConnectionPool _mcpSourceConnectionPool;
     private readonly IPlatformLauncher _launcher;
+    private readonly IFileSavePicker _fileSavePicker;
 
     /// <summary>
     /// Held only so the timer is not collected out from under the view model. Never stopped — the
@@ -155,8 +156,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         McpSourceConnectionPool mcpSourceConnectionPool,
         OnePasswordSession onePasswordSession,
         IUiTimerFactory uiTimerFactory,
-        IPlatformLauncher launcher)
+        IPlatformLauncher launcher,
+        IFileSavePicker fileSavePicker)
     {
+        _fileSavePicker = fileSavePicker;
         _onePasswordSession = onePasswordSession;
         _protonAuthenticator = protonAuthenticator;
         _configStoreCache = configStoreCache;
@@ -1060,7 +1063,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ExportMtlsCertificate()
+    private async Task ExportMtlsCertificateAsync()
     {
         var pfx = _configStoreCache.Current.Settings.MtlsClientCertificatePfx;
         if (string.IsNullOrWhiteSpace(pfx))
@@ -1073,20 +1076,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         // that will call the proxy can read it, and that is rarely the Desktop -- and the Desktop
         // itself may be redirected into OneDrive, which is a synced folder this credential has no
         // business being copied into without the user saying so.
-        // Qualified: WinForms is enabled in this project (see UseWindowsForms) and ships a
-        // SaveFileDialog of its own, so the bare name does not compile. This is the WPF one.
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "Export client certificate",
-            FileName = "RavensPort_ClientCert.pfx",
-            DefaultExt = ".pfx",
-            AddExtension = true,
-            Filter = "Certificate (*.pfx)|*.pfx|All files (*.*)|*.*",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-            OverwritePrompt = true
-        };
+        var path = await _fileSavePicker.PickSavePathAsync(
+            "Export client certificate",
+            "RavensPort_ClientCert.pfx",
+            "pfx",
+            "Certificate");
 
-        if (dialog.ShowDialog() != true)
+        if (path is null)
         {
             StatusMessage = "Export cancelled. The certificate is still stored in the vault.";
             return;
@@ -1094,7 +1090,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         try
         {
-            var path = dialog.FileName;
             File.WriteAllBytes(path, Convert.FromBase64String(pfx));
             // The password is deliberately not echoed here. The status line is the one part of this
             // window that is read aloud in a screen share and captured in a screenshot of an

@@ -40,8 +40,9 @@
 
     <!--
       One target framework for every project, because they have to move together: the App
-      references Core, and the test project references Core, so a Windows API version raised in one
-      place has to be raised in all three or the references stop resolving.
+      references UI and Core, UI references Core, and the test project references Core, so a
+      Windows API version raised in one place has to be raised in all four or the references stop
+      resolving.
 
       The 10.0.19041.0 part is what makes the WinRT projection available, which is needed for
       exactly one thing: Windows.Security.Credentials.KeyCredentialManager, the only API on Windows
@@ -63,7 +64,7 @@
       Dependency Submission — the managed workflow that populates the dependency graph once
       Dependabot is enabled — runs `dotnet restore` on ubuntu against every csproj it finds, and it
       is not editable. Every project here targets net8.0-windows10.0.19041.0, so it failed on all
-      three and submitted no graph at all, which quietly takes Dependabot alerts down with it.
+      of them and submitted no graph at all, which quietly takes Dependabot alerts down with it.
 
       This app is still Windows-only and still cannot run anywhere else. This only means the
       dependency tree can be read off it elsewhere.

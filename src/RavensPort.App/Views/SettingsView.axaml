@@ -265,10 +265,31 @@
                     <TextBlock Classes="hint" Margin="0,0,0,8"
                                Text="When enabled, Kestrel will require a valid client certificate on all connections. Clients without it will be rejected. Changing this requires a restart."/>
 
+                    <!-- The expiry date, in the section the buttons that act on it are in.
+                         Certificates are minted with a 90-day life and nothing renews them, so this
+                         line is the only warning there is: past the date every handshake fails, and
+                         a failed handshake reaches the client as a closed connection with no status
+                         code to read. -->
+                    <TextBlock Text="{Binding CertificateExpirySummary}" Classes="hint" Margin="0,0,0,8"
+                               Classes.urgent="{Binding IsCertificateExpiryUrgent}"
+                               IsVisible="{Binding HasCertificate}"/>
+
                     <StackPanel IsVisible="{Binding IsConfirmingGenerateCertificate}">
                         <TextBlock Classes="hint" Margin="0,0,0,8"
                                    Foreground="{StaticResource ErrorBrush}"
                                    Text="Generating a new certificate will permanently invalidate the old one. You will need to export and reinstall the new certificate on all your clients, and completely restart RavensPort."/>
+                        <TextBlock Text="Certificate password" Classes="hint" Margin="0,0,0,4"/>
+                        <!-- Masked, and bound: Avalonia's TextBox takes a PasswordChar, so unlike
+                             WPF's PasswordBox — whose Password was a plain CLR property and needed
+                             a code-behind handler each way — the value can live on the view model
+                             and be cleared from there once the certificate is written.
+
+                             Width, not MaxWidth: left-aligned in a StackPanel the box sizes to its
+                             content, so an empty one is a few pixels wide and looks broken. -->
+                        <TextBox Text="{Binding NewCertificatePassword}" PasswordChar="●"
+                                 Width="320" HorizontalAlignment="Left" FontSize="13" Padding="8,6" Margin="0,0,0,4"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Text="Every client loading the exported file will need this. Write it down before confirming — it is never shown again, and the only way out of a forgotten one is generating another certificate and reinstalling it everywhere."/>
                         <WrapPanel>
                             <Button Content="Confirm Generate" Margin="0,0,8,6" Command="{Binding GenerateMtlsCertificateCommand}"/>
                             <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost" Command="{Binding CancelGenerateCertificateCommand}"/>
@@ -282,7 +303,7 @@
 
                     <TextBox IsReadOnly="True" FontFamily="Consolas" Margin="0,8,0,0" Padding="8"
                              TextWrapping="Wrap"
-                             Text="cURL: curl -k --cert &quot;cert.pfx:ravensport&quot; --cert-type P12 https://...&#x0a;Node.js / MCP: https.request({ pfx: fs.readFileSync('cert.pfx'), passphrase: 'ravensport', rejectUnauthorized: false }, ...)"/>
+                             Text="cURL: curl -k --cert &quot;cert.pfx:PASSWORD&quot; --cert-type P12 https://...&#x0a;Node.js / MCP: https.request({ pfx: fs.readFileSync('cert.pfx'), passphrase: 'PASSWORD', rejectUnauthorized: false }, ...)"/>
                 </StackPanel>
             </Border>
 

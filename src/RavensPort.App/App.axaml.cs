@@ -179,8 +179,14 @@ public partial class App : Application
                 // The certificate is self-signed and shared by both ends, so there is no chain to
                 // validate and the default handling — which rejects on any SslPolicyError — would
                 // refuse every caller including this app's own funnel. The thumbprint is the check.
+                //
+                // Plus the validity window, put back by hand: turning off chain validation turns
+                // off the platform's expiry check with it, and without this line a certificate
+                // that expired months ago would still open the proxy. That is the whole of what
+                // retires one — there is no CA here, so no CRL and no OCSP.
                 https.ClientCertificateValidation = (clientCert, _, _) =>
-                    string.Equals(clientCert.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase);
+                    string.Equals(clientCert.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase)
+                    && MtlsCertificateFactory.IsWithinValidity(clientCert, DateTimeOffset.UtcNow);
             });
         });
 
@@ -194,6 +200,7 @@ public partial class App : Application
         builder.Services.AddSingleton<IClipboardService, AvaloniaClipboardService>();
         builder.Services.AddSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
+        builder.Services.AddSingleton<IFileSavePicker, AvaloniaFileSavePicker>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
@@ -447,7 +454,9 @@ public partial class App : Application
                             + "Export it from the Settings tab and install it on every client that calls this proxy.");
                     }
 
-                    kestrelMtls.Enable(configStoreCache.Current.Settings.MtlsClientCertificatePfx);
+                    kestrelMtls.Enable(
+                        configStoreCache.Current.Settings.MtlsClientCertificatePfx,
+                        configStoreCache.Current.Settings.MtlsClientCertificatePassword);
 
                     // The other half of the pin, recorded at the moment it is decided. When the
                     // funnel later refuses this listener it logs what was presented; without this
@@ -457,6 +466,18 @@ public partial class App : Application
                     _webApp.Services.GetService<ActivityLog>()?.Log(
                         $"mTLS enabled — serving certificate …{kestrelMtls.Certificate!.Thumbprint[^8..]} "
                         + "and requiring the same one from every caller.");
+
+                    // Said at startup as well as on the Settings tab, because this is the state in
+                    // which every request fails at the handshake: no status code reaches the
+                    // caller, so without a line here the only evidence is a connection that closes.
+                    if (kestrelMtls.IsExpired)
+                    {
+                        _webApp.Services.GetService<ActivityLog>()?.Log(
+                            $"STARTUP the mTLS certificate expired on {kestrelMtls.ExpiresUtc:yyyy-MM-dd} and is no "
+                            + "longer accepted. Every caller will be refused at the TLS handshake until a new "
+                            + "certificate is generated on the Settings tab, exported, installed on every client, "
+                            + "and RavensPort restarted.");
+                    }
                 }
 
                 _webApp.Urls.Clear();

@@ -150,7 +150,7 @@
                                          stay running, and the way back from a restart has an order
                                          to it that nothing else on screen would reveal. -->
                                     <TextBlock Text="{Binding DesktopAppRequirement}" Classes="hint"
-                                               Margin="0,0,0,8" IsVisible="{Binding HasDesktopAppRequirement}"/>
+                                               Margin="0,0,0,8" IsVisible="{Binding ShowDesktopAppRequirement}"/>
 
                                     <!-- The button that owns the prompt. Nothing on the startup path
                                          asks this manager anything, so this is where the unlock,
@@ -165,15 +165,95 @@
                                              Connect with an empty box could only fail — and the
                                              box on its own does nothing until Connect is pressed. -->
                                         <StackPanel IsVisible="{Binding IsOnePassword}">
-                                            <TextBlock Classes="hint" Margin="0,0,0,6"
-                                                       Text="Your 1Password account name — the exact name at the top of the 1Password desktop app sidebar, such as 'Personal' or 'Our Family'."/>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBox Width="230" VerticalAlignment="Center"
-                                                         Text="{Binding OnePasswordAccountName}"/>
-                                                <Button Content="{Binding ConnectLabel}" Margin="8,0,0,0" MinWidth="170"
-                                                        IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
-                                                        Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
-                                                        CommandParameter="{Binding}"/>
+
+                                            <!-- Two ways in, and they need different things: the
+                                                 desktop app needs an account name and a running,
+                                                 unlocked 1Password; a service account needs a token
+                                                 and nothing local at all. Offered as a choice rather
+                                                 than inferred, because which one is wanted is a
+                                                 decision about the machine, not something the app
+                                                 can work out by looking. -->
+                                            <RadioButton GroupName="OnePasswordAuth" Margin="0,0,0,4"
+                                                         Content="1Password desktop app"
+                                                         IsChecked="{Binding !UseServiceToken}"/>
+                                            <RadioButton GroupName="OnePasswordAuth" Margin="0,0,0,8"
+                                                         Content="Service account token — no desktop app needed"
+                                                         IsChecked="{Binding UseServiceToken}"/>
+
+                                            <!-- Desktop app -->
+                                            <StackPanel IsVisible="{Binding UsesDesktopApp}">
+                                                <!-- Said when the mode is chosen, not after it fails:
+                                                     the failure is silent and the obvious repair
+                                                     does not work, so a user who meets it unwarned
+                                                     concludes RavensPort is broken. -->
+                                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                           Foreground="{StaticResource WarningBrush}"
+                                                           Text="{Binding DesktopAppKnownIssue}"
+                                                           IsVisible="{Binding ShowDesktopAppKnownIssue}"/>
+                                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                           Text="Your 1Password account name — the exact name at the top of the 1Password desktop app sidebar, such as 'Personal' or 'Our Family'."/>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBox Width="230" VerticalAlignment="Center"
+                                                             Text="{Binding OnePasswordAccountName}"/>
+                                                    <Button Content="{Binding ConnectLabel}" Margin="8,0,0,0" MinWidth="170"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <!-- Service account. Masked with PasswordChar rather
+                                                 than through a code-behind handler: WPF's
+                                                 PasswordBox kept its value in a plain CLR property
+                                                 that could not be bound, while Avalonia's TextBox
+                                                 masks a bound one — so the token goes straight to
+                                                 the card it belongs to. -->
+                                            <StackPanel IsVisible="{Binding UsesServiceToken}">
+
+                                                <!-- What a bearer token is, before the box it goes
+                                                     in. Scoping the vault limits what it opens, not
+                                                     who can use it, and none of that is obvious
+                                                     from a field labelled "token". -->
+                                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                           Foreground="{StaticResource WarningBrush}"
+                                                           Text="{Binding ServiceTokenWarning}"/>
+                                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                           Text="{Binding TokenCaveat}"
+                                                           IsVisible="{Binding HasTokenCaveat}"/>
+
+                                                <!-- Offered only where a saved token exists, so the
+                                                     usual case stays a paste and a button. -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                                            IsVisible="{Binding ShowSavedToken}">
+                                                    <Button Content="Use the saved token" MinWidth="170"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UseSavedTokenCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Content="Forget saved token" Margin="8,0,0,0" Classes="ghost"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ForgetSavedTokenCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+
+                                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                           Text="Not saved unless you ask below. Otherwise you will be asked for it again after every restart, so an install that starts at login serves nothing until it is entered."/>
+
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBox Width="230" VerticalAlignment="Center" PasswordChar="●"
+                                                             Text="{Binding ServiceToken}"/>
+                                                    <Button Content="{Binding ConnectLabel}" Margin="8,0,0,0" MinWidth="170"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+
+                                                <CheckBox Margin="0,8,0,0"
+                                                          Content="Keep this token on this PC, behind Windows Hello"
+                                                          IsChecked="{Binding RememberToken}"
+                                                          IsVisible="{Binding ShowRememberToken}"/>
+                                                <TextBlock Classes="hint" Margin="21,3,0,0"
+                                                           IsVisible="{Binding ShowRememberToken}"
+                                                           Text="Stored encrypted in Windows Credential Manager — never in plain text — and only a Windows Hello gesture on this PC can bring it back. You will be asked to confirm. Service accounts rotate, so you can forget a saved token here at any time."/>
                                             </StackPanel>
                                         </StackPanel>
 

@@ -17,4 +17,10 @@ internal sealed class AvaloniaHelloConsentPrompt : IHelloConsentPrompt
 
     public Task<bool> RequestSetupAsync(Func<Task> prepareAsync) =>
         HelloConsentWindow.RequestSetupAsync(prepareAsync);
+
+    public Task<bool> RequestTokenSaveAsync(Func<Task> protectAsync) =>
+        HelloConsentWindow.RequestTokenSaveAsync(protectAsync);
+
+    public Task<bool> RequestTokenUnlockAsync(Func<Task> unlockAsync) =>
+        HelloConsentWindow.RequestTokenUnlockAsync(unlockAsync);
 }
