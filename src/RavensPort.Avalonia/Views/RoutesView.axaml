@@ -1,0 +1,407 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             xmlns:behaviors="using:RavensPort.Behaviors"
+             xmlns:sys="using:System"
+             x:Class="RavensPort.Views.RoutesView"
+             x:DataType="vm:RoutesViewModel"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <sys:String x:Key="StripPrefixHelpText">Strip prefix: remove the local path prefix before forwarding.
+
+ON  — /app/foo/bar  is sent upstream as  /bar
+OFF — /app/foo/bar  is sent upstream as  /app/foo/bar
+
+Leave this ON unless the upstream genuinely expects the prefix in its path.</sys:String>
+
+        <sys:String x:Key="CredentialPlacementHelpText">Where the access token is put on the forwarded request.
+
+Header — Authorization: Bearer &lt;token&gt;   (the default; what almost every OAuth API expects)
+Query  — ?access_token=&lt;token&gt;
+Body   — a field added to the JSON object or form body
+
+Body only works on a JSON or application/x-www-form-urlencoded body under 1 MB that declares a Content-Length; anything else is forwarded untouched and the activity log says so.</sys:String>
+
+        <sys:String x:Key="ValuePrefixHelpText">Text placed immediately before the token.
+
+"Bearer " (with the trailing space) produces  Authorization: Bearer &lt;token&gt;.
+Leave empty to send the bare token, e.g. for X-Api-Key or ?access_token=.</sys:String>
+
+        <sys:String x:Key="MultiCredentialHelpText">A route can attach any number of credentials, in any mix of places.
+
+None       — the request is forwarded as-is, with no token attached.
+One        — the usual case, e.g. Authorization: Bearer &lt;token&gt;.
+Several    — e.g. a header plus two query parameters, or a header plus a body field.
+
+Entries may reuse the same credential in different places, or use different credentials side by side. Two entries may not write the same header, query parameter, or body field — the second would silently overwrite the first.</sys:String>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+            <!-- Saved routes first: what's configured is more useful at a glance than the
+                 forms used to create it. -->
+            <Grid Margin="0,0,0,6">
+                <TextBlock Text="Routes" Classes="section" VerticalAlignment="Center"/>
+                <Button Content="Refresh" HorizontalAlignment="Right" Width="90" Classes="ghost"
+                        Command="{Binding RefreshCommand}"
+                        ToolTip.Tip="Re-read credentials, upstreams and routes from storage"/>
+            </Grid>
+
+            <TextBlock Classes="empty"
+                       Text="No routes yet — add an upstream below, then map a path prefix to it."
+                       IsVisible="{Binding HasNoRoutes}"/>
+
+            <TextBlock Classes="hint" Margin="0,0,0,6"
+                       Text="Select a route to copy its proxy key or change how its credential is sent. Click it again to collapse."
+                       IsVisible="{Binding HasRoutes}"/>
+
+            <DataGrid ItemsSource="{Binding Routes}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                      RowDetailsVisibilityMode="VisibleWhenSelected"
+                      behaviors:RowSelectionToggle.Enable="True"
+                      IsVisible="{Binding HasRoutes}">
+                <!-- Editing lives in the row details rather than in cells: the grid is
+                     IsReadOnly (so nested controls stay clickable), and three labelled fields
+                     do not fit a column anyway. -->
+                <DataGrid.RowDetailsTemplate>
+                    <DataTemplate x:DataType="vm:RouteItemViewModel">
+                        <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="0,1,0,0" Padding="12,10">
+                            <StackPanel>
+                                <!-- The key that opens this route, first: it is what a caller
+                                     needs before anything below it matters. -->
+                                <ContentControl Content="{Binding Key}" ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
+
+                                <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
+                                        Margin="0,10,0,10"/>
+
+                                <TextBlock Text="Credentials attached to this route" Classes="label"
+                                           ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
+
+                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                           Text="None — requests are forwarded to the upstream with nothing attached."
+                                           IsVisible="{Binding HasNoCredentials}"/>
+
+                                <!-- One editor per attached credential. Any number, in any mix of
+                                     header / query / body slots. -->
+                                <ItemsControl ItemsSource="{Binding Credentials}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RouteCredentialItemViewModel">
+                                            <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1"
+                                                    Padding="0,0,0,8" Margin="0,0,0,8">
+                                                <StackPanel>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <TextBlock Text="{Binding InjectionSummary, StringFormat='Upstream receives: {0}'}"
+                                                                   Classes="hint" VerticalAlignment="Center"/>
+                                                        <Button Content="Remove" HorizontalAlignment="Right" Width="80"
+                                                                Classes="ghost"
+                                                                Command="{Binding $parent[DataGridRow].((vm:RouteItemViewModel)DataContext).RemoveCredentialCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                ToolTip.Tip="Stop attaching this credential on this route."/>
+                                                    </Grid>
+                                                    <UniformGrid Columns="4" Rows="1">
+                                                        <StackPanel Margin="0,0,6,0">
+                                                            <TextBlock Text="Credential" Classes="label"/>
+                                                            <ComboBox ItemsSource="{Binding AvailableCredentials}"
+                                                                      SelectedItem="{Binding Credential, Mode=TwoWay}"
+                                                                      HorizontalAlignment="Stretch">
+                                                                <ComboBox.ItemTemplate>
+                                                                    <DataTemplate x:DataType="models:CredentialRecord">
+                                                                        <TextBlock Text="{Binding Name}"/>
+                                                                    </DataTemplate>
+                                                                </ComboBox.ItemTemplate>
+                                                            </ComboBox>
+                                                            <TextBlock Text="⚠ credential missing" FontSize="10"
+                                                                       Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
+                                                                       IsVisible="{Binding IsMissingCredential}"/>
+                                                        </StackPanel>
+                                                        <StackPanel Margin="6,0">
+                                                            <TextBlock Text="Placement" Classes="label"/>
+                                                            <ComboBox ItemsSource="{Binding Placements}"
+                                                                      SelectedItem="{Binding Placement, Mode=TwoWay}"
+                                                                      HorizontalAlignment="Stretch"
+                                                                      ToolTip.Tip="{StaticResource CredentialPlacementHelpText}"/>
+                                                        </StackPanel>
+                                                        <StackPanel Margin="6,0">
+                                                            <TextBlock Text="{Binding ParameterNameLabel}" Classes="label"/>
+                                                            <TextBox Text="{Binding ParameterName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                        </StackPanel>
+                                                        <StackPanel Margin="6,0,0,0">
+                                                            <TextBlock Text="Value prefix" Classes="label"
+                                                                       ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
+                                                            <TextBox Text="{Binding ValuePrefix, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                     ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
+                                                        </StackPanel>
+                                                    </UniformGrid>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Button Content="Add credential" HorizontalAlignment="Left" Width="120" Classes="ghost"
+                                        Command="{Binding AddCredentialCommand}"
+                                        ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </DataGrid.RowDetailsTemplate>
+                <DataGrid.Columns>
+                    <!-- The full local endpoint, ready to paste into an MCP client config. -->
+                    <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="230">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <StackPanel VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}">
+                                    <TextBox Text="{Binding LocalUrl, Mode=OneWay}" IsReadOnly="True"
+                                             FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                             Background="Transparent" BorderThickness="0" Padding="0"
+                                             Foreground="{StaticResource AccentBrush}"/>
+                                    <TextBlock Text="{Binding PathPrefix}" FontSize="10"
+                                               Foreground="{StaticResource DisabledTextBrush}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Where it actually forwards to: upstream name plus its base URL. -->
+                    <DataGridTemplateColumn Header="FORWARDS TO" Width="*" MinWidth="230">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <StackPanel VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}">
+                                    <TextBlock Text="{Binding UpstreamName}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding UpstreamBaseUrl}" TextWrapping="Wrap" FontSize="10"
+                                               FontFamily="Cascadia Code, Consolas"
+                                               Foreground="{StaticResource MutedTextBrush}"/>
+                                    <TextBlock Text="⚠ upstream missing — this route is not served" FontSize="10"
+                                               Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
+                                               IsVisible="{Binding IsBroken}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Status only. The key itself is in the row details, where it can be shown,
+                         copied, and re-issued without a cell fighting for width. -->
+                    <DataGridTemplateColumn Header="PROXY KEY" Width="150">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
+                                    <!-- A class bound to the flag, where WPF used a DataTrigger.
+                                         Avalonia selectors match on pseudo-classes and classes, not
+                                         on arbitrary bindings, so the binding moves to the class. -->
+                                    <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               Classes.expired="{Binding Key.IsExpired}"/>
+                                    <TextBlock Text="⚠ expired — this route answers 403" FontSize="10" TextWrapping="Wrap"
+                                               Foreground="{StaticResource ErrorBrush}"
+                                               IsVisible="{Binding Key.IsExpired}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="TOKENS SENT" Width="220">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <!-- Every attached credential and where it goes, so a route with
+                                     two of them (or none) is visible without opening the editor. -->
+                                <TextBlock Text="{Binding CredentialSummary}" TextWrapping="Wrap" FontSize="10"
+                                           VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}"
+                                           FontFamily="Cascadia Code, Consolas"
+                                           Foreground="{StaticResource MutedTextBrush}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Template columns, not DataGridCheckBoxColumn: the grid is IsReadOnly,
+                         which renders built-in checkbox columns inert. These stay clickable
+                         and write straight through to the route. -->
+                    <DataGridTemplateColumn Width="70">
+                        <DataGridTemplateColumn.Header>
+                            <TextBlock Text="ENABLED"
+                                       ToolTip.Tip="Uncheck to stop serving this route without deleting it."/>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          ToolTip.Tip="Uncheck to stop serving this route without deleting it."/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Width="100">
+                        <DataGridTemplateColumn.Header>
+                            <TextBlock Text="STRIP PREFIX" ToolTip.Tip="{StaticResource StripPrefixHelpText}"/>
+                        </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <CheckBox IsChecked="{Binding StripPrefix, Mode=TwoWay}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          ToolTip.Tip="{StaticResource StripPrefixHelpText}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:RouteItemViewModel">
+                                <Button Content="Delete" Margin="2" Classes="ghost"
+                                        Command="{Binding $parent[UserControl].((vm:RoutesViewModel)DataContext).DeleteRouteCommand}"
+                                        CommandParameter="{Binding}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Upstreams" Classes="section"/>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
+                        <StackPanel Margin="0,0,6,0">
+                            <TextBlock Text="Name" Classes="label"/>
+                            <TextBox Text="{Binding NewUpstreamName}"/>
+                        </StackPanel>
+                        <StackPanel Margin="6,0,0,0">
+                            <TextBlock Text="Base URL" Classes="label"/>
+                            <TextBox Text="{Binding NewUpstreamBaseUrl}"/>
+                        </StackPanel>
+                    </UniformGrid>
+                    <Button Content="Add upstream" HorizontalAlignment="Left" Width="120" Command="{Binding AddUpstreamCommand}" Margin="0,0,0,10"/>
+                    <TextBlock Classes="empty" Text="No upstreams yet." IsVisible="{Binding HasNoUpstreams}"/>
+                    <!-- No MaxHeight: a nested scroll region here is exactly what made the
+                         wheel feel stuck. The page scrolls instead. -->
+                    <DataGrid ItemsSource="{Binding Upstreams}" AutoGenerateColumns="False" IsReadOnly="True"
+                              IsVisible="{Binding HasUpstreams}">
+                        <DataGrid.Columns>
+                            <!-- Template columns rather than DataGridTextColumn for the same reason
+                                 as on the Credentials tab: Avalonia's text column has no
+                                 ElementStyle, and wrapping is the whole point of these two. -->
+                            <DataGridTemplateColumn Header="NAME" Width="150">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:UpstreamRecord">
+                                        <TextBlock Text="{Binding Name}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="BASE URL" Width="*" MinWidth="150">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:UpstreamRecord">
+                                        <TextBlock Text="{Binding BaseUrl}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:UpstreamRecord">
+                                        <Button Content="Delete" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:RoutesViewModel)DataContext).DeleteUpstreamCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Add route" Classes="section"/>
+                    <TextBlock Text="Path prefix (e.g. /app/gmail-mcp)" Classes="label"/>
+                    <TextBox Text="{Binding NewRoutePathPrefix}" Margin="0,0,0,8"/>
+                    <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
+                        <StackPanel Margin="0,0,6,0">
+                            <TextBlock Text="Upstream" Classes="label"/>
+                            <ComboBox ItemsSource="{Binding Upstreams}" SelectedItem="{Binding NewRouteUpstream}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:UpstreamRecord">
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Margin="6,0,0,0">
+                            <TextBlock Text="Credential (optional)" Classes="label"
+                                       ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <ComboBox Grid.Column="0" ItemsSource="{Binding Credentials}"
+                                          SelectedItem="{Binding NewRouteCredential}"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="models:CredentialRecord">
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <!-- A ComboBox has no way back to "nothing selected", and a route
+                                     with no credential is a supported configuration. -->
+                                <Button Grid.Column="1" Content="None" Width="55" Margin="4,0,0,0" Classes="ghost"
+                                        Command="{Binding ClearNewRouteCredentialCommand}"
+                                        ToolTip.Tip="Create the route with no credential — requests are forwarded unauthenticated."/>
+                            </Grid>
+                        </StackPanel>
+                    </UniformGrid>
+                    <StackPanel Margin="0,0,0,8" HorizontalAlignment="Left">
+                        <TextBlock Text="Proxy key validity" Classes="label"
+                                   ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                        <ComboBox Width="180" HorizontalAlignment="Left"
+                                  ItemsSource="{Binding KeyLifetimes}"
+                                  SelectedItem="{Binding NewRouteKeyLifetime, Mode=TwoWay}"
+                                  ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                        <TextBlock Classes="hint"
+                                   Text="The route gets its own key on creation — copy it from the route's row afterwards. Changeable at any time."/>
+                    </StackPanel>
+
+                    <CheckBox Content="Strip path prefix before forwarding" IsChecked="{Binding NewRouteStripPrefix}"
+                              ToolTip.Tip="{StaticResource StripPrefixHelpText}" Margin="0,0,0,4"/>
+                    <TextBlock Classes="hint" Margin="0,0,0,10"
+                               Text="Recommended. With this on, /app/foo/bar is forwarded upstream as /bar — the prefix is just your local label."/>
+
+                    <!-- Defaults to Authorization: Bearer <token>, so this whole block can be
+                         ignored unless the upstream wants the token somewhere else. Hidden when
+                         no credential is picked, since there is then nothing to place. -->
+                    <StackPanel IsVisible="{Binding NewRouteHasCredential}">
+                        <TextBlock Text="Credential is sent as" Classes="label"
+                                   ToolTip.Tip="{StaticResource CredentialPlacementHelpText}"/>
+                        <UniformGrid Columns="3" Rows="1" Margin="0,0,0,6">
+                            <StackPanel Margin="0,0,6,0">
+                                <TextBlock Text="Placement" Classes="label"/>
+                                <ComboBox ItemsSource="{Binding Placements}"
+                                          SelectedItem="{Binding NewRouteCredentialPlacement, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="{StaticResource CredentialPlacementHelpText}"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,0">
+                                <TextBlock Text="{Binding NewRouteParameterNameLabel}" Classes="label"/>
+                                <TextBox Text="{Binding NewRouteCredentialParameterName}"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,0,0,0">
+                                <TextBlock Text="Value prefix" Classes="label"
+                                           ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
+                                <TextBox Text="{Binding NewRouteCredentialValuePrefix}"
+                                         ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                    <TextBlock Classes="hint" Margin="0,0,0,4"
+                               Text="{Binding NewRouteInjectionSummary, StringFormat='Upstream receives: {0}'}"/>
+                    <TextBlock Classes="hint" Margin="0,0,0,10"
+                               Text="More credentials can be attached after the route exists — select it above and use 'Add credential'."
+                               ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
+                    <Button Content="Add route" HorizontalAlignment="Left" Width="100" Command="{Binding AddRouteCommand}"/>
+                </StackPanel>
+            </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+        </Border>
+    </Grid>
+</UserControl>

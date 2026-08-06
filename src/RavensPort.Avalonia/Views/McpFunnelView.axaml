@@ -1,0 +1,451 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             xmlns:behaviors="using:RavensPort.Behaviors"
+             xmlns:sys="using:System"
+             x:Class="RavensPort.Views.McpFunnelView"
+             x:DataType="vm:McpFunnelViewModel"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <sys:String x:Key="FunnelHelpText">A funnel is one local MCP endpoint that pools several MCP servers and exposes only the tools you pick.
+
+Point one AI agent at each funnel. The agent sees a single server offering exactly the tools you allowed, drawn from as many upstreams as you like.</sys:String>
+
+        <sys:String x:Key="SourceKindHelpText">Where this MCP server lives.
+
+Route (credentialed) — an MCP server reached through one of your routes on the Routes tab. The route's OAuth token is attached automatically, so authenticated servers work with no extra setup.
+URL (no auth)        — any MCP server that needs no credential.</sys:String>
+
+        <sys:String x:Key="AliasHelpText">Prefixes every name this source contributes, so two servers offering a "search" tool stay distinguishable.
+
+A tool called "create_issue" from a source aliased "gh" reaches the agent as "gh__create_issue".
+
+Prefixing is always on: a name that changed whenever an unrelated source was added would break agent prompts that referred to it.</sys:String>
+
+        <sys:String x:Key="TransportHelpText">How to speak to this server.
+
+Auto            — probe for streamable HTTP, fall back to legacy SSE. Right for almost everything.
+Streamable HTTP — the current transport.
+SSE             — the older transport, for servers that only implement it.</sys:String>
+
+        <sys:String x:Key="SelectionModeHelpText">How the ticks below are read.
+
+All     — everything this source offers, including anything it gains later.
+Include — only what is ticked. A tool the server adds later stays hidden until you pick it.
+Exclude — everything except what is ticked. A tool the server adds later is exposed immediately.
+
+Use Include to grant a known set, Exclude to revoke a few from an otherwise trusted server.</sys:String>
+
+        <!-- One selection list. Used three times per source — tools, resources, prompts — which
+             are identical in shape, so they share a template rather than three near-copies. -->
+        <DataTemplate x:Key="SelectionGroupTemplate" x:DataType="vm:McpSelectionGroupViewModel">
+            <StackPanel Margin="0,0,0,6">
+                <Grid Margin="0,0,0,2">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- A plain Button rather than an Expander, as in WPF — though for a
+                             different reason now: there the Expander template was not covered by
+                             the dark theme and rendered dark-on-dark. Kept because the glyph and
+                             the row layout are the same either way. -->
+                        <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
+                                Classes="ghost" Width="26" Padding="0"
+                                ToolTip.Tip="Show or hide this list"/>
+                        <TextBlock Text="{Binding Title}" Classes="label"
+                                   VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   FontSize="10" Foreground="{StaticResource MutedTextBrush}"/>
+                    </StackPanel>
+                    <ComboBox ItemsSource="{Binding AllModes}" SelectedItem="{Binding Mode, Mode=TwoWay}"
+                              HorizontalAlignment="Right" Width="110"
+                              ToolTip.Tip="{StaticResource SelectionModeHelpText}"/>
+                </Grid>
+
+                <TextBlock Text="{Binding EmptyHint}" Classes="hint" Margin="32,0,0,0"
+                           IsVisible="{Binding ShowEmptyHint}"/>
+
+                <!-- Hidden under "All", where the ticks mean nothing and showing them would
+                     invite someone to set a selection that is silently ignored. -->
+                <ItemsControl ItemsSource="{Binding Items}" Margin="32,2,0,0"
+                              IsVisible="{Binding ShowItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:McpSelectableItemViewModel">
+                            <CheckBox Content="{Binding Name}"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                      Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Classes="hint" Margin="32,2,0,0"
+                           Text="Everything this source offers, now and later."
+                           IsVisible="{Binding ShowAllHint}"/>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="MCP Funnel" Classes="section" VerticalAlignment="Center"/>
+                    <Button Content="Refresh" HorizontalAlignment="Right" Width="90" Classes="ghost"
+                            Command="{Binding RefreshCommand}"
+                            ToolTip.Tip="Re-read sources, funnels, and routes from storage"/>
+                </Grid>
+
+                <CheckBox Content="Enable MCP funnel" IsChecked="{Binding IsEnabled}"
+                          ToolTip.Tip="{StaticResource FunnelHelpText}" Margin="0,0,0,4"/>
+                <TextBlock Classes="hint" Margin="0,0,0,16"
+                           Text="Off by default. A funnel lets one caller reach several upstreams — and their OAuth grants — through a single path, so it stays dark until you ask for it."/>
+
+                <!-- Funnels first: the endpoints are the point, sources are the ingredients. -->
+                <TextBlock Text="Funnels" Classes="section"/>
+                <TextBlock Classes="empty"
+                           Text="No funnels yet — add a source below, then create a funnel and pick what it exposes."
+                           IsVisible="{Binding HasNoFunnels}"/>
+
+                <StackPanel IsVisible="{Binding HasFunnels}">
+                    <TextBlock Classes="hint"
+                               Text="Select a funnel to choose which sources it pools and which of their tools it exposes. Click it again to collapse."/>
+                    <TextBlock Classes="hint" Margin="0,0,0,6"
+                               Text="Each funnel has its own proxy key — only that key opens it, and no route's key does. Send it as the X-Proxy-Key header, or as ?proxy_key= for clients that cannot set headers. Without it the endpoint answers 403."/>
+                </StackPanel>
+
+                <DataGrid ItemsSource="{Binding Funnels}" SelectedItem="{Binding SelectedFunnel}"
+                          AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                          behaviors:RowSelectionToggle.Enable="True"
+                          IsVisible="{Binding HasFunnels}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="260">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <!-- Read-only TextBox rather than a TextBlock so it can be
+                                             selected and pasted into an agent's config. -->
+                                        <TextBox Text="{Binding LocalUrl, Mode=OneWay}" IsReadOnly="True"
+                                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                                 Foreground="{StaticResource AccentBrush}"/>
+                                        <TextBlock Text="{Binding Name}" FontSize="10"
+                                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="POOLS" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <TextBlock Text="{Binding SourceSummary}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Status only; the key itself is in the editor below, where it can be
+                             shown, copied, and re-issued. -->
+                        <DataGridTemplateColumn Header="PROXY KEY" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
+                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   Classes.expired="{Binding Key.IsExpired}"/>
+                                        <TextBlock Text="⚠ expired — this funnel answers 403" FontSize="10" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource ErrorBrush}"
+                                                   IsVisible="{Binding Key.IsExpired}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="70">
+                            <DataGridTemplateColumn.Header>
+                                <TextBlock Text="ENABLED" ToolTip.Tip="Uncheck to stop serving this endpoint without deleting it."/>
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <Button Content="Delete" Margin="2" Classes="ghost"
+                                            Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteFunnelCommand}"
+                                            CommandParameter="{Binding}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- What the selected funnel exposes. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasSelectedFunnel}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectedFunnelTitle}" Classes="section"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,10"
+                                   Text="Changes apply to the agent's next call — no reconnect needed."/>
+
+                        <!-- This funnel's own key. Nothing else opens the endpoint, so it belongs
+                             next to the endpoint rather than in a global setting. -->
+                        <ContentControl Content="{Binding SelectedFunnel.Key}"
+                                        ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
+
+                        <TextBlock Text="Endpoint URL with the key attached" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="Most MCP clients are configured from a JSON file and cannot set a header. Paste this form instead."/>
+                        <TextBox Text="{Binding SelectedFunnel.LocalUrlWithKey, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,10"
+                                   Text="Press Show above to reveal the key inside this URL before copying it."/>
+
+                        <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
+                                Margin="0,0,0,10"/>
+
+                        <ItemsControl ItemsSource="{Binding FunnelSources}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelSourceItemViewModel">
+                                    <Border Background="{StaticResource PanelAltBrush}"
+                                            BorderBrush="{StaticResource BorderSubtleBrush}"
+                                            BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Grid>
+                                                <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
+                                                          VerticalAlignment="Center" Margin="0,0,40,0">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}"/>
+                                                        <TextBlock Text="{Binding ToolPrefix, StringFormat='tools appear as {0}…'}"
+                                                                   FontSize="10" FontFamily="Cascadia Code, Consolas"
+                                                                   Foreground="{StaticResource MutedTextBrush}"/>
+                                                        <!-- What the row is doing, so it can stay
+                                                             collapsed and still be readable. -->
+                                                        <TextBlock Text="{Binding Summary}" FontSize="10" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                                    </StackPanel>
+                                                </CheckBox>
+
+                                                <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
+                                                        Classes="ghost"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                        Width="30" Padding="0"
+                                                        ToolTip.Tip="Show or hide what this source exposes"
+                                                        IsVisible="{Binding IsIncluded}"/>
+                                            </Grid>
+
+                                            <StackPanel Margin="22,10,0,0" IsVisible="{Binding ShowDetail}">
+                                                <ContentControl Content="{Binding Tools}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
+                                                <ContentControl Content="{Binding Resources}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
+                                                <ContentControl Content="{Binding Prompts}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Add funnel" Classes="section"/>
+                        <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
+                            <StackPanel Margin="0,0,6,0">
+                                <TextBlock Text="Name" Classes="label"/>
+                                <TextBox Text="{Binding NewFunnelName}"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,0,0,0">
+                                <TextBlock Text="Endpoint slug (optional)" Classes="label"/>
+                                <TextBox Text="{Binding NewFunnelSlug}"
+                                         ToolTip.Tip="Last part of the URL, e.g. /mcp/coding-agent. Derived from the name if left blank."/>
+                            </StackPanel>
+                        </UniformGrid>
+                        <StackPanel Margin="0,0,0,8" HorizontalAlignment="Left">
+                            <TextBlock Text="Proxy key validity" Classes="label"
+                                       ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                            <ComboBox Width="180" HorizontalAlignment="Left"
+                                      ItemsSource="{Binding KeyLifetimes}"
+                                      SelectedItem="{Binding NewFunnelKeyLifetime, Mode=TwoWay}"
+                                      ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                            <TextBlock Classes="hint"
+                                       Text="The funnel gets its own key on creation — copy it from the panel above after selecting the funnel. Changeable at any time."/>
+                        </StackPanel>
+                        <Button Content="Add funnel" HorizontalAlignment="Left" Width="110" Command="{Binding AddFunnelCommand}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Sources. -->
+                <Grid Margin="0,4,0,6">
+                    <TextBlock Text="Sources" Classes="section" VerticalAlignment="Center"/>
+                    <!-- The footer carries which source is being contacted, but the footer is at the
+                         bottom of a long page and this button is in the middle of it. Saying so on
+                         the button itself is what tells someone who just clicked that it took.
+
+                         Two labels swapped by IsVisible, where WPF used a DataTrigger to set
+                         Content. Avalonia selectors cannot match on a binding, and a converter for
+                         one button would be more machinery than the two words it produces. -->
+                    <Button HorizontalAlignment="Right" Width="100" Classes="ghost"
+                            Command="{Binding RefreshAllSourcesCommand}"
+                            ToolTip.Tip="Connect to every enabled source and re-read the tools it offers">
+                        <Panel>
+                            <TextBlock Text="Refresh all" IsVisible="{Binding !RefreshAllSourcesCommand.IsRunning}"/>
+                            <TextBlock Text="Checking…" IsVisible="{Binding RefreshAllSourcesCommand.IsRunning}"/>
+                        </Panel>
+                    </Button>
+                </Grid>
+
+                <TextBlock Classes="empty"
+                           Text="No sources yet — add an MCP server below."
+                           IsVisible="{Binding HasNoSources}"/>
+
+                <DataGrid ItemsSource="{Binding Sources}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,14"
+                          IsVisible="{Binding HasSources}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="SOURCE" Width="*" MinWidth="200">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Target}" FontSize="10" TextWrapping="Wrap"
+                                                   FontFamily="Cascadia Code, Consolas"
+                                                   Foreground="{StaticResource MutedTextBrush}"/>
+                                        <TextBlock Text="⚠ route missing — this source cannot be reached" FontSize="10"
+                                                   Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
+                                                   IsVisible="{Binding IsBroken}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="PREFIX" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <TextBlock Text="{Binding Alias}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="KIND" Width="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <TextBlock Text="{Binding KindLabel}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="STATUS" Width="*" MinWidth="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <!-- Trimmed rather than wrapped, and capped upstream by
+                                         McpSourceCatalog.Summarize: a failure message can carry
+                                         the upstream's whole response body, and a wrapping cell
+                                         grew to the height of that page. The full text is on the
+                                         tooltip. -->
+                                    <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding StatusDetail}" VerticalAlignment="Center" FontSize="11"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="70">
+                            <DataGridTemplateColumn.Header>
+                                <TextBlock Text="ENABLED" ToolTip.Tip="Uncheck to stop pooling this source in every funnel at once."/>
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="" Width="160">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Refresh" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).RefreshSourceCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Connect and re-read the tools, resources, and prompts this server offers"/>
+                                        <Button Content="Delete" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteSourceCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Add source" Classes="section"/>
+                        <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
+                            <StackPanel Margin="0,0,6,0">
+                                <TextBlock Text="Name" Classes="label"/>
+                                <TextBox Text="{Binding NewSourceName}"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,0,0,0">
+                                <TextBlock Text="Tool prefix (optional)" Classes="label"
+                                           ToolTip.Tip="{StaticResource AliasHelpText}"/>
+                                <TextBox Text="{Binding NewSourceAlias}"
+                                         ToolTip.Tip="{StaticResource AliasHelpText}"/>
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
+                            <StackPanel Margin="0,0,6,0">
+                                <TextBlock Text="Kind" Classes="label"
+                                           ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
+                                <ComboBox ItemsSource="{Binding AllKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,0,0,0">
+                                <TextBlock Text="Transport" Classes="label"
+                                           ToolTip.Tip="{StaticResource TransportHelpText}"/>
+                                <ComboBox ItemsSource="{Binding AllTransports}" SelectedItem="{Binding NewSourceTransport, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="{StaticResource TransportHelpText}"/>
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsRouteSource}">
+                            <TextBlock Text="Route" Classes="label"/>
+                            <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewSourceRoute}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:RouteMapping">
+                                        <TextBlock Text="{Binding PathPrefix}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="hint"
+                                       Text="The route's OAuth token is attached automatically — that is the point of pooling an authenticated server here."/>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsUrlSource}">
+                            <TextBlock Text="Server URL" Classes="label"/>
+                            <TextBox Text="{Binding NewSourceUrl}"/>
+                            <TextBlock Classes="hint"
+                                       Text="For servers needing no credential. https required, except on localhost."/>
+                        </StackPanel>
+
+                        <Button Content="Add source" HorizontalAlignment="Left" Width="110" Command="{Binding AddSourceCommand}"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+        </Border>
+    </Grid>
+</UserControl>
