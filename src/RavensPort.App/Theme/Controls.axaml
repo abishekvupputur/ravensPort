@@ -109,6 +109,43 @@
         <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
     </Style>
 
+    <!-- ── RadioButton ───────────────────────────────────────────────────────
+         Templated for the same reason the CheckBox above is, and deliberately its shape and states
+         with a round indicator, so a group of radios and a row of checkboxes read as the same
+         family. -->
+    <Style Selector="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Background="Transparent">
+                    <Border Name="RadioBorder" Width="14" Height="14"
+                            Background="{StaticResource PanelAltBrush}" BorderBrush="#555555"
+                            BorderThickness="1" CornerRadius="7" Margin="0,0,7,0"
+                            VerticalAlignment="Center">
+                        <Ellipse Name="RadioDot" Width="6" Height="6"
+                                 Fill="{StaticResource AccentBrush}"
+                                 IsVisible="False"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ContentPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="RadioButton:checked /template/ Ellipse#RadioDot">
+        <Setter Property="IsVisible" Value="True"/>
+    </Style>
+    <Style Selector="RadioButton:checked /template/ Border#RadioBorder">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    </Style>
+    <Style Selector="RadioButton:pointerover /template/ Border#RadioBorder">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    </Style>
+    <Style Selector="RadioButton:disabled">
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+    </Style>
+
     <!-- ── Buttons ───────────────────────────────────────────────────────────
          The accent button is the app's primary action and the one piece of chrome that carries the
          brand, so it keeps its own template rather than tinting Fluent's. -->
@@ -271,6 +308,14 @@
          binding, so the binding moves onto the class and the style stays declarative. -->
     <Style Selector="TextBlock.expired">
         <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+    </Style>
+
+    <!-- The same idea for a hint that has become the only warning there is: the mTLS certificate
+         close to, or past, its expiry. Weighted as well as coloured, because it sits in a paragraph
+         of muted text that the eye otherwise skips. -->
+    <Style Selector="TextBlock.urgent">
+        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <!-- For the clause inside a hint paragraph that the user must not skim past — what is stored,

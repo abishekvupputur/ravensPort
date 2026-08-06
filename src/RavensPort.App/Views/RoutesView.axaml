@@ -18,15 +18,16 @@ Leave this ON unless the upstream genuinely expects the prefix in its path.</sys
         <sys:String x:Key="CredentialPlacementHelpText">Where the access token is put on the forwarded request.
 
 Header — Authorization: Bearer &lt;token&gt;   (the default; what almost every OAuth API expects)
-Query  — ?access_token=&lt;token&gt;
 Body   — a field added to the JSON object or form body
+
+Query strings are not offered: they are written to the upstream's access log, to every intermediary's, and to browser history, so a token placed there leaks somewhere RavensPort cannot reach.
 
 Body only works on a JSON or application/x-www-form-urlencoded body under 1 MB that declares a Content-Length; anything else is forwarded untouched and the activity log says so.</sys:String>
 
         <sys:String x:Key="ValuePrefixHelpText">Text placed immediately before the token.
 
 "Bearer " (with the trailing space) produces  Authorization: Bearer &lt;token&gt;.
-Leave empty to send the bare token, e.g. for X-Api-Key or ?access_token=.</sys:String>
+Leave empty to send the bare token, e.g. for X-Api-Key.</sys:String>
 
         <sys:String x:Key="MultiCredentialHelpText">A route can attach any number of credentials, in any mix of places.
 

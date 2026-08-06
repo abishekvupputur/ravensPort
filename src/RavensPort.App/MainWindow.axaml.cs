@@ -1,13 +1,23 @@
-using System.ComponentModel;
-using System.Windows;
-using System.Windows.Controls;
-using RavensPort.App.Helpers;
+using Avalonia.Controls;
+using RavensPort.Helpers;
+using RavensPort.Platform;
 using RavensPort.UI.ViewModels;
 
-namespace RavensPort.App;
+namespace RavensPort;
 
 public partial class MainWindow : Window
 {
+    private readonly RoutesViewModel? _routes;
+    private readonly McpFunnelViewModel? _funnels;
+    private readonly ApiBridgeViewModel? _bridges;
+    private readonly SettingsViewModel? _settings;
+
+    /// <summary>
+    /// Parameterless, for the XAML previewer and for Avalonia's own loader. The app always uses the
+    /// injected constructor below; nothing here may assume a view model is present.
+    /// </summary>
+    public MainWindow() => InitializeComponent();
+
     public MainWindow(
         MainWindowViewModel mainWindowViewModel,
         SetupViewModel setupViewModel,
@@ -16,9 +26,8 @@ public partial class MainWindow : Window
         McpFunnelViewModel mcpFunnelViewModel,
         ApiBridgeViewModel apiBridgeViewModel,
         SettingsViewModel settingsViewModel)
+        : this()
     {
-        InitializeComponent();
-
         // Set here rather than in XAML, because the number comes from the assembly the build
         // stamped and markup has nothing to read it from. This is the one place a user can see
         // which build they are running without opening the exe's file properties, which matters
@@ -29,6 +38,8 @@ public partial class MainWindow : Window
 
         DataContext = mainWindowViewModel;
 
+        // Each page gets its own view model rather than reaching through the shell's, which is how
+        // the real views will be wired too.
         SetupViewControl.DataContext = setupViewModel;
         CredentialsViewControl.DataContext = credentialsViewModel;
         RoutesViewControl.DataContext = routesViewModel;
@@ -36,47 +47,43 @@ public partial class MainWindow : Window
         ApiBridgeViewControl.DataContext = apiBridgeViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
-        SourceInitialized += (_, _) => WindowHelper.ApplyDarkTitleBar(this);
+        _routes = routesViewModel;
+        _funnels = mcpFunnelViewModel;
+        _bridges = apiBridgeViewModel;
+        _settings = settingsViewModel;
+
+        // Opened, where WPF used SourceInitialized: both mean "the native window now exists", and
+        // the DWM call needs an HWND.
+        Opened += (_, _) => WindowHelper.ApplyDarkTitleBar(this);
         Closing += MainWindow_Closing;
     }
 
-    private void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void TabControl_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        // Only react to the TabControl itself; ComboBoxes inside the tabs raise the same
-        // routed event and would otherwise trigger a reload on every dropdown change.
-        if (!ReferenceEquals(e.OriginalSource, sender)) return;
+        // Only react to the TabControl itself; controls inside the tabs raise this event too and
+        // would otherwise trigger a reload on every dropdown change.
+        if (!ReferenceEquals(e.Source, sender)) return;
 
         // The Routes tab shows credentials owned by the Credentials tab, so re-read them
         // on every switch — otherwise a newly added credential is missing from the dropdown.
-        if (RoutesViewControl.DataContext is RoutesViewModel routesViewModel)
-        {
-            routesViewModel.Reload();
-        }
+        _routes?.Reload();
 
         // The MCP Funnel tab lists routes owned by the Routes tab, and its endpoint URLs embed
         // the listen port owned by Settings — both can change while this tab is off screen.
-        if (McpFunnelViewControl.DataContext is McpFunnelViewModel mcpFunnelViewModel)
-        {
-            mcpFunnelViewModel.Reload();
-        }
+        _funnels?.Reload();
 
         // The API to MCP tab lists routes owned by the Routes tab, and its endpoint URLs embed
         // the listen port owned by Settings — both can change while this tab is off screen.
-        if (ApiBridgeViewControl.DataContext is ApiBridgeViewModel apiBridgeViewModel)
-        {
-            apiBridgeViewModel.Reload();
-        }
+        _bridges?.Reload();
 
-        // Settings shows the autostart state, which the tray menu can also change.
-        if (SettingsViewControl.DataContext is SettingsViewModel settingsViewModel)
-        {
-            settingsViewModel.Reload();
-        }
+        // Settings shows state the tray menu can also change.
+        _settings?.Reload();
     }
 
-    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    private void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
     {
         // Never actually close from the X button — only the tray "Exit" command shuts the app down.
+        // ShutdownMode is OnExplicitShutdown, so hiding the last window does not end the process.
         e.Cancel = true;
         Hide();
 
