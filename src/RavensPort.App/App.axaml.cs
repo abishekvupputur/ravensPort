@@ -40,7 +40,7 @@ public partial class App : Application
     /// </summary>
     private const string ShowWindowEventName = "RavensPort_ShowWindow";
 
-    private static Mutex? _singleInstanceMutex;
+    private Mutex? _singleInstanceMutex;
 
     private readonly IDialogService _dialogs = new AvaloniaDialogService();
 
@@ -125,6 +125,12 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // Before anything else touches the profile directory: the pre-2.0 store is a blob of the
+        // user's credentials that this version cannot read, so there is no reason for it to live
+        // through a launch. Zeroed and deleted, never merely unlinked. Unconditional and silent —
+        // a prompt would only ever be answered "yes", and a "no" would leave secrets on disk.
+        PurgeLegacyStore();
+
         // OnExit's replacement, and it has to be Exit rather than the more obvious-looking
         // ShutdownRequested. ShutdownRequested is raised *by the platform* — an OS logout or
         // shutdown — and never by a Shutdown() call, so hanging the teardown off it would have left
@@ -148,6 +154,28 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Wipes the pre-2.0 store file. Silent on success, which is the ordinary case and includes
+    /// the file never having existed. A failure means something else holds the file open, so it
+    /// is recorded rather than shown: the launch is unaffected, and the next start tries again.
+    /// </summary>
+    private static void PurgeLegacyStore()
+    {
+        try
+        {
+            if (LegacyStorePurge.Purge()) return;
+
+            new ActivityLog().Log(
+                "The pre-2.0 store.dat could not be removed — it is still on disk. "
+                + "Close anything holding it open; RavensPort tries again on the next start.");
+        }
+        catch
+        {
+            // Logging is the whole of this method's failure path, so there is nowhere left to
+            // report to. Never worth failing a launch over.
+        }
     }
 
     private void StartHost()
@@ -179,8 +207,14 @@ public partial class App : Application
                 // The certificate is self-signed and shared by both ends, so there is no chain to
                 // validate and the default handling — which rejects on any SslPolicyError — would
                 // refuse every caller including this app's own funnel. The thumbprint is the check.
+                //
+                // Plus the validity window, put back by hand: turning off chain validation turns
+                // off the platform's expiry check with it, and without this line a certificate
+                // that expired months ago would still open the proxy. That is the whole of what
+                // retires one — there is no CA here, so no CRL and no OCSP.
                 https.ClientCertificateValidation = (clientCert, _, _) =>
-                    string.Equals(clientCert.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase);
+                    string.Equals(clientCert.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase)
+                    && MtlsCertificateFactory.IsWithinValidity(clientCert, DateTimeOffset.UtcNow);
             });
         });
 
@@ -194,6 +228,7 @@ public partial class App : Application
         builder.Services.AddSingleton<IClipboardService, AvaloniaClipboardService>();
         builder.Services.AddSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
+        builder.Services.AddSingleton<IFileSavePicker, AvaloniaFileSavePicker>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
@@ -201,6 +236,10 @@ public partial class App : Application
         builder.Services.AddSingleton<CredentialsViewModel>();
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
+        builder.Services.AddSingleton<ApiBridgeViewModel>();
+
+        // The tabs as one dependency: everything that rebuilds them rebuilds all of them.
+        builder.Services.AddSingleton<AppTabs>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<TrayIconManager>();
@@ -254,9 +293,7 @@ public partial class App : Application
         // be rebuilt — their rows hold references to records that are no longer in the store.
         settingsViewModel.RecordsDropped += () =>
         {
-            _webApp.Services.GetRequiredService<CredentialsViewModel>().Reload();
-            _webApp.Services.GetRequiredService<RoutesViewModel>().Reload();
-            _webApp.Services.GetRequiredService<McpFunnelViewModel>().Reload();
+            _webApp.Services.GetRequiredService<AppTabs>().ReloadAll();
         };
 
         // Every tab rebuilt from the emptied store, so a disconnect leaves no row belonging to the
@@ -429,35 +466,87 @@ public partial class App : Application
                 // decides both: the scheme Kestrel listens on, and the scheme the MCP funnel dials
                 // its own routes on. Anything that read the setting a second time could disagree.
                 var kestrelMtls = _webApp.Services.GetRequiredService<KestrelMtlsState>();
+#if STORE_BUILD
+                // The store build has no mTLS: no listener certificate, no Generate button, no
+                // MtlsCertificateFactory.GenerateClientCertificatePfx to call. See BuildProfile.
+                //
+                // The setting is still read, because the vault is shared. Someone running the EXE
+                // on one machine and the Store package on another has one store between them, and
+                // it may well say mTLS is on. Silently binding plain HTTP would be the one outcome
+                // worth avoiding here — the user believes the proxy demands a certificate — so the
+                // listener still comes up on http:// (there is no alternative that starts) and the
+                // log says plainly that this build ignored the setting.
                 if (configStoreCache.Current.Settings.MtlsEnabled)
                 {
-                    // A store can say "mTLS on" and hold no certificate — earlier builds let the
-                    // checkbox be ticked without generating one. Neither answer to that is free:
-                    // binding plain HTTP anyway would tell the user their proxy is certificate-
-                    // protected while anything on the machine can call it, and refusing to start
-                    // strands them on the setup page with no way back to the checkbox. So the
-                    // certificate is minted, and the Settings tab's export is where they get it.
-                    if (string.IsNullOrWhiteSpace(configStoreCache.Current.Settings.MtlsClientCertificatePfx))
-                    {
-                        await configStoreCache.MutateAsync(store =>
-                            store.Settings.MtlsClientCertificatePfx = MtlsCertificateFactory.GenerateClientCertificatePfx());
-
-                        _webApp.Services.GetService<ActivityLog>()?.Log(
-                            "mTLS was enabled with no certificate stored; a new one was generated. "
-                            + "Export it from the Settings tab and install it on every client that calls this proxy.");
-                    }
-
-                    kestrelMtls.Enable(configStoreCache.Current.Settings.MtlsClientCertificatePfx);
-
-                    // The other half of the pin, recorded at the moment it is decided. When the
-                    // funnel later refuses this listener it logs what was presented; without this
-                    // line there is nothing to compare that against, and "the remote certificate
-                    // was rejected" is equally consistent with a stale certificate, a certificate
-                    // regenerated since the last start, and Kestrel never having received one.
                     _webApp.Services.GetService<ActivityLog>()?.Log(
-                        $"mTLS enabled — serving certificate …{kestrelMtls.Certificate!.Thumbprint[^8..]} "
-                        + "and requiring the same one from every caller.");
+                        "STARTUP mTLS is switched on in this vault, but the Microsoft Store build of "
+                        + "RavensPort does not support it — the proxy is listening on http://127.0.0.1 "
+                        + "and every caller still needs its endpoint's proxy key. Install RavensPort "
+                        + "from the releases page if you need client certificates.");
                 }
+#else
+                if (configStoreCache.Current.Settings.MtlsEnabled)
+                {
+                    // A store can say "mTLS on" and hold nothing this build can open: no
+                    // certificate at all, because earlier builds let the checkbox be ticked without
+                    // generating one, or a certificate written before the password box existed,
+                    // whose built-in password no longer exists to try.
+                    //
+                    // Minting one here is not an answer any more. Generating means choosing the PFX
+                    // password, every certificate this app writes carries a password the user typed,
+                    // and startup is precisely the moment there is nobody to ask. Refusing to start
+                    // would strand them on the setup page with no way back to the checkbox — so the
+                    // listener comes up on http:// and the log says plainly that it did, which is
+                    // the same trade the store build makes above.
+                    var storedPfx = configStoreCache.Current.Settings.MtlsClientCertificatePfx;
+                    var storedPfxPassword = configStoreCache.Current.Settings.MtlsClientCertificatePassword;
+
+                    if (string.IsNullOrWhiteSpace(storedPfx) || string.IsNullOrEmpty(storedPfxPassword))
+                    {
+                        _webApp.Services.GetService<ActivityLog>()?.Log(
+                            "STARTUP mTLS is switched on, but there is no client certificate this build can open "
+                            + "— either none is stored, or the stored one predates the password box and has no "
+                            + "password recorded for it. The proxy is listening on http://127.0.0.1 and every "
+                            + "caller still needs its endpoint's proxy key. Use Generate new certificate on the "
+                            + "Settings tab, choose a password, install the export on every client, and restart.");
+                    }
+                    else
+                    {
+                        kestrelMtls.Enable(storedPfx, storedPfxPassword);
+
+                        // Either way the thumbprint is recorded at the moment it is decided. When the
+                        // funnel later refuses this listener it logs what was presented; without that
+                        // there is nothing to compare against, and "the remote certificate was
+                        // rejected" is equally consistent with a stale certificate, a certificate
+                        // regenerated since the last start, and Kestrel never having received one.
+                        //
+                        // An expired certificate does not get the line saying mTLS is up. The date is
+                        // enforced rather than warned about — pinning a thumbprint turns the platform's
+                        // own expiry check off, so both validation callbacks put it back by hand — and
+                        // the listener binds and then refuses everyone, this app's own funnel included.
+                        // "mTLS enabled" would be the last thing read before a connection that closes
+                        // with no status code to explain it.
+                        var thumbprintTail = kestrelMtls.Certificate!.Thumbprint[^8..];
+
+                        if (kestrelMtls.IsExpired)
+                        {
+                            _webApp.Services.GetService<ActivityLog>()?.Log(
+                                $"STARTUP the mTLS certificate expired on {kestrelMtls.ExpiresUtc:yyyy-MM-dd}. The "
+                                + $"listener is bound on https and presenting certificate …{thumbprintTail}, but the "
+                                + "expiry date is enforced at both ends: every caller is refused during the TLS "
+                                + "handshake — no status code reaches them, the connection simply closes — and the MCP "
+                                + "funnel cannot reach its own routes either. Generate a new certificate on the "
+                                + "Settings tab, export it, install it on every client, and restart RavensPort.");
+                        }
+                        else
+                        {
+                            _webApp.Services.GetService<ActivityLog>()?.Log(
+                                $"mTLS enabled — serving certificate …{thumbprintTail} "
+                                + "and requiring the same one from every caller.");
+                        }
+                    }
+                }
+#endif
 
                 _webApp.Urls.Clear();
                 _webApp.Urls.Add($"{kestrelMtls.Scheme}://127.0.0.1:{port}");
@@ -473,8 +562,14 @@ public partial class App : Application
                 _webApp.UseMcpFunnelGate();
                 _webApp.MapMcpFunnel();
 
+                // Same arrangement, same reasons, for the API bridges: after the guard so a caller
+                // must hold the bridge's own key, and before MapReverseProxy so /api-mcp is
+                // unambiguously theirs.
+                _webApp.UseMcpApiBridgeGate();
+                _webApp.MapMcpApiBridge();
+
                 _webApp.MapReverseProxy();
-                _webApp.Start();
+                await _webApp.StartAsync();
             });
         }
         catch (Exception ex)
@@ -522,14 +617,18 @@ public partial class App : Application
     /// </summary>
     private async Task DiscoverMcpSourcesAsync()
     {
+        // Reached only after OnStartup has built the host. Taken as a local rather than asserted
+        // with "!" twice: it states the ordering the same way and does not have to be right.
+        if (_webApp is not { } app) return;
+
         try
         {
-            await _webApp!.Services.GetRequiredService<McpFunnelViewModel>()
+            await app.Services.GetRequiredService<McpFunnelViewModel>()
                 .RefreshAllSourcesCommand.ExecuteAsync(null);
         }
         catch (Exception ex)
         {
-            _webApp!.Services.GetService<ActivityLog>()?.LogError("Startup MCP source discovery failed", ex);
+            app.Services.GetService<ActivityLog>()?.LogError("Startup MCP source discovery failed", ex);
         }
     }
 
@@ -614,7 +713,7 @@ public partial class App : Application
         // One last attempt first. The manager is often unlocked by now — the user may have
         // unlocked it for something else entirely — and warning about losing changes that could
         // simply have been written would be a poor way to find that out.
-        if (_webApp!.Services.GetService<VaultSyncQueue>() is { } syncQueue)
+        if (_webApp.Services.GetService<VaultSyncQueue>() is { } syncQueue)
         {
             try
             {

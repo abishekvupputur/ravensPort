@@ -1,6 +1,9 @@
 using System.Reflection;
 
-namespace RavensPort.App.Helpers;
+// RavensPort.Helpers, not RavensPort.App.Helpers as under WPF: the Avalonia application class is
+// RavensPort.App, and a namespace of that name in the same parent is a compile error rather than a
+// style question.
+namespace RavensPort.Helpers;
 
 /// <summary>
 /// The version this build was stamped with, as something short enough to sit in a title bar.

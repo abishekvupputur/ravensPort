@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
+using System.Runtime.Versioning;
+using Avalonia.Controls;
 
-namespace RavensPort.App.Helpers;
+namespace RavensPort.Platform;
 
 internal static partial class WindowHelper
 {
@@ -12,14 +12,22 @@ internal static partial class WindowHelper
     private static partial int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     /// <summary>
-    /// Forces a dark title bar on the given window via the DWM API.
-    /// Call from <c>SourceInitialized</c> so the HWND is already available.
+    /// Forces a dark title bar via the DWM API.
+    ///
+    /// Still hand-rolled: Avalonia's dark theme variant styles what it draws, and the title bar is
+    /// drawn by Windows. Call from <c>Opened</c> — the HWND does not exist before then, and this
+    /// silently does nothing without one.
+    ///
+    /// The platform handle is null on any backend that is not Win32, which is the whole check
+    /// needed to make this a no-op elsewhere.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     internal static void ApplyDarkTitleBar(Window window)
     {
-        var hwnd = new WindowInteropHelper(window).Handle;
-        if (hwnd == IntPtr.Zero) return;
-        int value = 1;
+        if (!OperatingSystem.IsWindows()) return;
+        if (window.TryGetPlatformHandle()?.Handle is not { } hwnd || hwnd == IntPtr.Zero) return;
+
+        var value = 1;
         // Discarded deliberately: the title bar is cosmetic, and this attribute is unsupported on
         // Windows 10 builds before 1809, where the call returns a failure and the light title bar
         // stays. There is nothing to tell the user and nothing to retry.

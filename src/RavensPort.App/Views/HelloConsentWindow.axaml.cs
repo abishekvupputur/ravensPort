@@ -1,10 +1,13 @@
-using System.Windows;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Platform;
 using RavensPort.Core.Vault;
+using RavensPort.Platform;
 
-// UseWindowsForms is on for the tray icon, so both frameworks' Application types are in scope.
-using Application = System.Windows.Application;
-
-namespace RavensPort.App.Views;
+namespace RavensPort.Views;
 
 /// <summary>
 /// The consent step in front of every Windows Hello prompt RavensPort raises. See the comment in
@@ -17,10 +20,22 @@ public partial class HelloConsentWindow : Window
     /// own errors and returns false reports success here, which is how a session key that was never
     /// stored once looked to the user like one that was.
     /// </summary>
-    private readonly Func<Task> _action;
+    private readonly Func<Task>? _action;
 
     /// <summary>True once the Hello-backed operation actually succeeded.</summary>
     public bool Confirmed { get; private set; }
+
+    /// <summary>Parameterless, for Avalonia's loader and the previewer.</summary>
+    public HelloConsentWindow()
+    {
+        InitializeComponent();
+
+        // Re-anchored on every size change, not just once at load. The window is SizeToContent, so
+        // it grows when Report() reveals the status line — anchored only at startup, the bottom
+        // edge would then push down past the taskbar and take the buttons with it.
+        SizeChanged += (_, _) => AnchorAboveTray();
+        Opened += (_, _) => AnchorAboveTray();
+    }
 
     private HelloConsentWindow(
         string heading,
@@ -28,23 +43,30 @@ public partial class HelloConsentWindow : Window
         string detail,
         string confirmText,
         Func<Task> action,
-        string vendorLogo = "/Assets/proton-pass-logo.png")
+        string vendorLogo = ProtonPassLogo)
+        : this()
     {
         _action = action;
-
-        InitializeComponent();
 
         HeadingText.Text = heading;
         BodyText.Text = body;
         DetailText.Text = detail;
         ConfirmButton.Content = confirmText;
-        VendorLogo.Source = new System.Windows.Media.Imaging.BitmapImage(
-            new Uri(vendorLogo, UriKind.Relative));
+        // Qualified: UseWindowsForms is on for the tray icon, so System.Drawing.Bitmap is in every
+        // file's implicit usings and the bare name is ambiguous.
+        VendorLogo.Source = new Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(new Uri(vendorLogo)));
+    }
 
-        // Re-anchored on every size change, not just once at load. The window is SizeToContent, so
-        // it grows when Report() reveals the status line — anchored only at startup, the bottom
-        // edge would then push down past the taskbar and take the buttons with it.
-        SizeChanged += (_, _) => AnchorAboveTray();
+    private const string ProtonPassLogo = "avares://RavensPort/Assets/proton-pass-logo.png";
+    private const string OnePasswordLogo = "avares://RavensPort/Assets/onepassword-logo.png";
+
+    /// <summary>
+    /// The caption is the app's own, so dragging it has to be wired by hand — there is no system
+    /// title bar to do it.
+    /// </summary>
+    private void Caption_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) BeginMoveDrag(e);
     }
 
     /// <summary>
@@ -55,34 +77,37 @@ public partial class HelloConsentWindow : Window
     /// while approving it. Down here both are visible at once, and it sits beside the tray icon
     /// that represents the app doing the asking.
     ///
-    /// <see cref="SystemParameters.WorkArea"/> rather than the screen bounds, so this lands above
-    /// the taskbar wherever the user keeps it — including left or top, where a hard-coded corner
-    /// would be wrong. It is in device-independent units already, so it survives display scaling
-    /// without a manual DPI conversion.
+    /// The working area rather than the screen bounds, so this lands above the taskbar wherever the
+    /// user keeps it — including left or top, where a hard-coded corner would be wrong. Avalonia
+    /// reports it in physical pixels and positions windows in them too, while Width and Height are
+    /// device-independent, so the size is scaled across; WPF's WorkArea needed no such conversion.
     /// </summary>
     private void AnchorAboveTray()
     {
         const double margin = 12;
 
-        var work = SystemParameters.WorkArea;
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen is null) return;
 
-        // ActualWidth is 0 until the first layout pass; Width is fixed in XAML, so it is the
-        // reliable one to subtract before then.
-        var width = ActualWidth > 0 ? ActualWidth : Width;
-        var height = ActualHeight > 0 ? ActualHeight : MinHeight;
+        var scale = screen.Scaling;
+        var work = screen.WorkingArea;
 
-        Left = work.Right - width - margin;
+        // Bounds are 0 until the first layout pass; Width is fixed in XAML, so it is the reliable
+        // one to fall back on before then.
+        var width = (int)((Bounds.Width > 0 ? Bounds.Width : Width) * scale);
+        var height = (int)((Bounds.Height > 0 ? Bounds.Height : MinHeight) * scale);
+        var gap = (int)(margin * scale);
 
         // Clamped to the top of the work area: a window taller than the screen would otherwise be
-        // positioned at a negative Top, hiding its heading off the top edge rather than its
-        // buttons off the bottom.
-        Top = Math.Max(work.Top, work.Bottom - height - margin);
+        // positioned at a negative Y, hiding its heading off the top edge rather than its buttons
+        // off the bottom.
+        Position = new PixelPoint(
+            work.Right - width - gap,
+            Math.Max(work.Y, work.Bottom - height - gap));
     }
 
-    /// <summary>
-    /// Asks before unlocking the session with Hello.
-    /// </summary>
-    public static bool RequestUnlock(Func<Task> unlockAsync) => Show(new HelloConsentWindow(
+    /// <summary>Asks before unlocking the session with Hello.</summary>
+    public static Task<bool> RequestUnlockAsync(Func<Task> unlockAsync) => ShowAsync(new HelloConsentWindow(
         "Unlock RavensPort",
         "RavensPort wants to ask Windows Hello to unlock its Proton Pass session on this PC, so the "
         + "proxy can start.",
@@ -98,7 +123,7 @@ public partial class HelloConsentWindow : Window
     /// it. Declining here means no key and no sign-in, which is the point: there is then nothing
     /// left on this PC that only a lost key could open.
     /// </summary>
-    public static bool RequestSetup(Func<Task> prepareAsync) => Show(new HelloConsentWindow(
+    public static Task<bool> RequestSetupAsync(Func<Task> prepareAsync) => ShowAsync(new HelloConsentWindow(
         "Protect this session with Windows Hello",
         "Before signing in to Proton Pass, RavensPort will create a session key and store it in "
         + "Windows Credential Manager, encrypted so that only Windows Hello can bring it back.",
@@ -109,8 +134,6 @@ public partial class HelloConsentWindow : Window
         "Continue with Windows Hello",
         prepareAsync));
 
-    private const string OnePasswordLogo = "/Assets/onepassword-logo.png";
-
     /// <summary>
     /// Asks before keeping a 1Password service-account token between runs.
     ///
@@ -119,7 +142,7 @@ public partial class HelloConsentWindow : Window
     /// a change to that promise, and the user should be the one making it, having read what it does
     /// and does not protect.
     /// </summary>
-    public static bool RequestTokenSave(Func<Task> protectAsync) => Show(new HelloConsentWindow(
+    public static Task<bool> RequestTokenSaveAsync(Func<Task> protectAsync) => ShowAsync(new HelloConsentWindow(
         "Keep this token on this PC?",
         "RavensPort will store your 1Password service account token in Windows Credential Manager, "
         + "encrypted so that only a Windows Hello gesture on this PC can bring it back.",
@@ -136,7 +159,7 @@ public partial class HelloConsentWindow : Window
     /// <summary>
     /// Asks before bringing a saved token back at startup.
     /// </summary>
-    public static bool RequestTokenUnlock(Func<Task> unlockAsync) => Show(new HelloConsentWindow(
+    public static Task<bool> RequestTokenUnlockAsync(Func<Task> unlockAsync) => ShowAsync(new HelloConsentWindow(
         "Unlock your 1Password token",
         "RavensPort wants to ask Windows Hello to unlock the saved 1Password service account token, "
         + "so it can connect without you pasting it again.",
@@ -148,19 +171,31 @@ public partial class HelloConsentWindow : Window
         unlockAsync,
         OnePasswordLogo));
 
-    private static bool Show(HelloConsentWindow window)
+    private static async Task<bool> ShowAsync(HelloConsentWindow window)
     {
-        // Owned by the main window when there is a visible one, so it centres on it and cannot be
-        // lost behind it. At startup there is none — which is the case this window exists to cover.
-        var owner = Application.Current?.MainWindow;
-        if (owner is { IsVisible: true } && !ReferenceEquals(owner, window)) window.Owner = owner;
+        // Owned by the main window when there is a visible one, so it cannot be lost behind it. At
+        // startup there is none — which is the case this window exists to cover — and Avalonia's
+        // ShowDialog requires an owner, so that path shows it unowned and waits for the close.
+        if (MainWindowAccessor.Current is { IsVisible: true } owner && !ReferenceEquals(owner, window))
+        {
+            await window.ShowDialog(owner);
+            return window.Confirmed;
+        }
 
-        window.ShowDialog();
+        var closed = new TaskCompletionSource();
+        window.Closed += (_, _) => closed.TrySetResult();
+
+        window.Show();
+        window.Activate();
+        await closed.Task;
+
         return window.Confirmed;
     }
 
-    private async void ConfirmButton_Click(object sender, RoutedEventArgs e)
+    private async void ConfirmButton_Click(object? sender, RoutedEventArgs e)
     {
+        if (_action is null) return;
+
         ConfirmButton.IsEnabled = false;
         CancelButton.IsEnabled = false;
 
@@ -191,14 +226,15 @@ public partial class HelloConsentWindow : Window
         }
     }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e) => Close();
+    private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close();
 
     private void Report(string message, bool isError)
     {
         StatusText.Text = message;
-        StatusText.Visibility = Visibility.Visible;
-        StatusText.Foreground = isError
-            ? (System.Windows.Media.Brush)FindResource("ErrorBrush")
-            : (System.Windows.Media.Brush)FindResource("MutedTextBrush");
+        StatusText.IsVisible = true;
+        StatusText.Foreground = this.TryFindResource(isError ? "ErrorBrush" : "MutedTextBrush", out var brush)
+            && brush is IBrush found
+            ? found
+            : StatusText.Foreground;
     }
 }

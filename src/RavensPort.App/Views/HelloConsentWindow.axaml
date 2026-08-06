@@ -36,7 +36,14 @@
                     PointerPressed="Caption_PointerPressed">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="11,0,0,0">
-                        <Image Source="avares://RavensPort/Assets/ravensport-mark.png" Width="17" Height="17" Margin="0,0,7,0"/>
+                        <!-- HighQuality on every mark in this window. The default filter point-drops
+                             most of the source when the shrink is this steep — 17 device-independent
+                             units from a full-size mark — and the feather edges came out ragged.
+                             HighQuality area-averages instead, which is what keeps these readable at
+                             a glance, and readable is the whole job: this is the window whose job is
+                             to be recognised as RavensPort's. -->
+                        <Image Source="avares://RavensPort/Assets/logo.png" Width="17" Height="17" Margin="0,0,7,0"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
                         <TextBlock Text="RavensPort access request" FontSize="12"
                                    Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
                     </StackPanel>
@@ -63,7 +70,12 @@
                     <Grid HorizontalAlignment="Center" Margin="0,0,0,20" ColumnDefinitions="78,38,78">
                         <Border Width="72" Height="72" CornerRadius="14" Background="#111111"
                                 BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1">
-                            <Image Source="avares://RavensPort/Assets/ravensport-mark.png" Stretch="Uniform" Margin="2"/>
+                            <!-- The app's own full-size mark, not the 192px copy the callback page
+                                 embeds: this tile is 68 units, which is already 136 real pixels at
+                                 200% scaling and more on a 4K display, so the small one had nothing
+                                 left to give. -->
+                            <Image Source="avares://RavensPort/Assets/logo.png" Stretch="Uniform" Margin="2"
+                                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
                         </Border>
 
                         <Grid Grid.Column="1" VerticalAlignment="Center">
@@ -74,9 +86,15 @@
                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
 
+                        <!-- Which manager this consent is about. Set in code rather than fixed here:
+                             the same window now fronts a Proton Pass session key and a 1Password
+                             service token, and showing the wrong vendor above "approve this" would
+                             be worse than showing none at all. -->
                         <Border Grid.Column="2" Width="72" Height="72" CornerRadius="14" Background="#111111"
                                 BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1">
-                            <Image Source="avares://RavensPort/Assets/proton-pass-logo.png" Stretch="Uniform" Margin="6"/>
+                            <Image x:Name="VendorLogo" Source="avares://RavensPort/Assets/proton-pass-logo.png"
+                                   Stretch="Uniform" Margin="6"
+                                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
                         </Border>
                     </Grid>
 
