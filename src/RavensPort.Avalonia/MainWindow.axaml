@@ -69,8 +69,7 @@
                 <!-- Placeholder content. The tab views land one per commit in the next phase; what
                      this proves is that the shell, the switching and the reload hooks work. -->
                 <TabItem Header="Credentials">
-                    <TextBlock Text="Credentials — not ported yet" Margin="16"
-                               Classes="hint"/>
+                    <views:CredentialsView x:Name="CredentialsViewControl"/>
                 </TabItem>
                 <TabItem Header="Routes">
                     <TextBlock Text="Routes — not ported yet" Margin="16"
