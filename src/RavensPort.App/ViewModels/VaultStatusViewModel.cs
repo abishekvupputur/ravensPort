@@ -1,6 +1,6 @@
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
 
@@ -18,7 +18,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
     private readonly ConfigStoreCache _configStoreCache;
     private readonly VaultSyncQueue _syncQueue;
     private readonly VaultGateService _gate;
-    private readonly Dispatcher _dispatcher;
+    private readonly IUiDispatcher _uiDispatcher;
 
     private readonly AppTabs _tabs;
 
@@ -26,20 +26,21 @@ public sealed partial class VaultStatusViewModel : ObservableObject
         ConfigStoreCache configStoreCache,
         VaultSyncQueue syncQueue,
         VaultGateService gate,
-        AppTabs tabs)
+        AppTabs tabs,
+        IUiDispatcher uiDispatcher)
     {
         _configStoreCache = configStoreCache;
         _syncQueue = syncQueue;
         _gate = gate;
         _tabs = tabs;
-
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        _uiDispatcher = uiDispatcher;
 
         // Both fire from thread-pool threads — the sync pump and the refresh loop — so every
-        // touch of a bound property has to be marshalled. WPF throws on a cross-thread property
-        // change, and it would do it from inside a background service where nothing is watching.
-        _syncQueue.StateChanged += _ => _dispatcher.BeginInvoke(Apply);
-        _configStoreCache.PendingChanged += () => _dispatcher.BeginInvoke(Apply);
+        // touch of a bound property has to be marshalled. A UI framework throws on a cross-thread
+        // property change, and it would do it from inside a background service where nothing is
+        // watching.
+        _syncQueue.StateChanged += _ => _uiDispatcher.Post(Apply);
+        _configStoreCache.PendingChanged += () => _uiDispatcher.Post(Apply);
 
         Apply();
     }
