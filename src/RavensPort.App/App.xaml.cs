@@ -8,9 +8,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RavensPort.App.Platform;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.App.Tray;
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 using RavensPort.App.Views;
 using RavensPort.Core.Mcp;
 

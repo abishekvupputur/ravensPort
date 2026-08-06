@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RavensPort.Core.Models;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// How a credential's status reads at a glance, as a fact rather than as a colour.

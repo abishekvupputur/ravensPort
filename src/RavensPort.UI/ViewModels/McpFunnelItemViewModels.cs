@@ -1,12 +1,12 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>One row in the sources grid.</summary>
 public sealed partial class McpSourceItemViewModel : ObservableObject

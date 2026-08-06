@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 
 // UseWindowsForms is on for the tray icon, so both frameworks' types are in scope under these names.
 using Application = System.Windows.Application;

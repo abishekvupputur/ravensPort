@@ -1,13 +1,13 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 public sealed partial class CredentialsViewModel : ObservableObject
 {

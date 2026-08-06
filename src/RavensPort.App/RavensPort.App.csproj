@@ -34,11 +34,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <!--
+      CommunityToolkit.Mvvm is deliberately not referenced here. It belongs to the view models, and
+      they live in RavensPort.UI now — leaving it on this project would let a [RelayCommand] be
+      written in the view layer, which is exactly the drift the split exists to stop.
+    -->
     <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
+    <ProjectReference Include="..\RavensPort.UI\RavensPort.UI.csproj" />
   </ItemGroup>
 
 </Project>

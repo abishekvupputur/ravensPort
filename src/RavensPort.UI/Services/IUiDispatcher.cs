@@ -1,4 +1,4 @@
-namespace RavensPort.App.Services;
+namespace RavensPort.UI.Services;
 
 /// <summary>
 /// Marshals work onto the UI thread.

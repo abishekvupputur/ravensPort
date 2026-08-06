@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The view models, and the interfaces through which they reach the desktop. No UI framework: no
+    UseWPF, no UseWindowsForms, no reference to either. That absence is the point of the project
+    rather than an accident of what it happens to need — a WPF type that creeps back into a view
+    model fails the build here instead of being noticed during the Avalonia port.
+
+    TargetFramework still comes from Directory.Build.props, so this is a net8.0-windows assembly
+    like everything else. Not because anything in it is Windows-specific — nothing is — but because
+    it references Core, and a plain net8.0 project cannot reference a net8.0-windows one. Core is
+    pinned there by Windows Hello (see the note in Directory.Build.props), and freeing it is a
+    separate job from this one.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
+  </ItemGroup>
+
+</Project>

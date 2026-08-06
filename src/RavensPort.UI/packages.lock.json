@@ -3,7 +3,8 @@
   "dependencies": {
     "net8.0-windows10.0.19041": {
       "CommunityToolkit.Mvvm": {
-        "type": "Transitive",
+        "type": "Direct",
+        "requested": "[8.4.0, )",
         "resolved": "8.4.0",
         "contentHash": "tqVU8yc/ADO9oiTRyTnwhFN68hCwvkliMierptWOudIAvWY1mWCh5VFh+guwHJmpMwfg0J0rY+yyd5Oy7ty9Uw=="
       },
@@ -225,13 +226,6 @@
           "IdentityModel.OidcClient": "[6.0.0, )",
           "ModelContextProtocol.AspNetCore": "[2.0.0, )",
           "Yarp.ReverseProxy": "[2.3.0, )"
-        }
-      },
-      "ravensport.ui": {
-        "type": "Project",
-        "dependencies": {
-          "CommunityToolkit.Mvvm": "[8.4.0, )",
-          "RavensPort.Core": "[4.1.7, )"
         }
       }
     }
