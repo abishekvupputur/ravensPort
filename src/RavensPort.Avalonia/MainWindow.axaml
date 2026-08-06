@@ -72,12 +72,10 @@
                     <views:CredentialsView x:Name="CredentialsViewControl"/>
                 </TabItem>
                 <TabItem Header="Routes">
-                    <TextBlock Text="Routes — not ported yet" Margin="16"
-                               Classes="hint"/>
+                    <views:RoutesView x:Name="RoutesViewControl"/>
                 </TabItem>
                 <TabItem Header="MCP Funnel">
-                    <TextBlock Text="MCP Funnel — not ported yet" Margin="16"
-                               Classes="hint"/>
+                    <views:McpFunnelView x:Name="McpFunnelViewControl"/>
                 </TabItem>
                 <TabItem Header="Settings">
                     <views:SettingsView x:Name="SettingsViewControl"/>
