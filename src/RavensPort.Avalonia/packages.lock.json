@@ -13,6 +13,15 @@
           "MicroCom.Runtime": "0.11.6"
         }
       },
+      "Avalonia.Controls.DataGrid": {
+        "type": "Direct",
+        "requested": "[12.1.2, )",
+        "resolved": "12.1.2",
+        "contentHash": "Tw02SZd/B42Gq6/l9IBPfuM+VsHPq7c6LXb9mT0xVjZB2UPeynfKlBgQDcrhu/SOfYUGk7tQSRmLFM2kaAjdrw==",
+        "dependencies": {
+          "Avalonia": "12.1.0"
+        }
+      },
       "Avalonia.Desktop": {
         "type": "Direct",
         "requested": "[12.1.1, )",
