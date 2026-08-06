@@ -1,0 +1,293 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        The palette, brought in here rather than relied on from Application.Resources.
+
+        Application.Styles is built before Application.Resources exists, so a StaticResource in a
+        style cannot see the app's dictionary — the first run of this file died on startup with
+        "Static resource 'PanelAltBrush' not found". DynamicResource would also have fixed it, by
+        resolving later; this way is better, because a StaticResource that names a colour which is
+        not there still fails loudly at startup instead of silently leaving the control unstyled.
+
+        Windows and views find these through the same include in App.axaml.
+    -->
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://RavensPort/Theme/Palette.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+
+    <!--
+        The control styling, carried over from the WPF theme.
+
+        This is the half that could not simply move. WPF said "when the pointer is over it, change
+        this" with a Trigger nested inside a ControlTemplate, addressing parts by TargetName;
+        Avalonia says the same thing with a separate style whose selector carries a pseudo-class and
+        reaches into the template with /template/. Same design, different grammar, so every one of
+        these is a rewrite rather than a copy — which is also why the palette went across on its own.
+
+        Three things from the WPF file deliberately did not come:
+
+          - The ScrollBar and its Thumb. Forty lines of ControlTemplate existed to build a slim,
+            chromeless, no-stepper-arrows scrollbar over WPF's grey one. Fluent already is that, so
+            re-creating it would be work spent to end up where the default starts.
+
+          - PasswordBox, because Avalonia has no such control. A TextBox with PasswordChar set is
+            the equivalent, so its styling is the TextBox styling below and the separate block is
+            gone.
+
+          - The DataGrid styles. They land with the first grid that can show whether they are right.
+    -->
+
+    <!-- ── Inputs ────────────────────────────────────────────────────────────
+         Properties only, no template. Fluent's TextBox and ComboBox already have the shape this
+         wants; what they do not have is the palette. -->
+    <Style Selector="TextBox">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="6,4"/>
+    </Style>
+
+    <Style Selector="ComboBox">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="6,4"/>
+    </Style>
+
+    <Style Selector="ComboBoxItem">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Padding" Value="8,5"/>
+    </Style>
+    <Style Selector="ComboBoxItem:pointerover">
+        <Setter Property="Background" Value="{StaticResource HoverStrongBrush}"/>
+    </Style>
+    <Style Selector="ComboBoxItem:selected">
+        <Setter Property="Background" Value="{StaticResource AccentSelectedBgBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+    </Style>
+
+    <!-- ── CheckBox ──────────────────────────────────────────────────────────
+         Templated, because the 14px box with an accent tick is a good deal smaller and quieter
+         than Fluent's, and these appear inline in grid rows where Fluent's would dominate. -->
+    <Style Selector="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Background="Transparent">
+                    <Border Name="CheckBorder" Width="14" Height="14"
+                            Background="{StaticResource PanelAltBrush}" BorderBrush="#555555"
+                            BorderThickness="1" CornerRadius="2" Margin="0,0,7,0"
+                            VerticalAlignment="Center">
+                        <Path Name="CheckMark" Data="M 2 6 L 5 10 L 12 2"
+                              Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
+                              IsVisible="False"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ContentPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="CheckBox:checked /template/ Path#CheckMark">
+        <Setter Property="IsVisible" Value="True"/>
+    </Style>
+    <Style Selector="CheckBox:checked /template/ Border#CheckBorder">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    </Style>
+    <Style Selector="CheckBox:pointerover /template/ Border#CheckBorder">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    </Style>
+
+    <!-- ── Buttons ───────────────────────────────────────────────────────────
+         The accent button is the app's primary action and the one piece of chrome that carries the
+         brand, so it keeps its own template rather than tinting Fluent's. -->
+    <Style Selector="Button">
+        <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource BgBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Root" Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button:pointerover">
+        <Setter Property="Background" Value="{StaticResource AccentHoverBrush}"/>
+    </Style>
+    <Style Selector="Button:pressed">
+        <Setter Property="Background" Value="{StaticResource AccentPressedBrush}"/>
+    </Style>
+    <Style Selector="Button:disabled">
+        <Setter Property="Background" Value="#555555"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+    </Style>
+
+    <!--
+        Ghost/secondary button — row actions like Connect, Refresh, Delete.
+
+        A class where WPF had an x:Key. The mechanical difference is that a keyed style *replaced*
+        the implicit one, whereas a class here *adds* to it — so these setters have to override
+        every accent property above rather than only state the differences.
+    -->
+    <Style Selector="Button.ghost">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Padding" Value="8,4"/>
+    </Style>
+    <Style Selector="Button.ghost:pointerover">
+        <Setter Property="Background" Value="{StaticResource HoverStrongBrush}"/>
+    </Style>
+    <Style Selector="Button.ghost:pressed">
+        <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
+    </Style>
+    <Style Selector="Button.ghost:disabled">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
+    </Style>
+
+    <!-- ── Tabs ──────────────────────────────────────────────────────────────
+         Underlined rather than boxed: an accent rule under the selected tab, on a panel strip. -->
+    <Style Selector="TabItem">
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="16,9"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Root" Background="{TemplateBinding Background}"
+                        Padding="{TemplateBinding Padding}">
+                    <Grid RowDefinitions="*,2">
+                        <ContentPresenter Grid.Row="0" Content="{TemplateBinding Header}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border Name="Underline" Grid.Row="1" Background="Transparent" Height="2"/>
+                    </Grid>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="TabItem:selected">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="TabItem:selected /template/ Border#Underline">
+        <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+    </Style>
+    <Style Selector="TabItem:pointerover">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+
+    <!--
+        Templated, only so the header strip can have its own background and rule beneath it.
+        ItemsPresenter has no Background of its own to set from outside, so the strip has to be a
+        Border wrapped around it — which means owning the template.
+    -->
+    <Style Selector="TabControl">
+        <Setter Property="Background" Value="{StaticResource BgBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="ItemsPanel">
+            <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+        </Setter>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid RowDefinitions="Auto,*" Background="{TemplateBinding Background}">
+                    <Border Grid.Row="0" Background="{StaticResource PanelBrush}"
+                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
+                        <ItemsPresenter Name="PART_ItemsPresenter"
+                                        ItemsPanel="{TemplateBinding ItemsPanel}"
+                                        HorizontalAlignment="Left"/>
+                    </Border>
+                    <ContentPresenter Grid.Row="1" Name="PART_SelectedContentHost"
+                                      Content="{TemplateBinding SelectedContent}"
+                                      ContentTemplate="{TemplateBinding SelectedContentTemplate}"/>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- ── Text and surfaces ─────────────────────────────────────────────────
+         Classes where WPF had keys. Applied as Classes="hint" at the use site. -->
+    <Style Selector="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.section">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
+    </Style>
+    <Style Selector="TextBlock.label">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="Margin" Value="0,0,0,3"/>
+    </Style>
+    <Style Selector="TextBlock.hint">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBlock.footer">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <!-- Shown when a list has no rows yet. -->
+    <Style Selector="TextBlock.empty">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,18"/>
+    </Style>
+
+    <!-- For the clause inside a hint paragraph that the user must not skim past — what is stored,
+         and what gets deleted. Full-strength text against the muted rest of the sentence, so it
+         reads as emphasis rather than a second colour. -->
+    <Style Selector="Run.emphasis">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- Section card — replaces GroupBox, whose chrome this design never uses. -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="14,12"/>
+    </Style>
+    <!-- Footer status bar — pinned outside the scroll region so it never scrolls away. -->
+    <Style Selector="Border.footer">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+        <Setter Property="Padding" Value="14,8"/>
+    </Style>
+
+</Styles>
