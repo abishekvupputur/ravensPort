@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     public MainWindow(
         MainWindowViewModel mainWindowViewModel,
         SetupViewModel setupViewModel,
+        CredentialsViewModel credentialsViewModel,
         RoutesViewModel routesViewModel,
         McpFunnelViewModel mcpFunnelViewModel,
         SettingsViewModel settingsViewModel)
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
         // Each page gets its own view model rather than reaching through the shell's, which is how
         // the real views will be wired too.
         SetupViewControl.DataContext = setupViewModel;
+        CredentialsViewControl.DataContext = credentialsViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
         _routes = routesViewModel;
