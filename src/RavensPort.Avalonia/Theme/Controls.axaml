@@ -274,6 +274,78 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
+    <!-- ── DataGrid ──────────────────────────────────────────────────────────
+         A different implementation from WPF's, in its own package, so this is a re-expression of
+         the WPF styling rather than a translation of it. Two properties that carried real intent
+         there have no equivalent here and are noted where they were.
+
+         Cell and row are styled separately on purpose: selection is handled entirely at the row
+         level, and cells stay transparent at all times, so the ghost buttons and checkboxes nested
+         inside them never sit on a loud accent block that swallows their own contrast. -->
+    <Style Selector="DataGrid">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="RowBackground" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="CanUserResizeColumns" Value="False"/>
+        <!-- Sorting off. Avalonia reserves room in every header for a sort arrow whether or not one
+             is showing, which was enough to clip "KIND" to "KINE" at these column widths — and the
+             rows are deliberately in store order, so the arrow was reserving space for a gesture
+             this app does not want anyway. -->
+        <Setter Property="CanUserSortColumns" Value="False"/>
+        <Setter Property="SelectionMode" Value="Single"/>
+        <!-- No fixed row height — rows auto-size to content (wrapped scope text, buttons)
+             instead of clipping it. -->
+        <Setter Property="MinHeight" Value="0"/>
+        <!-- Grids sit inside the page's ScrollViewer, so they must not create a second scroll
+             region: that is what makes the wheel feel like it "sticks" over a table. With
+             scrolling disabled the grid sizes to its content and the page scrolls. -->
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    </Style>
+
+    <Style Selector="DataGridColumnHeader">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="11"/>
+        <!-- Tighter than WPF's 10,7. Avalonia's header template keeps a separator and a sort-glyph
+             slot inside the header's own width, so the same padding left "KIND" rendering as
+             "KINE" at these column widths. -->
+        <Setter Property="Padding" Value="6,7"/>
+        <Setter Property="SeparatorBrush" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+
+    <Style Selector="DataGridCell">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="DataGridRow">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+        <Setter Property="Fill" Value="{StaticResource HoverBrush}"/>
+        <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <Style Selector="DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+        <Setter Property="Fill" Value="{StaticResource HoverStrongBrush}"/>
+        <Setter Property="Opacity" Value="1"/>
+    </Style>
+
     <!-- Section card — replaces GroupBox, whose chrome this design never uses. -->
     <Style Selector="Border.card">
         <Setter Property="Background" Value="{StaticResource PanelBrush}"/>

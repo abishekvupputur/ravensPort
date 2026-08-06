@@ -63,6 +63,9 @@
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <!-- Separate package, and a separate implementation from WPF's: thinner in places, which is
+         why the first grid ported is the simplest one. -->
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
   </ItemGroup>
 
   <ItemGroup>
