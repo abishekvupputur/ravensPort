@@ -28,7 +28,7 @@ public partial class MainWindow : Window
 
         // Each page gets its own view model rather than reaching through the shell's, which is how
         // the real views will be wired too.
-        SetupPlaceholder.DataContext = setupViewModel;
+        SetupViewControl.DataContext = setupViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
         _routes = routesViewModel;
