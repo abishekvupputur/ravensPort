@@ -1,11 +1,11 @@
-﻿<UserControl x:Class="RavensPort.App.Views.McpFunnelView"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:helpers="clr-namespace:RavensPort.App.Helpers"
-             xmlns:sys="clr-namespace:System;assembly=mscorlib"
-             mc:Ignorable="d" d:DesignWidth="720"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             xmlns:behaviors="using:RavensPort.Behaviors"
+             xmlns:sys="using:System"
+             x:Class="RavensPort.Views.McpFunnelView"
+             x:DataType="vm:McpFunnelViewModel"
              Background="{StaticResource BgBrush}">
     <UserControl.Resources>
         <sys:String x:Key="FunnelHelpText">A funnel is one local MCP endpoint that pools several MCP servers and exposes only the tools you pick.
@@ -40,91 +40,89 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
         <!-- One selection list. Used three times per source — tools, resources, prompts — which
              are identical in shape, so they share a template rather than three near-copies. -->
-        <DataTemplate x:Key="SelectionGroupTemplate">
+        <DataTemplate x:Key="SelectionGroupTemplate" x:DataType="vm:McpSelectionGroupViewModel">
             <StackPanel Margin="0,0,0,6">
                 <Grid Margin="0,0,0,2">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- A plain Button rather than an Expander: Expander's default template
-                             is not covered by the dark theme and renders dark-on-dark. -->
+                        <!-- A plain Button rather than an Expander, as in WPF — though for a
+                             different reason now: there the Expander template was not covered by
+                             the dark theme and rendered dark-on-dark. Kept because the glyph and
+                             the row layout are the same either way. -->
                         <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
-                                Style="{StaticResource GhostButtonStyle}" Width="26" Padding="0"
-                                ToolTip="Show or hide this list"/>
-                        <TextBlock Text="{Binding Title}" Style="{StaticResource FieldLabelStyle}"
+                                Classes="ghost" Width="26" Padding="0"
+                                ToolTip.Tip="Show or hide this list"/>
+                        <TextBlock Text="{Binding Title}" Classes="label"
                                    VerticalAlignment="Center" Margin="6,0,0,0"/>
                         <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Margin="8,0,0,0"
                                    FontSize="10" Foreground="{StaticResource MutedTextBrush}"/>
                     </StackPanel>
                     <ComboBox ItemsSource="{Binding AllModes}" SelectedItem="{Binding Mode, Mode=TwoWay}"
                               HorizontalAlignment="Right" Width="110"
-                              ToolTip="{StaticResource SelectionModeHelpText}"/>
+                              ToolTip.Tip="{StaticResource SelectionModeHelpText}"/>
                 </Grid>
 
-                <TextBlock Text="{Binding EmptyHint}" Style="{StaticResource HintTextStyle}" Margin="32,0,0,0"
-                           Visibility="{Binding ShowEmptyHint, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBlock Text="{Binding EmptyHint}" Classes="hint" Margin="32,0,0,0"
+                           IsVisible="{Binding ShowEmptyHint}"/>
 
                 <!-- Hidden under "All", where the ticks mean nothing and showing them would
                      invite someone to set a selection that is silently ignored. -->
                 <ItemsControl ItemsSource="{Binding Items}" Margin="32,2,0,0"
-                              Visibility="{Binding ShowItems, Converter={StaticResource BoolToVisibilityConverter}}">
+                              IsVisible="{Binding ShowItems}">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate>
+                        <DataTemplate x:DataType="vm:McpSelectableItemViewModel">
                             <CheckBox Content="{Binding Name}"
-                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                       Margin="0,1"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Style="{StaticResource HintTextStyle}" Margin="32,2,0,0"
+                <TextBlock Classes="hint" Margin="32,2,0,0"
                            Text="Everything this source offers, now and later."
-                           Visibility="{Binding ShowAllHint, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                           IsVisible="{Binding ShowAllHint}"/>
             </StackPanel>
         </DataTemplate>
     </UserControl.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Grid RowDefinitions="*,Auto">
 
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                      helpers:SmoothScroll.Enable="True" Padding="0,0,4,0">
+                      Padding="0,0,4,0">
             <StackPanel Margin="16">
 
                 <Grid Margin="0,0,0,6">
-                    <TextBlock Text="MCP Funnel" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center"/>
-                    <Button Content="Refresh" HorizontalAlignment="Right" Width="90"
-                            Style="{StaticResource GhostButtonStyle}" Command="{Binding RefreshCommand}"
-                            ToolTip="Re-read sources, funnels, and routes from storage"/>
+                    <TextBlock Text="MCP Funnel" Classes="section" VerticalAlignment="Center"/>
+                    <Button Content="Refresh" HorizontalAlignment="Right" Width="90" Classes="ghost"
+                            Command="{Binding RefreshCommand}"
+                            ToolTip.Tip="Re-read sources, funnels, and routes from storage"/>
                 </Grid>
 
                 <CheckBox Content="Enable MCP funnel" IsChecked="{Binding IsEnabled}"
-                          ToolTip="{StaticResource FunnelHelpText}" Margin="0,0,0,4"/>
-                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,16"
+                          ToolTip.Tip="{StaticResource FunnelHelpText}" Margin="0,0,0,4"/>
+                <TextBlock Classes="hint" Margin="0,0,0,16"
                            Text="Off by default. A funnel lets one caller reach several upstreams — and their OAuth grants — through a single path, so it stays dark until you ask for it."/>
 
                 <!-- Funnels first: the endpoints are the point, sources are the ingredients. -->
-                <TextBlock Text="Funnels" Style="{StaticResource SectionHeaderStyle}"/>
-                <TextBlock Style="{StaticResource EmptyStateStyle}"
+                <TextBlock Text="Funnels" Classes="section"/>
+                <TextBlock Classes="empty"
                            Text="No funnels yet — add a source below, then create a funnel and pick what it exposes."
-                           Visibility="{Binding HasNoFunnels, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                           IsVisible="{Binding HasNoFunnels}"/>
 
-                <StackPanel Visibility="{Binding HasFunnels, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource HintTextStyle}"
+                <StackPanel IsVisible="{Binding HasFunnels}">
+                    <TextBlock Classes="hint"
                                Text="Select a funnel to choose which sources it pools and which of their tools it exposes. Click it again to collapse."/>
-                    <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,6"
+                    <TextBlock Classes="hint" Margin="0,0,0,6"
                                Text="Each funnel has its own proxy key — only that key opens it, and no route's key does. Send it as the X-Proxy-Key header; that header is the only place the key is read from, and a ?proxy_key= query parameter is ignored and stripped. Without it the endpoint answers 403."/>
                 </StackPanel>
 
                 <DataGrid ItemsSource="{Binding Funnels}" SelectedItem="{Binding SelectedFunnel}"
                           AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
-                          helpers:RowSelectionToggle.Enable="True"
-                          Visibility="{Binding HasFunnels, Converter={StaticResource BoolToVisibilityConverter}}">
+                          behaviors:RowSelectionToggle.Enable="True"
+                          IsVisible="{Binding HasFunnels}">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="260">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <!-- Read-only TextBox rather than a TextBlock so it can be
                                              selected and pasted into an agent's config. -->
@@ -139,29 +137,26 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTextColumn Header="POOLS" Binding="{Binding SourceSummary}" Width="110"/>
+                        <DataGridTemplateColumn Header="POOLS" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <TextBlock Text="{Binding SourceSummary}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
 
                         <!-- Status only; the key itself is in the editor below, where it can be
                              shown, copied, and re-issued. -->
                         <DataGridTemplateColumn Header="PROXY KEY" Width="150">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <StackPanel VerticalAlignment="Center" ToolTip="{StaticResource ProxyKeyHelpText}">
-                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Key.IsExpired}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
+                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   Classes.expired="{Binding Key.IsExpired}"/>
                                         <TextBlock Text="⚠ expired — this funnel answers 403" FontSize="10" TextWrapping="Wrap"
                                                    Foreground="{StaticResource ErrorBrush}"
-                                                   Visibility="{Binding Key.IsExpired, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                   IsVisible="{Binding Key.IsExpired}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -169,11 +164,11 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                         <DataGridTemplateColumn Width="70">
                             <DataGridTemplateColumn.Header>
-                                <TextBlock Text="ENABLED" ToolTip="Uncheck to stop serving this endpoint without deleting it."/>
+                                <TextBlock Text="ENABLED" ToolTip.Tip="Uncheck to stop serving this endpoint without deleting it."/>
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -181,9 +176,9 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                         <DataGridTemplateColumn Header="" Width="90">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Button Content="Delete" Margin="2" Style="{StaticResource GhostButtonStyle}"
-                                            Command="{Binding DataContext.DeleteFunnelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
+                                    <Button Content="Delete" Margin="2" Classes="ghost"
+                                            Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteFunnelCommand}"
                                             CommandParameter="{Binding}"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -192,11 +187,10 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                 </DataGrid>
 
                 <!-- What the selected funnel exposes. -->
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14"
-                        Visibility="{Binding HasSelectedFunnel, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasSelectedFunnel}">
                     <StackPanel>
-                        <TextBlock Text="{Binding SelectedFunnelTitle}" Style="{StaticResource SectionHeaderStyle}"/>
-                        <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
+                        <TextBlock Text="{Binding SelectedFunnelTitle}" Classes="section"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,10"
                                    Text="Changes apply to the agent's next call — no reconnect needed."/>
 
                         <!-- This funnel's own key. Nothing else opens the endpoint, so it belongs
@@ -204,16 +198,15 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <ContentControl Content="{Binding SelectedFunnel.Key}"
                                         ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
 
-                        <TextBlock Text="MCP client entry" Style="{StaticResource FieldLabelStyle}"
-                                   Margin="0,10,0,0"
-                                   ToolTip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
+                        <TextBlock Text="MCP client entry" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
                         <TextBox Text="{Binding SelectedFunnel.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
                                  AcceptsReturn="True" TextWrapping="NoWrap"
-                                 HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                  Background="Transparent" BorderThickness="0" Padding="0"
                                  Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
+                        <TextBlock Classes="hint" Margin="0,0,0,10"
                                    Text="Press Show above to reveal the key inside this snippet before copying it. A client that cannot set request headers cannot reach a funnel — the key is never read from the URL."/>
 
                         <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
@@ -221,13 +214,13 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                         <ItemsControl ItemsSource="{Binding FunnelSources}">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:McpFunnelSourceItemViewModel">
                                     <Border Background="{StaticResource PanelAltBrush}"
                                             BorderBrush="{StaticResource BorderSubtleBrush}"
                                             BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
                                         <StackPanel>
                                             <Grid>
-                                                <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
                                                           VerticalAlignment="Center" Margin="0,0,40,0">
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Name}"/>
@@ -242,15 +235,14 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                                 </CheckBox>
 
                                                 <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
-                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        Classes="ghost"
                                                         HorizontalAlignment="Right" VerticalAlignment="Top"
                                                         Width="30" Padding="0"
-                                                        ToolTip="Show or hide what this source exposes"
-                                                        Visibility="{Binding IsIncluded, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                        ToolTip.Tip="Show or hide what this source exposes"
+                                                        IsVisible="{Binding IsIncluded}"/>
                                             </Grid>
 
-                                            <StackPanel Margin="22,10,0,0"
-                                                        Visibility="{Binding ShowDetail, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <StackPanel Margin="22,10,0,0" IsVisible="{Binding ShowDetail}">
                                                 <ContentControl Content="{Binding Tools}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
                                                 <ContentControl Content="{Binding Resources}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
                                                 <ContentControl Content="{Binding Prompts}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
@@ -263,28 +255,28 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="Add funnel" Style="{StaticResource SectionHeaderStyle}"/>
+                        <TextBlock Text="Add funnel" Classes="section"/>
                         <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                             <StackPanel Margin="0,0,6,0">
-                                <TextBlock Text="Name" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Text="{Binding NewFunnelName, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="Name" Classes="label"/>
+                                <TextBox Text="{Binding NewFunnelName}"/>
                             </StackPanel>
                             <StackPanel Margin="6,0,0,0">
-                                <TextBlock Text="Endpoint slug (optional)" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Text="{Binding NewFunnelSlug, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Last part of the URL, e.g. /mcp/coding-agent. Derived from the name if left blank."/>
+                                <TextBlock Text="Endpoint slug (optional)" Classes="label"/>
+                                <TextBox Text="{Binding NewFunnelSlug}"
+                                         ToolTip.Tip="Last part of the URL, e.g. /mcp/coding-agent. Derived from the name if left blank."/>
                             </StackPanel>
                         </UniformGrid>
                         <StackPanel Margin="0,0,0,8" HorizontalAlignment="Left">
-                            <TextBlock Text="Proxy key validity" Style="{StaticResource FieldLabelStyle}"
-                                       ToolTip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                            <TextBlock Text="Proxy key validity" Classes="label"
+                                       ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
                             <ComboBox Width="180" HorizontalAlignment="Left"
                                       ItemsSource="{Binding KeyLifetimes}"
                                       SelectedItem="{Binding NewFunnelKeyLifetime, Mode=TwoWay}"
-                                      ToolTip="{StaticResource ProxyKeyExpiryHelpText}"/>
-                            <TextBlock Style="{StaticResource HintTextStyle}"
+                                      ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
+                            <TextBlock Classes="hint"
                                        Text="The funnel gets its own key on creation — copy it from the panel above after selecting the funnel. Changeable at any time."/>
                         </StackPanel>
                         <Button Content="Add funnel" HorizontalAlignment="Left" Width="110" Command="{Binding AddFunnelCommand}"/>
@@ -293,36 +285,34 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                 <!-- Sources. -->
                 <Grid Margin="0,4,0,6">
-                    <TextBlock Text="Sources" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center"/>
+                    <TextBlock Text="Sources" Classes="section" VerticalAlignment="Center"/>
                     <!-- The footer carries which source is being contacted, but the footer is at the
                          bottom of a long page and this button is in the middle of it. Saying so on
-                         the button itself is what tells someone who just clicked that it took. -->
-                    <Button HorizontalAlignment="Right" Width="100"
+                         the button itself is what tells someone who just clicked that it took.
+
+                         Two labels swapped by IsVisible, where WPF used a DataTrigger to set
+                         Content. Avalonia selectors cannot match on a binding, and a converter for
+                         one button would be more machinery than the two words it produces. -->
+                    <Button HorizontalAlignment="Right" Width="100" Classes="ghost"
                             Command="{Binding RefreshAllSourcesCommand}"
-                            ToolTip="Connect to every enabled source and re-read the tools it offers">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
-                                <Setter Property="Content" Value="Refresh all"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding RefreshAllSourcesCommand.IsRunning}" Value="True">
-                                        <Setter Property="Content" Value="Checking…"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
+                            ToolTip.Tip="Connect to every enabled source and re-read the tools it offers">
+                        <Panel>
+                            <TextBlock Text="Refresh all" IsVisible="{Binding !RefreshAllSourcesCommand.IsRunning}"/>
+                            <TextBlock Text="Checking…" IsVisible="{Binding RefreshAllSourcesCommand.IsRunning}"/>
+                        </Panel>
                     </Button>
                 </Grid>
 
-                <TextBlock Style="{StaticResource EmptyStateStyle}"
+                <TextBlock Classes="empty"
                            Text="No sources yet — add an MCP server below."
-                           Visibility="{Binding HasNoSources, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                           IsVisible="{Binding HasNoSources}"/>
 
                 <DataGrid ItemsSource="{Binding Sources}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,14"
-                          Visibility="{Binding HasSources, Converter={StaticResource BoolToVisibilityConverter}}">
+                          IsVisible="{Binding HasSources}">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="SOURCE" Width="*" MinWidth="200">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
                                         <TextBlock Text="{Binding Target}" FontSize="10" TextWrapping="Wrap"
@@ -330,36 +320,48 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                                    Foreground="{StaticResource MutedTextBrush}"/>
                                         <TextBlock Text="⚠ route missing — this source cannot be reached" FontSize="10"
                                                    Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
-                                                   Visibility="{Binding IsBroken, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                   IsVisible="{Binding IsBroken}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTextColumn Header="PREFIX" Binding="{Binding Alias}" Width="90"/>
-                        <DataGridTextColumn Header="KIND" Binding="{Binding KindLabel}" Width="140"/>
+                        <DataGridTemplateColumn Header="PREFIX" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <TextBlock Text="{Binding Alias}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="KIND" Width="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <TextBlock Text="{Binding KindLabel}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="STATUS" Width="*" MinWidth="150">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
                                     <!-- Trimmed rather than wrapped, and capped upstream by
                                          McpSourceCatalog.Summarize: a failure message can carry
                                          the upstream's whole response body, and a wrapping cell
                                          grew to the height of that page. The full text is on the
                                          tooltip. -->
                                     <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding StatusDetail}" VerticalAlignment="Center" FontSize="11"/>
+                                               ToolTip.Tip="{Binding StatusDetail}" VerticalAlignment="Center" FontSize="11"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="70">
                             <DataGridTemplateColumn.Header>
-                                <TextBlock Text="ENABLED" ToolTip="Uncheck to stop pooling this source in every funnel at once."/>
+                                <TextBlock Text="ENABLED" ToolTip.Tip="Uncheck to stop pooling this source in every funnel at once."/>
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -367,14 +369,14 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                         <DataGridTemplateColumn Header="" Width="160">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:McpSourceItemViewModel">
                                     <StackPanel Orientation="Horizontal">
-                                        <Button Content="Refresh" Margin="2" Style="{StaticResource GhostButtonStyle}"
-                                                Command="{Binding DataContext.RefreshSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        <Button Content="Refresh" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).RefreshSourceCommand}"
                                                 CommandParameter="{Binding}"
-                                                ToolTip="Connect and re-read the tools, resources, and prompts this server offers"/>
-                                        <Button Content="Delete" Margin="2" Style="{StaticResource GhostButtonStyle}"
-                                                Command="{Binding DataContext.DeleteSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                ToolTip.Tip="Connect and re-read the tools, resources, and prompts this server offers"/>
+                                        <Button Content="Delete" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteSourceCommand}"
                                                 CommandParameter="{Binding}"/>
                                     </StackPanel>
                                 </DataTemplate>
@@ -383,54 +385,55 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                     </DataGrid.Columns>
                 </DataGrid>
 
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="Add source" Style="{StaticResource SectionHeaderStyle}"/>
+                        <TextBlock Text="Add source" Classes="section"/>
                         <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                             <StackPanel Margin="0,0,6,0">
-                                <TextBlock Text="Name" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Text="{Binding NewSourceName, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="Name" Classes="label"/>
+                                <TextBox Text="{Binding NewSourceName}"/>
                             </StackPanel>
                             <StackPanel Margin="6,0,0,0">
-                                <TextBlock Text="Tool prefix (optional)" Style="{StaticResource FieldLabelStyle}"
-                                           ToolTip="{StaticResource AliasHelpText}"/>
-                                <TextBox Text="{Binding NewSourceAlias, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="{StaticResource AliasHelpText}"/>
+                                <TextBlock Text="Tool prefix (optional)" Classes="label"
+                                           ToolTip.Tip="{StaticResource AliasHelpText}"/>
+                                <TextBox Text="{Binding NewSourceAlias}"
+                                         ToolTip.Tip="{StaticResource AliasHelpText}"/>
                             </StackPanel>
                         </UniformGrid>
 
                         <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                             <StackPanel Margin="0,0,6,0">
-                                <TextBlock Text="Kind" Style="{StaticResource FieldLabelStyle}"
-                                           ToolTip="{StaticResource SourceKindHelpText}"/>
+                                <TextBlock Text="Kind" Classes="label"
+                                           ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
                                 <ComboBox ItemsSource="{Binding AllKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
-                                          ToolTip="{StaticResource SourceKindHelpText}"/>
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
                             </StackPanel>
                             <StackPanel Margin="6,0,0,0">
-                                <TextBlock Text="Transport" Style="{StaticResource FieldLabelStyle}"
-                                           ToolTip="{StaticResource TransportHelpText}"/>
+                                <TextBlock Text="Transport" Classes="label"
+                                           ToolTip.Tip="{StaticResource TransportHelpText}"/>
                                 <ComboBox ItemsSource="{Binding AllTransports}" SelectedItem="{Binding NewSourceTransport, Mode=TwoWay}"
-                                          ToolTip="{StaticResource TransportHelpText}"/>
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="{StaticResource TransportHelpText}"/>
                             </StackPanel>
                         </UniformGrid>
 
-                        <StackPanel Margin="0,0,0,8"
-                                    Visibility="{Binding IsRouteSource, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <TextBlock Text="Route" Style="{StaticResource FieldLabelStyle}"/>
-                            <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewSourceRoute}">
+                        <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsRouteSource}">
+                            <TextBlock Text="Route" Classes="label"/>
+                            <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewSourceRoute}"
+                                      HorizontalAlignment="Stretch">
                                 <ComboBox.ItemTemplate>
-                                    <DataTemplate>
+                                    <DataTemplate x:DataType="models:RouteMapping">
                                         <TextBlock Text="{Binding PathPrefix}"/>
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <TextBlock Style="{StaticResource HintTextStyle}"
+                            <TextBlock Classes="hint"
                                        Text="The route's OAuth token is attached automatically — that is the point of pooling an authenticated server here."/>
                         </StackPanel>
 
-                        <StackPanel Margin="0,0,0,8"
-                                    Visibility="{Binding IsBridgeSource, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <TextBlock Text="API bridge" Style="{StaticResource FieldLabelStyle}"/>
+                        <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsBridgeSource}">
+                            <TextBlock Text="API bridge" Classes="label"/>
                             <ComboBox ItemsSource="{Binding ApiBridges}" SelectedItem="{Binding NewSourceBridge}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate>
@@ -438,15 +441,14 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <TextBlock Style="{StaticResource HintTextStyle}"
+                            <TextBlock Classes="hint"
                                        Text="Both switches have to be on for this to work: the funnel above, and API bridges on the API to MCP tab."/>
                         </StackPanel>
 
-                        <StackPanel Margin="0,0,0,8"
-                                    Visibility="{Binding IsUrlSource, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <TextBlock Text="Server URL" Style="{StaticResource FieldLabelStyle}"/>
-                            <TextBox Text="{Binding NewSourceUrl, UpdateSourceTrigger=PropertyChanged}"/>
-                            <TextBlock Style="{StaticResource HintTextStyle}"
+                        <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsUrlSource}">
+                            <TextBlock Text="Server URL" Classes="label"/>
+                            <TextBox Text="{Binding NewSourceUrl}"/>
+                            <TextBlock Classes="hint"
                                        Text="For servers needing no credential. https required, except on localhost."/>
                         </StackPanel>
 
@@ -458,8 +460,8 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
         </ScrollViewer>
 
         <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
-        <Border Grid.Row="1" Style="{StaticResource FooterBarStyle}">
-            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource FooterTextStyle}"/>
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
         </Border>
     </Grid>
 </UserControl>

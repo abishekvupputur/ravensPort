@@ -27,6 +27,11 @@
     <SolidColorBrush x:Key="AccentSelectedBgBrush" Color="#3A2D12"/>
     <SolidColorBrush x:Key="SuccessBrush" Color="#3FB950"/>
     <SolidColorBrush x:Key="ErrorBrush" Color="#E5534B"/>
+
+    <!-- For things the user should know but that are not failures: a known upstream defect, the
+         standing risk of a bearer credential. Distinct from ErrorBrush so a permanent advisory does
+         not read as something having just gone wrong. -->
+    <SolidColorBrush x:Key="WarningBrush" Color="#D29922"/>
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#3E3E3E"/>
     <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#4E4E4E"/>
 

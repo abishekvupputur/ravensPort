@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace RavensPort.App.Tray;
+namespace RavensPort.Tray;
 
 /// <summary>
 /// Custom WinForms ToolStrip renderer that paints the tray context menu in the app's
