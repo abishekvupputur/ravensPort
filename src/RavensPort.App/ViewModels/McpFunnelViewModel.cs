@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
@@ -24,6 +25,9 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     private readonly McpCatalogCache _catalogCache;
     private readonly ActivityLog _activityLog;
     private readonly KestrelMtlsState _mtlsState;
+
+    /// <summary>Handed to every row's key editor, which is the only thing here that copies.</summary>
+    private readonly IClipboardService _clipboard;
 
     public ObservableCollection<McpSourceItemViewModel> Sources { get; } = [];
     public ObservableCollection<McpFunnelItemViewModel> Funnels { get; } = [];
@@ -78,13 +82,15 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         McpSourceConnectionPool connectionPool,
         McpCatalogCache catalogCache,
         ActivityLog activityLog,
-        KestrelMtlsState mtlsState)
+        KestrelMtlsState mtlsState,
+        IClipboardService clipboard)
     {
         _configStoreCache = configStoreCache;
         _connectionPool = connectionPool;
         _catalogCache = catalogCache;
         _activityLog = activityLog;
         _mtlsState = mtlsState;
+        _clipboard = clipboard;
 
         Sources.CollectionChanged += (_, _) =>
         {
@@ -149,7 +155,8 @@ public sealed partial class McpFunnelViewModel : ObservableObject
                 funnel.Sources.Count,
                 OnFunnelEdited,
                 message => StatusMessage = message,
-                isMtls));
+                isMtls,
+                _clipboard));
         }
 
         NewSourceRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);

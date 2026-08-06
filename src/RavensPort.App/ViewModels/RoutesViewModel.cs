@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
@@ -13,6 +14,9 @@ public sealed partial class RoutesViewModel : ObservableObject
     private readonly ConfigStoreCache _configStoreCache;
     private readonly ProxyConfigChangeNotifier _proxyConfigChangeNotifier;
     private readonly KestrelMtlsState _mtlsState;
+
+    /// <summary>Handed to every row's key editor, which is the only thing here that copies.</summary>
+    private readonly IClipboardService _clipboard;
 
     public ObservableCollection<UpstreamRecord> Upstreams { get; } = [];
     public ObservableCollection<RouteItemViewModel> Routes { get; } = [];
@@ -133,11 +137,13 @@ public sealed partial class RoutesViewModel : ObservableObject
     public RoutesViewModel(
         ConfigStoreCache configStoreCache,
         ProxyConfigChangeNotifier proxyConfigChangeNotifier,
-        KestrelMtlsState mtlsState)
+        KestrelMtlsState mtlsState,
+        IClipboardService clipboard)
     {
         _configStoreCache = configStoreCache;
         _proxyConfigChangeNotifier = proxyConfigChangeNotifier;
         _mtlsState = mtlsState;
+        _clipboard = clipboard;
 
         // Empty-state visibility is derived from these collections, so re-evaluate on change.
         Upstreams.CollectionChanged += (_, _) =>
@@ -191,6 +197,7 @@ public sealed partial class RoutesViewModel : ObservableObject
                 credentials,
                 store.Settings.ListenPort,
                 isMtls,
+                _clipboard,
                 OnRouteEdited,
                 message => StatusMessage = message));
         }

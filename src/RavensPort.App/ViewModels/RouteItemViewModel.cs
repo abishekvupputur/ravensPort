@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Models;
 
 namespace RavensPort.App.ViewModels;
@@ -33,6 +34,7 @@ public sealed partial class RouteItemViewModel : ObservableObject
         IReadOnlyList<CredentialRecord> availableCredentials,
         int listenPort,
         bool isMtls,
+        IClipboardService clipboard,
         Action<RouteItemViewModel, string>? onChanged = null,
         Action<string>? onInvalid = null)
     {
@@ -47,7 +49,8 @@ public sealed partial class RouteItemViewModel : ObservableObject
             route.Key,
             $"route '{route.PathPrefix}'",
             message => _onChanged?.Invoke(this, message),
-            message => _onInvalid?.Invoke(message));
+            message => _onInvalid?.Invoke(message),
+            clipboard);
 
         UpstreamName = upstream?.Name ?? Missing;
         UpstreamBaseUrl = upstream?.BaseUrl ?? Missing;

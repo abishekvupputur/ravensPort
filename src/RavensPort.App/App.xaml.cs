@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using RavensPort.Core.Diagnostics;
@@ -6,6 +7,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using RavensPort.App.Platform;
+using RavensPort.App.Services;
 using RavensPort.App.Tray;
 using RavensPort.App.ViewModels;
 using RavensPort.App.Views;
@@ -165,6 +168,21 @@ public partial class App : Application
         });
 
         builder.Services.AddRavensPort();
+
+        // The view models talk to the desktop only through these. Registered before them so the
+        // dependency reads in the direction it actually runs: WPF here, an Avalonia set later,
+        // and nothing above this line naming either.
+        //
+        // The two that marshal work take the dispatcher as an instance captured right here, on the
+        // UI thread. Reading it inside a container-built instance instead would make correctness
+        // depend on which thread happened to resolve it first — and get that wrong silently, since
+        // Dispatcher.CurrentDispatcher answers on any thread by making a new one nobody pumps.
+        var uiDispatcher = Dispatcher.CurrentDispatcher;
+        builder.Services.AddSingleton<IUiDispatcher>(new WpfUiDispatcher(uiDispatcher));
+        builder.Services.AddSingleton<IUiTimerFactory>(new WpfUiTimerFactory(uiDispatcher));
+        builder.Services.AddSingleton<IClipboardService, WpfClipboardService>();
+        builder.Services.AddSingleton<IPlatformLauncher, WindowsPlatformLauncher>();
+        builder.Services.AddSingleton<IHelloConsentPrompt, WpfHelloConsentPrompt>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();

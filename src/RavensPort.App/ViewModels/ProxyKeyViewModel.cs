@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Models;
 
 namespace RavensPort.App.ViewModels;
@@ -29,15 +30,23 @@ public sealed partial class ProxyKeyViewModel : ObservableObject
     /// </summary>
     private readonly Action<string> _onStatus;
 
+    private readonly IClipboardService _clipboard;
+
     /// <summary>Set while the picker is being populated, so loading it is not read as an edit.</summary>
     private bool _loading;
 
-    public ProxyKeyViewModel(ProxyKey key, string owner, Action<string> onChanged, Action<string> onStatus)
+    public ProxyKeyViewModel(
+        ProxyKey key,
+        string owner,
+        Action<string> onChanged,
+        Action<string> onStatus,
+        IClipboardService clipboard)
     {
         Key = key;
         _owner = owner;
         _onChanged = onChanged;
         _onStatus = onStatus;
+        _clipboard = clipboard;
 
         _loading = true;
 
@@ -100,11 +109,11 @@ public sealed partial class ProxyKeyViewModel : ObservableObject
     private void ToggleVisibility() => IsVisible = !IsVisible;
 
     [RelayCommand]
-    private void Copy()
+    private async Task CopyAsync()
     {
         try
         {
-            System.Windows.Clipboard.SetText(Key.Value);
+            await _clipboard.SetTextAsync(Key.Value);
             _onStatus($"Proxy key for {_owner} copied. Send it as the 'X-Proxy-Key' header, "
                       + "or as '?proxy_key=' for clients that cannot set headers.");
         }

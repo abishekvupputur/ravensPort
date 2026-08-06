@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
@@ -16,7 +16,12 @@ public sealed partial class CredentialsViewModel : ObservableObject
     private readonly TokenRefreshService _tokenRefreshService;
     private readonly CredentialTestService _credentialTestService;
     private readonly ActivityLog _activityLog;
-    private readonly DispatcherTimer _statusTimer;
+
+    /// <summary>
+    /// Held only so the timer is not collected out from under the view model. Never stopped — the
+    /// tab lives as long as the process does.
+    /// </summary>
+    private readonly IDisposable _statusTimer;
 
     private CredentialItemViewModel? _editingItem;
 
@@ -127,7 +132,8 @@ public sealed partial class CredentialsViewModel : ObservableObject
         OAuth2Service oAuth2Service,
         TokenRefreshService tokenRefreshService,
         CredentialTestService credentialTestService,
-        ActivityLog activityLog)
+        ActivityLog activityLog,
+        IUiTimerFactory uiTimerFactory)
     {
         _configStoreCache = configStoreCache;
         _oAuth2Service = oAuth2Service;
@@ -146,9 +152,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
             OnPropertyChanged(nameof(HasNoCredentials));
         };
 
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        _statusTimer.Tick += (_, _) => RefreshStatuses();
-        _statusTimer.Start();
+        _statusTimer = uiTimerFactory.StartRepeating(TimeSpan.FromSeconds(15), RefreshStatuses);
     }
 
     /// <summary>

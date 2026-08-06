@@ -1,9 +1,8 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
@@ -25,7 +24,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly OnePasswordSession _onePasswordSession;
     private readonly ProxyConfigChangeNotifier _proxyConfigChangeNotifier;
     private readonly McpSourceConnectionPool _mcpSourceConnectionPool;
-    private readonly DispatcherTimer _logTimer;
+    private readonly IPlatformLauncher _launcher;
+
+    /// <summary>
+    /// Held only so the timer is not collected out from under the view model. Never stopped — the
+    /// tab lives as long as the process does.
+    /// </summary>
+    private readonly IDisposable _logTimer;
 
     [ObservableProperty] private int _listenPort;
     [ObservableProperty] private bool _mtlsEnabled;
@@ -148,7 +153,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         ProtonPassAuthenticator protonAuthenticator,
         ProxyConfigChangeNotifier proxyConfigChangeNotifier,
         McpSourceConnectionPool mcpSourceConnectionPool,
-        OnePasswordSession onePasswordSession)
+        OnePasswordSession onePasswordSession,
+        IUiTimerFactory uiTimerFactory,
+        IPlatformLauncher launcher)
     {
         _onePasswordSession = onePasswordSession;
         _protonAuthenticator = protonAuthenticator;
@@ -159,6 +166,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _integrity = integrity;
         _proxyConfigChangeNotifier = proxyConfigChangeNotifier;
         _mcpSourceConnectionPool = mcpSourceConnectionPool;
+        _launcher = launcher;
 
         var settings = _configStoreCache.Current.Settings;
         _listenPort = settings.ListenPort;
@@ -172,15 +180,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         RefreshCertificateExpiry();
 
         // One timer for both: the sync queue and the gate both change state from background
-        // threads, and polling them on the dispatcher's own tick avoids marshalling a stream of
+        // threads, and polling them on the UI thread's own tick avoids marshalling a stream of
         // events into a tab that is usually not even visible.
-        _logTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _logTimer.Tick += (_, _) =>
+        _logTimer = uiTimerFactory.StartRepeating(TimeSpan.FromSeconds(2), () =>
         {
             RefreshActivity();
             RefreshVaultStatus();
-        };
-        _logTimer.Start();
+        });
     }
 
     /// <summary>Raised after the user disconnects, so the shell can go back to the setup page.</summary>
@@ -1116,29 +1122,29 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenErrorLog()
+    private async Task OpenErrorLogAsync()
     {
         if (!File.Exists(_activityLog.ErrorLogPath))
         {
             StatusMessage = "No error log yet — nothing has failed.";
             return;
         }
-        OpenInShell(_activityLog.ErrorLogPath);
+        await OpenInShellAsync(_activityLog.ErrorLogPath);
     }
 
     [RelayCommand]
-    private void OpenActivityLog()
+    private async Task OpenActivityLogAsync()
     {
         if (!File.Exists(_activityLog.CurrentLogPath))
         {
             StatusMessage = "No activity log file yet.";
             return;
         }
-        OpenInShell(_activityLog.CurrentLogPath);
+        await OpenInShellAsync(_activityLog.CurrentLogPath);
     }
 
     [RelayCommand]
-    private void OpenLogFolder() => OpenInShell(_activityLog.LogDirectory);
+    private Task OpenLogFolderAsync() => OpenInShellAsync(_activityLog.LogDirectory);
 
     [RelayCommand]
     private void PruneLogs()
@@ -1149,11 +1155,11 @@ public sealed partial class SettingsViewModel : ObservableObject
             : $"Pruned {deleted} log file(s). The current activity log was kept.";
     }
 
-    private void OpenInShell(string path)
+    private async Task OpenInShellAsync(string path)
     {
         try
         {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            await _launcher.OpenPathAsync(path);
         }
         catch (Exception ex)
         {

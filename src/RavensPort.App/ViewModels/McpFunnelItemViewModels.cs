@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
@@ -71,7 +72,8 @@ public sealed partial class McpFunnelItemViewModel : ObservableObject
         int sourceCount,
         Action<McpFunnelItemViewModel, string> onChanged,
         Action<string> onStatus,
-        bool isMtls)
+        bool isMtls,
+        IClipboardService clipboard)
     {
         Funnel = funnel;
         SourceCount = sourceCount;
@@ -86,7 +88,8 @@ public sealed partial class McpFunnelItemViewModel : ObservableObject
             funnel.Key,
             $"funnel '{funnel.Name}'",
             message => _onChanged(this, message),
-            onStatus);
+            onStatus,
+            clipboard);
 
         Key.PropertyChanged += (_, args) =>
         {
