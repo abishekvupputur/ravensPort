@@ -1,11 +1,26 @@
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RavensPort.Core.Models;
-using Application = System.Windows.Application;
-using Brush = System.Windows.Media.Brush;
-using Brushes = System.Windows.Media.Brushes;
 
 namespace RavensPort.App.ViewModels;
+
+/// <summary>
+/// How a credential's status reads at a glance, as a fact rather than as a colour.
+///
+/// The view model used to hand the view a ready-made brush, which meant it had to reach into the
+/// application's resources to find one — a view model asking a UI framework for a colour. This says
+/// what is true and leaves the palette where the palette lives.
+/// </summary>
+public enum CredentialStatusKind
+{
+    /// <summary>Nothing is wrong, and nothing has been done yet — never connected.</summary>
+    Idle,
+
+    /// <summary>Usable right now: a live token, or a stored API key.</summary>
+    Healthy,
+
+    /// <summary>Needs the user: expired, revoked, or never stored.</summary>
+    Broken,
+}
 
 /// <summary>Thin bindable wrapper around a CredentialRecord — call Refresh() to re-pull display text after the record changes.</summary>
 public sealed partial class CredentialItemViewModel(CredentialRecord record) : ObservableObject
@@ -17,15 +32,6 @@ public sealed partial class CredentialItemViewModel(CredentialRecord record) : O
     public string ScopesDisplay => record.Kind == CredentialKind.ApiKey
         ? record.ToDefaultInjection().Describe()
         : string.Join(", ", record.Scopes);
-
-    /// <summary>
-    /// Resource keys, not colours. The brush each one names is defined per theme, so the status
-    /// line follows the app's palette instead of pinning a colour that only reads on one of them.
-    /// </summary>
-    private const string ErrorBrush = "ErrorBrush";
-
-    /// <inheritdoc cref="ErrorBrush"/>
-    private const string SuccessBrush = "SuccessBrush";
 
     public string KindDisplay => CredentialKindInfo.ShortLabel(record.Kind);
 
@@ -54,39 +60,41 @@ public sealed partial class CredentialItemViewModel(CredentialRecord record) : O
     public bool CanTest => !string.IsNullOrWhiteSpace(record.TestEndpoint);
 
     [ObservableProperty] private string _statusDisplay = "Not connected";
-    [ObservableProperty] private Brush _statusBrush = Brushes.Gray;
+    [ObservableProperty] private CredentialStatusKind _statusKind = CredentialStatusKind.Idle;
     [ObservableProperty] private bool _isConnected;
 
     public CredentialItemViewModel Refresh()
     {
-        (StatusDisplay, var brushKey, IsConnected) = record switch
+        (StatusDisplay, StatusKind, IsConnected) = record switch
         {
             // An API key does not expire and is never "connected" in the OAuth sense; it is
             // either stored or it is not. Reporting it through the token states would have shown
             // every API key as permanently "Not connected".
             { Kind: CredentialKind.ApiKey } c => string.IsNullOrEmpty(c.ApiKey)
-                ? ("No API key stored", ErrorBrush, false)
-                : ("API key stored", SuccessBrush, true),
+                ? ("No API key stored", CredentialStatusKind.Broken, false)
+                : ("API key stored", CredentialStatusKind.Healthy, true),
 
             // For an app login a failure is about the stored secret or the settings, never about
             // a grant needing to be re-authorized in a browser.
-            { NeedsReconnect: true } c => (c.IsSelfIssuing ? "Token request failed" : "Needs reconnect", ErrorBrush, false),
+            { NeedsReconnect: true } c => (c.IsSelfIssuing ? "Token request failed" : "Needs reconnect", CredentialStatusKind.Broken, false),
 
             // Nor is a missing token a problem for one: it has everything it needs and simply has
             // not been asked yet. Saying "Not connected" made a working credential look broken.
-            { Token: null, IsSelfIssuing: true, HasSecret: true } => ("Ready · token on first use", SuccessBrush, true),
-            { Token: null, IsSelfIssuing: true } => ("Not configured", ErrorBrush, false),
-            { Token: null } => ("Not connected", "MutedTextBrush", false),
+            // One arm per answer rather than a ternary inside a ternary (S3358): the three cases
+            // are unrelated, and nesting them read as though "not configured" were a kind of
+            // "ready".
+            { Token: null, IsSelfIssuing: true, HasSecret: true } => ("Ready · token on first use", CredentialStatusKind.Healthy, true),
+            { Token: null, IsSelfIssuing: true } => ("Not configured", CredentialStatusKind.Broken, false),
+            { Token: null } => ("Not connected", CredentialStatusKind.Idle, false),
 
-            { Token: { } t } when t.IsExpiringWithin(TimeSpan.Zero) => ("Expired", ErrorBrush, false),
+            { Token: { } t } when t.IsExpiringWithin(TimeSpan.Zero) => ("Expired", CredentialStatusKind.Broken, false),
 
             // A token with no advertised expiry — a GitHub OAuth App token, say — is not an
-            // expired one, and must not be shown next to a time it does not have.
-            { Token: { ExpiresAtUtc: null } } => ("Connected · no expiry", SuccessBrush, true),
-            { Token: { } t } => ($"Connected · expires {t.ExpiresAtUtc.Value.ToLocalTime():t}", SuccessBrush, true),
+            // expired one, and must not be shown next to a time it does not have. The arm above
+            // already matched every null, so no null-forgiving operator is needed here (S8969).
+            { Token: { ExpiresAtUtc: null } } => ("Connected · no expiry", CredentialStatusKind.Healthy, true),
+            { Token: { } t } => ($"Connected · expires {t.ExpiresAtUtc.Value.ToLocalTime():t}", CredentialStatusKind.Healthy, true),
         };
-
-        StatusBrush = Application.Current?.TryFindResource(brushKey) as Brush ?? Brushes.Gray;
 
         // Name/ScopesDisplay read straight from the record rather than caching, so after an
         // edit we still need to raise change notifications for them explicitly.
