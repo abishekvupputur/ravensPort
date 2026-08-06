@@ -17,28 +17,7 @@
         converters that existed only to bridge that gap are gone.
     -->
     <Grid>
-        <!--
-            Stands in for the setup page, which is a view and lands with the others.
-
-            Not a bare placeholder: it carries the single-use start, because that is the one route
-            into the app that needs no password manager, and without it there is no way to reach
-            the tabs in this build at all — which would leave the half of the shell below untested
-            until the last view is ported. Deleted when SetupView arrives.
-        -->
-        <!-- IsVisible sits on the outer panel, which is still in the window's own data context.
-             The inner one retypes to SetupViewModel, and a compiled binding takes that literally —
-             putting both on one element asks SetupViewModel for the shell's IsGated. -->
-        <Panel IsVisible="{Binding IsGated}">
-            <StackPanel x:Name="SetupPlaceholder" x:DataType="vm:SetupViewModel"
-                        HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Width="420">
-                <TextBlock Text="Setup page — not ported yet" HorizontalAlignment="Center"
-                           Foreground="{StaticResource MutedTextBrush}"/>
-                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" TextAlignment="Center"
-                           Foreground="{StaticResource TextBrush}"/>
-                <Button Content="Start in single use" HorizontalAlignment="Center"
-                        Command="{Binding StartSingleUseCommand}"/>
-            </StackPanel>
-        </Panel>
+        <views:SetupView x:Name="SetupViewControl" IsVisible="{Binding IsGated}"/>
 
         <DockPanel IsVisible="{Binding IsNormal}">
             <!--

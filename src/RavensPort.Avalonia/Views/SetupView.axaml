@@ -1,0 +1,480 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             x:Class="RavensPort.Views.SetupView"
+             x:DataType="vm:SetupViewModel"
+             Background="{StaticResource BgBrush}">
+    <!--
+        Every reach out of a row's data context goes to $parent[UserControl] and casts to
+        SetupViewModel. The WPF original split between AncestorType=UserControl and
+        AncestorType=ItemsControl depending on the line, which worked only because both happened to
+        carry the same data context — and one of those templates is nested two ItemsControls deep,
+        where "nearest ItemsControl" is a fact about the markup rather than about what is wanted.
+        Naming the view is unambiguous at every depth.
+    -->
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+
+                <TextBlock Text="Set up your password manager" Classes="section"
+                           FontSize="18" Margin="0,0,0,6"/>
+                <TextBlock Classes="hint" Margin="0,0,0,16">
+                    <Run Text="RavensPort keeps everything — credentials, tokens, API keys, proxy keys, routes and MCP funnels — in a vault called 'RavensPort' in 1Password or Proton Pass. "/><Run Classes="emphasis" Text="Nothing is stored on this PC"/><Run Text=", so the proxy does not start until one of them is unlocked."/>
+                </TextBlock>
+
+                <!-- Says the thing the page's own behaviour now demonstrates. Startup only looks for
+                     the binaries; no manager is asked anything, so no manager prompts. -->
+                <TextBlock Classes="hint" Margin="0,0,0,16">
+                    <Run Classes="emphasis" Text="You will only be asked to unlock when you press Connect."/><Run Text=" RavensPort checks which password managers are installed and stops there — it does not read your vaults, or open a session, until you choose one."/>
+                </TextBlock>
+
+                <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush0}"
+                        BorderThickness="1" Padding="11,9" CornerRadius="6" Margin="0,0,0,14">
+                    <TextBlock Classes="hint" Foreground="{StaticResource TextBrush}" FontWeight="Bold">
+                        <Run Classes="emphasis" Text="Experimental feature:"/><Run Text=" Having a second vault per password manager and using two password managers at the same time, although possible, is still experimental and is under testing."/>
+                    </TextBlock>
+                </Border>
+
+                <!-- Standalone rather than part of the "which vault" card below. That card only
+                     appears when more than one manager has already been opened, and after a
+                     disconnect nothing has been opened at all — so the explanation for why the app
+                     is suddenly serving nothing had nowhere to appear. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding IsDisconnected}">
+                    <StackPanel>
+                        <TextBlock Text="Disconnected" Classes="section"/>
+                        <TextBlock Classes="hint">
+                            <Run Text="You disconnected, so "/><Run Classes="emphasis" Text="RavensPort is holding no configuration and is proxying nothing"/><Run Text=". Connect a password manager below to load one, or start again in single use. Nothing in your vault was deleted."/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Port conflict: shown instead of the manager cards, since the vault is fine and
+                     the only thing wrong is the port. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasPortConflict}">
+                    <StackPanel>
+                        <TextBlock Text="That port is already in use" Classes="section"
+                                   Foreground="{StaticResource ErrorBrush}"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Text="Close whatever else is listening on it, or pick another. The port is stored in your vault, so changing it here writes it there."/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox Width="100" Text="{Binding ListenPort}"/>
+                            <Button Content="Use this port" Margin="8,0,0,0"
+                                    IsEnabled="{Binding !IsBusy}"
+                                    Command="{Binding RetryPortCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Both managers qualify and neither can be shown to hold the configuration.
+                     Asked every launch: the choice is the one thing that cannot live in the vault,
+                     and nothing about this app is stored locally. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding NeedsAChoice}">
+                    <StackPanel>
+                        <TextBlock Text="Which vault should RavensPort open?" Classes="section"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   IsVisible="{Binding !IsDisconnected}"
+                                   Text="These are the RavensPort vaults found in your password managers. Each is a separate profile — its own credentials, routes and funnels — and RavensPort opens one at a time, because writing to two would leave them quietly disagreeing. You will be asked again next time you start it."/>
+                        <!-- After a disconnect the same buttons mean "connect again", and nothing
+                             is loaded until one is pressed. -->
+                        <TextBlock Classes="hint" Margin="0,0,0,8" IsVisible="{Binding IsDisconnected}">
+                            <Run Text="You disconnected from your password manager, so "/><Run Classes="emphasis" Text="RavensPort is holding no configuration and is proxying nothing"/><Run Text=". Choose a vault below to load it and start again."/>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding Managers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ManagerCardViewModel">
+                                    <!-- Listed per manager rather than in one pile: the same vault
+                                         name can exist in both, and "RavensPort" on its own
+                                         does not say which password manager it is in. -->
+                                    <StackPanel Margin="0,0,0,10" IsVisible="{Binding IsReady}">
+                                        <TextBlock Text="{Binding Name}" Classes="hint"
+                                                   FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                        <ItemsControl ItemsSource="{Binding VaultButtons}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:VaultChoiceViewModel">
+                                                    <!-- Disabled while a vault is being read: that
+                                                         takes seconds, and a page whose buttons
+                                                         still look pressable reads as one where
+                                                         the press did nothing. -->
+                                                    <Button Content="{Binding Name}" Margin="0,0,8,6" MinWidth="130"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UseNamedVaultCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- Ready, but with nothing named RavensPort to offer —
+                                             a vault adopted under another name. Choosing the
+                                             manager opens whichever vault it resolved, so this
+                                             state is never a dead end. -->
+                                        <Button HorizontalAlignment="Left" MinWidth="130"
+                                                IsVisible="{Binding !HasVaults}"
+                                                IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ChooseCommand}"
+                                                CommandParameter="{Binding}">
+                                            <!-- Avalonia has no ContentStringFormat, so the format
+                                                 moves onto the binding of a child. -->
+                                            <TextBlock Text="{Binding Name, StringFormat='Use {0}'}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <ItemsControl ItemsSource="{Binding Managers}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ManagerCardViewModel">
+                            <Border Classes="card" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding StateLabel}" DockPanel.Dock="Right"
+                                                   Classes="hint" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Name}" Classes="section" Margin="0"/>
+                                    </DockPanel>
+
+                                    <TextBlock Text="{Binding DetectedAt}" Classes="hint" Margin="0,0,0,6"/>
+
+                                    <!-- The CLI's own words. It distinguishes locked from signed out
+                                         from integration-disabled far better than this app can. -->
+                                    <TextBlock Text="{Binding Detail}" Classes="hint"
+                                               Foreground="{StaticResource ErrorBrush}" Margin="0,0,0,6"
+                                               IsVisible="{Binding HasDetail}"/>
+
+                                    <!-- 1Password only, and in every state: the desktop app has to
+                                         stay running, and the way back from a restart has an order
+                                         to it that nothing else on screen would reveal. -->
+                                    <TextBlock Text="{Binding DesktopAppRequirement}" Classes="hint"
+                                               Margin="0,0,0,8" IsVisible="{Binding HasDesktopAppRequirement}"/>
+
+                                    <!-- The button that owns the prompt. Nothing on the startup path
+                                         asks this manager anything, so this is where the unlock,
+                                         the Hello gesture and the desktop-app approval happen —
+                                         once, for the manager the user actually meant. -->
+                                    <StackPanel IsVisible="{Binding ShowConnect}">
+                                        <TextBlock Text="{Binding ConnectPrompt}" Classes="hint" Margin="0,0,0,8"/>
+
+                                        <!-- 1Password: the account name and the button belong on one
+                                             row, because neither is any use without the other. The
+                                             SDK opens its connection *to a named account*, so
+                                             Connect with an empty box could only fail — and the
+                                             box on its own does nothing until Connect is pressed. -->
+                                        <StackPanel IsVisible="{Binding IsOnePassword}">
+                                            <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                       Text="Your 1Password account name — the exact name at the top of the 1Password desktop app sidebar, such as 'Personal' or 'Our Family'."/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBox Width="230" VerticalAlignment="Center"
+                                                         Text="{Binding OnePasswordAccountName}"/>
+                                                <Button Content="{Binding ConnectLabel}" Margin="8,0,0,0" MinWidth="170"
+                                                        IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                        Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Proton Pass has no equivalent field: its session is
+                                             RavensPort's own, so there is nothing to name. -->
+                                        <Button Content="{Binding ConnectLabel}" HorizontalAlignment="Left" MinWidth="170"
+                                                IsVisible="{Binding !IsOnePassword}"
+                                                IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+
+                                    <StackPanel IsVisible="{Binding ShowInstall}">
+                                        <TextBlock Text="Install it, then choose Check again."
+                                                   Classes="hint" Margin="0,0,0,6"/>
+                                        <TextBox Text="{Binding InstallCommand, Mode=OneWay}" IsReadOnly="True"
+                                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                 Margin="0,0,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="Open download page" Classes="ghost"
+                                                    Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).OpenDownloadPageCommand}"
+                                                    CommandParameter="{Binding}"/>
+
+                                            <!-- Proton Pass only. pass-cli is open source, so the
+                                                 app may fetch it; 1Password's licence does not
+                                                 allow RavensPort to distribute op. -->
+                                            <Button Content="Download it for me" Margin="8,0,0,0"
+                                                    IsVisible="{Binding ShowInAppInstall}"
+                                                    IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                    Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).InstallProtonCliCommand}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- After a connect that did not work. The box is here as well as
+                                         beside the Connect button above because a wrong account
+                                         name is the usual reason, and the retry has to be next to
+                                         the correction — otherwise fixing it means finding "Check
+                                         again" at the bottom of the page first. -->
+                                    <StackPanel IsVisible="{Binding ShowOnePasswordSettings}">
+                                        <TextBlock Text="Set your 1Password Account Name:" Classes="hint" Margin="0,0,0,6"/>
+                                        <TextBlock Text="Enter the exact account name shown at the top of your 1Password desktop app sidebar (e.g. 'Our Family' or 'Personal')." Classes="hint" Margin="0,0,0,8"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                            <TextBox Width="230" VerticalAlignment="Center"
+                                                     Text="{Binding OnePasswordAccountName}"/>
+                                            <Button Content="{Binding ConnectLabel}" Margin="8,0,0,0" MinWidth="170"
+                                                    IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                    Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).ConnectCommand}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <StackPanel IsVisible="{Binding ShowSignIn}">
+                                        <!-- 1Password's written steps. For Proton Pass the steps
+                                             are the controls below, so this carries only the note
+                                             they cannot state for themselves — and it comes after
+                                             them, since it is background rather than instruction. -->
+                                        <TextBlock Text="{Binding SignInSteps}" Classes="hint" Margin="0,0,0,6"
+                                                   IsVisible="{Binding !SupportsInAppSignIn}"/>
+                                        <TextBlock Text="{Binding TokenCaveat}" Classes="hint"
+                                                   IsVisible="{Binding HasTokenCaveat}"/>
+
+                                        <!-- Proton Pass: RavensPort holds its own pass-cli session,
+                                             encrypted with a key the user keeps. So the sign-in
+                                             happens here rather than in a terminal, and a
+                                             pass-cli logout typed elsewhere cannot end it. -->
+                                        <StackPanel IsVisible="{Binding ShowInAppSignIn}">
+
+                                            <!-- Returning: a session is on disk and only needs its
+                                                 key. Generate is deliberately not offered here —
+                                                 a new key makes that session unopenable, and
+                                                 offering both asked the user to know which of two
+                                                 situations they were in. -->
+                                            <StackPanel IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).NeedsSessionKey}">
+                                                <!-- Hello first when there is a key behind it. The
+                                                     gesture is bound to the decryption, not merely
+                                                     checked before it — see HelloKeyProtector. -->
+                                                <StackPanel Margin="0,0,0,10"
+                                                            IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CanUnlockWithHello}">
+                                                    <TextBlock Classes="hint" Margin="0,0,0,6">
+                                                        <Run Classes="emphasis" Text="Unlock with Windows Hello."/><Run Text=" Your session key is held in Windows Credential Manager, encrypted so that only a Hello gesture on this PC can decrypt it. RavensPort cannot read it without you, and it is never shown to you either."/>
+                                                    </TextBlock>
+                                                    <Button Content="Unlock with Windows Hello" HorizontalAlignment="Left"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UnlockWithHelloCommand}"/>
+                                                </StackPanel>
+                                                <!-- The way out has to be on this page. Sign out is
+                                                     on the Settings tab, which needs an open vault
+                                                     to reach — so telling a locked-out user to go
+                                                     there sent them to the far side of the door
+                                                     they could not open. -->
+                                                <StackPanel IsVisible="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsConfirmingDiscard}">
+                                                    <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                               Text="Lost the key? Nothing is gone — everything RavensPort stores is in Proton Pass. Throw this session away and sign in again for a new key."/>
+                                                    <Button Content="Discard this session" HorizontalAlignment="Left"
+                                                            Classes="ghost"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).DiscardSessionCommand}"/>
+                                                </StackPanel>
+
+                                                <StackPanel IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsConfirmingDiscard}">
+                                                    <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                               Foreground="{StaticResource ErrorBrush}"
+                                                               Text="This deletes RavensPort's locked session from this PC. Your vault is untouched. Because the key is gone, RavensPort cannot tell Proton to end the session — it stays in your Proton account's session list until it expires, and you can revoke it there if you want it gone sooner."/>
+                                                    <WrapPanel>
+                                                        <Button Content="Discard this session" Margin="0,0,8,0"
+                                                                Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).DiscardSessionCommand}"/>
+                                                        <Button Content="Cancel" Classes="ghost"
+                                                                Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CancelDiscardCommand}"/>
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <!-- First time: nothing to unlock, sign in through browser. -->
+                                            <StackPanel IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsFirstSignIn}">
+                                                <TextBlock Classes="hint" Margin="0,0,0,2">
+                                                    <Run Classes="emphasis" Text="First sign-in."/>
+                                                </TextBlock>
+                                                <TextBlock Classes="hint" Margin="8,0,0,8"
+                                                           Text="Sign in through your browser. RavensPort will show you the link."/>
+
+                                                <!-- Said before the gesture is asked for, not after:
+                                                     it is what the Hello prompt about to appear is
+                                                     for, and a prompt with no stated reason is one
+                                                     people learn to click through. -->
+                                                <TextBlock Classes="hint" Margin="0,0,0,8"
+                                                           IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsHelloAvailable}">
+                                                    <Run Classes="emphasis" Text="Windows Hello will ask before the sign-in starts."/><Run Text=" RavensPort generates a session key, encrypts it so that only a Hello gesture on this PC can decrypt it, and keeps it in Windows Credential Manager. You never see the key, and after a restart a gesture is all it takes to reopen the session. Cancel that prompt and nothing is created."/>
+                                                </TextBlock>
+
+                                                <!-- Says what the session key is NOT, first. Every wrong
+                                                     guess about it is alarming: that it is a Proton
+                                                     password, that Proton receives it, or that
+                                                     RavensPort is keeping the user's secrets on
+                                                     this PC and locking them with it. -->
+                                                <TextBlock Classes="hint" Margin="0,0,0,8">
+                                                    <Run Classes="emphasis" Text="RavensPort stores none of your data on this PC."/><Run Text=" Every credential, route, funnel and key lives in your Proton Pass vault and nowhere else. The one thing kept here is the Proton Pass sign-in session, and the key that encrypts it never leaves Windows Credential Manager unencrypted. It is not your Proton password, and Proton never receives it."/>
+                                                </TextBlock>
+
+                                                <!-- No Hello, no in-app sign-in. Stated rather than
+                                                     worked around: the key is never displayed, so
+                                                     Hello is the only thing that could bring it
+                                                     back, and a sign-in without it would produce a
+                                                     session that dies unopenable at the next
+                                                     restart with nothing said about it. -->
+                                                <TextBlock Classes="hint" Margin="0,0,0,8"
+                                                           Foreground="{StaticResource ErrorBrush}"
+                                                           IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).NeedsHelloSetup}"
+                                                           Text="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).HelloRequiredMessage, Mode=OneTime}"/>
+                                            </StackPanel>
+
+                                            <StackPanel Orientation="Horizontal"
+                                                        IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CanShowSignInButton}">
+                                                <Button Content="Sign in to Proton Pass"
+                                                        IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsSigningIn}"
+                                                        Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).SignInProtonCommand}"/>
+                                                <Button Content="Cancel" Margin="8,0,0,0" Classes="ghost"
+                                                        IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsSigningIn}"
+                                                        Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CancelSignInCommand}"/>
+                                            </StackPanel>
+
+                                            <!-- Shown, never launched: the payload in this URL is a
+                                                 live single-use handle, and firing it at whatever
+                                                 browser is default may well be a profile signed in
+                                                 as someone else. -->
+                                            <StackPanel Margin="0,10,0,0"
+                                                        IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).HasSignInUrl}">
+                                                <TextBlock Classes="hint" Margin="0,0,0,4"
+                                                           Text="Open this in your browser to finish signing in. It works once, so do not share it."/>
+                                                <TextBox Text="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).SignInUrl, Mode=OneWay}"
+                                                         IsReadOnly="True" TextWrapping="Wrap"
+                                                         FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                         Margin="0,0,0,6"/>
+                                                <Button Content="Copy link" HorizontalAlignment="Left" Classes="ghost"
+                                                        Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CopyToClipboardCommand}"
+                                                        CommandParameter="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).SignInUrl}"/>
+                                            </StackPanel>
+
+                                            <!-- Last, and quietly: this answers "but I already
+                                                 signed in with pass-cli", which is a question the
+                                                 user only has after reading everything above. -->
+                                            <TextBlock Text="{Binding SignInSteps}" Margin="0,12,0,0" Classes="hint"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Sign-out lives on the Settings tab, not here. This page is
+                                         only shown when there is no usable vault, so a button that
+                                         needed a working session would never be reachable on it. -->
+
+                                    <!-- More than one vault here holds a configuration: separate
+                                         profiles, and opening one would overwrite the other on the
+                                         next save. Only the user knows which they meant. -->
+                                    <StackPanel IsVisible="{Binding ShowVaultChoice}">
+                                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                                   Text="More than one vault here holds a RavensPort configuration. Each is a separate set of credentials, routes and funnels — choose the one to open."/>
+                                        <ItemsControl ItemsSource="{Binding VaultChoices}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:VaultChoiceViewModel">
+                                                    <Button Content="{Binding Name}" Margin="0,0,8,6" MinWidth="120"
+                                                            IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                            Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UseNamedVaultCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+
+                                    <!-- Both offered in every state a vault could be used in, Ready
+                                         included: switching vaults is how one install keeps
+                                         several separate sets of credentials and routes. -->
+                                    <StackPanel IsVisible="{Binding ShowVaultActions}">
+                                        <TextBlock Classes="hint" Margin="0,12,0,6" IsVisible="{Binding HasVaults}">
+                                            <Run Text="Open a RavensPort vault you already have. Listed here are only vaults named after RavensPort that are empty or already RavensPort's, because "/><Run Classes="emphasis" Text="RavensPort works in a vault of its own and never reads or writes your other vaults"/><Run Text=". Inside the one it uses, "/><Run Classes="emphasis" Text="it only ever removes items it created itself"/><Run Text=" — the ones titled 'RavensPort …' — and only once you have deleted the credential, route or funnel they belong to. Anything else in that vault is left untouched."/>
+                                        </TextBlock>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10"
+                                                    IsVisible="{Binding HasVaults}">
+                                            <!-- Still not editable, though for a different reason than
+                                                 in WPF: there the dark ComboBox template had no
+                                                 PART_EditableTextBox to show the selection in.
+                                                 Typing a name belongs to "create" below regardless. -->
+                                            <ComboBox Width="190" VerticalAlignment="Center"
+                                                      ItemsSource="{Binding Vaults}"
+                                                      SelectedItem="{Binding SelectedVaultName, Mode=TwoWay}"/>
+                                            <Button Content="Use this vault" Margin="8,0,0,0" Classes="ghost"
+                                                    IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                    Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UseExistingVaultCommand}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+
+                                        <TextBlock Classes="hint" Margin="0,0,0,6"
+                                                   Text="Or create one. The profile is optional and only names the vault: leave it blank for 'RavensPort', or type Work or Personal to keep a second set of credentials, routes and funnels apart from the first."/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBox Width="190" VerticalAlignment="Center" Text="{Binding Profile}"/>
+                                            <!-- The name the profile assembles into. Shown because
+                                                 it is what the user will see in their password
+                                                 manager, and a name built out of sight is one they
+                                                 cannot check before it exists. -->
+                                            <TextBlock Text="{Binding NewVaultName}" Margin="8,0,0,0"
+                                                       VerticalAlignment="Center" Classes="hint"/>
+                                            <Button Content="Create this vault" Margin="8,0,0,0"
+                                                    IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
+                                                    Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CreateVaultCommand}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- The way in for someone who wants to see what this is before handing it a vault,
+                     and the way to test a build without unlocking anything. Everything works; the
+                     configuration simply has nowhere to live but this process. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Try it without a password manager" Classes="section"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8">
+                            <Run Text="Single use runs RavensPort on memory alone — every tab, every route, every MCP funnel, every credential, with "/><Run Classes="emphasis" Text="no password manager involved and no prompt to unlock anything"/><Run Text="."/>
+                        </TextBlock>
+                        <TextBlock Classes="hint" Margin="0,0,0,8">
+                            <Run Classes="emphasis" Text="Nothing is saved."/><Run Text=" The configuration exists only inside this process: disconnecting on the Settings tab discards it, and so does closing RavensPort. Real credentials and real tokens work here — they are simply gone afterwards, and any OAuth grant you connect will need connecting again next time."/>
+                        </TextBlock>
+                        <Button Content="Start in single use" HorizontalAlignment="Left" MinWidth="170"
+                                Classes="ghost"
+                                IsEnabled="{Binding CanCheck}"
+                                Command="{Binding StartSingleUseCommand}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Only shown when the pre-vault file is actually there. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasLegacyStore}">
+                    <StackPanel>
+                        <TextBlock Text="Your old configuration" Classes="section"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Text="This version does not read the old store.dat file in %AppData%\RavensPort — credentials, routes, funnels and proxy keys all need to be set up again, and every client needs its new key. The old file is left alone in case you still want anything out of it."/>
+                        <Button Content="Delete the old file" HorizontalAlignment="Left" Classes="ghost"
+                                Command="{Binding DeleteLegacyStoreCommand}"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel>
+                        <TextBlock Text="Keeping the vault available" Classes="section"/>
+                        <TextBlock Classes="hint">
+                            <Run Text="While your password manager is locked, "/><Run Classes="emphasis" Text="RavensPort cannot save changes and does not refresh OAuth tokens"/><Run Text=" — so routes using them stop working once their current token expires. API-key routes keep working. If that happens often, the Settings tab explains how to keep the vault reachable, including token options that do not require leaving anything unlocked."/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" Classes="footer">
+            <DockPanel>
+                <Button Content="Check again" DockPanel.Dock="Right" MinWidth="100"
+                        IsEnabled="{Binding CanCheck}"
+                        Command="{Binding CheckCommand}"/>
+                <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>
