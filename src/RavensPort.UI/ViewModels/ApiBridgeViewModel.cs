@@ -8,7 +8,7 @@ using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The API to MCP tab: turn one of this proxy's routes into an MCP endpoint an agent can drive,

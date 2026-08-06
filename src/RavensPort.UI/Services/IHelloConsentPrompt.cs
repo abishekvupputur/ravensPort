@@ -1,4 +1,4 @@
-namespace RavensPort.App.Services;
+namespace RavensPort.UI.Services;
 
 /// <summary>
 /// The consent step in front of every Windows Hello prompt RavensPort raises.

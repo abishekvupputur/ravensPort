@@ -1,4 +1,4 @@
-namespace RavensPort.App.Services;
+namespace RavensPort.UI.Services;
 
 /// <summary>
 /// Starts a repeating timer whose callback runs on the UI thread.

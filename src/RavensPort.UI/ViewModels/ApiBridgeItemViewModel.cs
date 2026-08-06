@@ -3,7 +3,7 @@ using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>One row in the API bridges grid.</summary>
 public sealed partial class ApiBridgeItemViewModel : ObservableObject
