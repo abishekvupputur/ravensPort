@@ -11,6 +11,9 @@
     -->
     <Application.Styles>
         <FluentTheme />
+        <!-- After Fluent, so these win where they overlap. Fluent supplies the control templates
+             and behaviour this does not restate. -->
+        <StyleInclude Source="avares://RavensPort/Theme/Controls.axaml"/>
     </Application.Styles>
 
     <Application.Resources>
