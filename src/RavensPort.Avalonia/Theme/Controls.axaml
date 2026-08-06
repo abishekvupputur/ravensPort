@@ -266,6 +266,13 @@
         <Setter Property="Margin" Value="0,18"/>
     </Style>
 
+    <!-- Set by a Classes binding on a row that reports an expired proxy key, where WPF used a
+         DataTrigger. Avalonia selectors match classes and pseudo-classes, never an arbitrary
+         binding, so the binding moves onto the class and the style stays declarative. -->
+    <Style Selector="TextBlock.expired">
+        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+    </Style>
+
     <!-- For the clause inside a hint paragraph that the user must not skim past — what is stored,
          and what gets deleted. Full-strength text against the muted rest of the sentence, so it
          reads as emphasis rather than a second colour. -->
