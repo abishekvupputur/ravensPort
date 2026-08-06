@@ -1,4 +1,4 @@
-namespace RavensPort.App.Services;
+namespace RavensPort.UI.Services;
 
 /// <summary>
 /// Hands a URL or a local path to the desktop to open in whatever it thinks should handle it.

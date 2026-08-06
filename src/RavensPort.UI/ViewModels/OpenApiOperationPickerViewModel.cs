@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Models;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>How the picker buckets the operations it is showing.</summary>
 public enum OpenApiGroupingMode

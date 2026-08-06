@@ -4,14 +4,13 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
-using RavensPort.App.Views;
 using RavensPort.Core;
+using RavensPort.UI.Services;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Vault;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The only page the app shows when it cannot reach a password manager.

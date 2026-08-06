@@ -1,4 +1,4 @@
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The tabs of the main window, as one dependency.

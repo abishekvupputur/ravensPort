@@ -1,5 +1,5 @@
 using System.Windows.Controls;
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace RavensPort.App.Views;
