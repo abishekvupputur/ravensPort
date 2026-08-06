@@ -22,8 +22,8 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <!-- Cancel first in the tree so it takes initial focus: every confirm here is
                  destructive, so Enter on an unread dialog must not be the one that agrees. -->
-            <Button x:Name="CancelButton" MinWidth="90" Margin="0,0,8,0" IsCancel="True"
-                    Click="CancelButton_Click"/>
+            <Button x:Name="CancelButton" Classes="ghost" MinWidth="90" Margin="0,0,8,0"
+                    IsCancel="True" Click="CancelButton_Click"/>
             <Button x:Name="ConfirmButton" MinWidth="90" IsDefault="False"
                     Click="ConfirmButton_Click"/>
         </StackPanel>
