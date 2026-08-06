@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using RavensPort.App.Helpers;
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 
 namespace RavensPort.App;
 

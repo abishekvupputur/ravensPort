@@ -1,11 +1,11 @@
 ﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The key editor shown on a route row and on a funnel row. One view model for both, because the
