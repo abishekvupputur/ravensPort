@@ -1,29 +1,34 @@
-﻿using System.Windows;
-using System.Windows.Threading;
-using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
-using RavensPort.Core.Diagnostics;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RavensPort.App.Platform;
-using RavensPort.UI.Services;
-using RavensPort.App.Tray;
-using RavensPort.UI.ViewModels;
-using RavensPort.App.Views;
+using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
-
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
+using RavensPort.Dialogs;
+using RavensPort.Platform;
+using RavensPort.Tray;
+using RavensPort.UI.Services;
+using RavensPort.UI.ViewModels;
 
-namespace RavensPort.App;
+namespace RavensPort;
 
 /// <summary>
-/// WPF Application drives the process lifetime; it owns a Generic Host (Kestrel + YARP)
-/// started here and stopped on exit. Both the web pipeline and the WPF UI share one DI
-/// container. The app is always tray-resident — no window is shown on launch.
+/// The Avalonia Application drives the process lifetime; it owns a Generic Host (Kestrel + YARP)
+/// started here and stopped on exit. Both the web pipeline and the UI share one DI container. The
+/// app is always tray-resident.
+///
+/// Ported from the WPF App with the host logic intact — the single-instance mutex, the deferred
+/// bind, the mTLS decision and the shutdown sequence are the same code, because none of it was ever
+/// about WPF. What changed is where it hangs: OnStartup became
+/// <see cref="OnFrameworkInitializationCompleted"/>, OnExit became the lifetime's ShutdownRequested,
+/// and every message box became an awaited dialog.
 /// </summary>
 public partial class App : Application
 {
@@ -37,6 +42,9 @@ public partial class App : Application
 
     private static Mutex? _singleInstanceMutex;
 
+    private readonly IDialogService _dialogs = new AvaloniaDialogService();
+
+    private IClassicDesktopStyleApplicationLifetime? _desktop;
     private WebApplication? _webApp;
     private TrayIconManager? _trayIconManager;
     private EventWaitHandle? _showWindowSignal;
@@ -50,9 +58,21 @@ public partial class App : Application
     /// <summary>The port Kestrel actually bound, so a reconnect can say when a vault disagrees.</summary>
     private int _boundPort;
 
-    protected override void OnStartup(StartupEventArgs e)
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    public override void OnFrameworkInitializationCompleted()
     {
-        base.OnStartup(e);
+        if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
+        _desktop = desktop;
+
+        // The app is tray-resident: hiding the window must not end the process, and only the tray's
+        // Exit may. WPF said this declaratively in App.xaml; here it is a property on the lifetime.
+        desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // Only one instance may run. A second one would fight the first over the fixed
         // ports — the proxy port and, more subtly, the fixed OAuth loopback ports, where
@@ -61,20 +81,19 @@ public partial class App : Application
         if (!isNewInstance)
         {
             // Not the owner, so it must never be released here — only disposed. The field is
-            // left null so OnExit can tell "we own it" from "we're the duplicate".
+            // left null so shutdown can tell "we own it" from "we're the duplicate".
             mutex.Dispose();
 
             // Launching an app that is already running should show it, not explain itself. This is
-            // what makes the Start menu shortcut a real way back into a window the user closed —
-            // the previous message box told them to go hunting in the tray instead.
-            if (!TryShowRunningInstance())
-            {
-                MessageBox.Show(
-                    "RavensPort is already running — look for the padlock icon in the system tray.",
-                    "RavensPort", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
+            // what makes the Start menu shortcut a real way back into a window the user closed.
+            //
+            // Posted rather than called, unlike WPF's blocking message box. This method has to
+            // return before Avalonia starts its main loop, and neither half of this works without
+            // one: there is nothing to show a dialog with, and Shutdown() before the loop exists is
+            // a no-op — which left the duplicate running headless and for ever instead of exiting.
+            Dispatcher.UIThread.Post(() => _ = ReportDuplicateInstanceAsync());
 
-            Shutdown();
+            base.OnFrameworkInitializationCompleted();
             return;
         }
 
@@ -83,7 +102,7 @@ public partial class App : Application
         // Safety net: this is an always-on tray app, so an unhandled exception anywhere must
         // not terminate the process (a Nextcloud login error used to kill it outright). Errors
         // are surfaced to the user and swallowed so the proxy and tray icon stay alive.
-        DispatcherUnhandledException += (_, args) =>
+        Dispatcher.UIThread.UnhandledException += (_, args) =>
         {
             ReportError("Unexpected error", args.Exception);
             args.Handled = true;
@@ -95,10 +114,6 @@ public partial class App : Application
         // pool catches, logs and shows on the row, and the library's own message-pump task is then
         // collected still holding the same 403. The dialog that produced arrived seconds later,
         // detached from anything the user had done, and said nothing the grid had not.
-        //
-        // The finalizer thread raises this, so a MessageBox here also blocks GC until it is
-        // dismissed. Errors that genuinely need interrupting come through
-        // DispatcherUnhandledException above.
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
             if (args.Exception is not null && args.Exception.ToString().Contains("The transport was closed."))
@@ -116,9 +131,16 @@ public partial class App : Application
         // a prompt would only ever be answered "yes", and a "no" would leave secrets on disk.
         PurgeLegacyStore();
 
+        // OnExit's replacement, and it has to be Exit rather than the more obvious-looking
+        // ShutdownRequested. ShutdownRequested is raised *by the platform* — an OS logout or
+        // shutdown — and never by a Shutdown() call, so hanging the teardown off it would have left
+        // the tray's Exit flushing nothing to the vault, stopping no Kestrel and releasing no
+        // mutex. Exit is sent for both, which is what the WPF override covered.
+        desktop.Exit += (_, _) => ShutDown();
+
         // Everything below can fail in ways that used to leave a live process with no tray
         // icon, no window, and no message: a listen port already in use throws out of
-        // app.Start(), and DispatcherUnhandledException then marked it handled, so the app
+        // app.Start(), and the unhandled-exception hook then marked it handled, so the app
         // "kept running" having never finished starting — while still holding the single-
         // instance mutex, so no later launch could get in either. Startup failure now means
         // an explanation and a real shutdown.
@@ -128,9 +150,10 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            ReportStartupFailure(ex);
-            Shutdown();
+            _ = ReportStartupFailureAsync(ex);
         }
+
+        base.OnFrameworkInitializationCompleted();
     }
 
     /// <summary>
@@ -169,7 +192,7 @@ public partial class App : Application
             // Long-lived MCP SSE/streamable-HTTP sessions shouldn't be dropped by Kestrel.
             options.Limits.KeepAliveTimeout = TimeSpan.FromHours(2);
 
-            var kestrelMtls = options.ApplicationServices.GetRequiredService<RavensPort.Core.Mcp.KestrelMtlsState>();
+            var kestrelMtls = options.ApplicationServices.GetRequiredService<KestrelMtlsState>();
 
             // Runs when the https endpoint is bound, which is inside Start() — after
             // StartProxyAsync has read the vault and settled the state below. Reading it out here
@@ -197,20 +220,15 @@ public partial class App : Application
 
         builder.Services.AddRavensPort();
 
-        // The view models talk to the desktop only through these. Registered before them so the
-        // dependency reads in the direction it actually runs: WPF here, an Avalonia set later,
-        // and nothing above this line naming either.
-        //
-        // The two that marshal work take the dispatcher as an instance captured right here, on the
-        // UI thread. Reading it inside a container-built instance instead would make correctness
-        // depend on which thread happened to resolve it first — and get that wrong silently, since
-        // Dispatcher.CurrentDispatcher answers on any thread by making a new one nobody pumps.
-        var uiDispatcher = Dispatcher.CurrentDispatcher;
-        builder.Services.AddSingleton<IUiDispatcher>(new WpfUiDispatcher(uiDispatcher));
-        builder.Services.AddSingleton<IUiTimerFactory>(new WpfUiTimerFactory(uiDispatcher));
-        builder.Services.AddSingleton<IClipboardService, WpfClipboardService>();
-        builder.Services.AddSingleton<IPlatformLauncher, WindowsPlatformLauncher>();
-        builder.Services.AddSingleton<IHelloConsentPrompt, WpfHelloConsentPrompt>();
+        // The view models talk to the desktop only through these. Avalonia's dispatcher is a single
+        // application-wide one, so unlike the WPF registrations these need nothing captured on the
+        // UI thread and can be resolved from anywhere.
+        builder.Services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        builder.Services.AddSingleton<IUiTimerFactory, AvaloniaUiTimerFactory>();
+        builder.Services.AddSingleton<IClipboardService, AvaloniaClipboardService>();
+        builder.Services.AddSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
+        builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
+        builder.Services.AddSingleton<IFileSavePicker, AvaloniaFileSavePicker>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
@@ -222,21 +240,23 @@ public partial class App : Application
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<TrayIconManager>();
 
-        // Build the host on a thread-pool thread (via Task.Run) rather than inline on the WPF
-        // Dispatcher thread. Anything in this call graph that awaits async I/O would, with the
-        // Dispatcher's SynchronizationContext still ambient, try to post its continuation back
-        // onto this very thread — which is blocked waiting for it. Task.Run runs the delegate
-        // with no SynchronizationContext, so nothing in it can capture the Dispatcher.
+        // Build the host on a thread-pool thread (via Task.Run) rather than inline on the UI
+        // thread. Anything in this call graph that awaits async I/O would, with the dispatcher's
+        // SynchronizationContext still ambient, try to post its continuation back onto this very
+        // thread — which is blocked waiting for it. Task.Run runs the delegate with no
+        // SynchronizationContext, so nothing in it can capture the dispatcher.
         _webApp = Task.Run(builder.Build).GetAwaiter().GetResult();
 
         var mainWindow = _webApp.Services.GetRequiredService<MainWindow>();
         var settingsViewModel = _webApp.Services.GetRequiredService<SettingsViewModel>();
         var mainWindowViewModel = _webApp.Services.GetRequiredService<MainWindowViewModel>();
 
+        _desktop!.MainWindow = mainWindow;
+
         _trayIconManager = _webApp.Services.GetRequiredService<TrayIconManager>();
         _trayIconManager.Initialize(
             mainWindow,
-            confirmExit: ConfirmExitWithUnsavedChanges);
+            confirmExit: ConfirmExitWithUnsavedChangesAsync);
         _trayIconManager.SetState(TrayState.Starting);
         mainWindow.HiddenWhileGated += () => _trayIconManager.NotifyIdleWhileGated();
 
@@ -300,10 +320,10 @@ public partial class App : Application
         // now something a person deliberately did, and answering it with a window is simply correct.
         ShowWindow(mainWindow);
 
-        // Fire and forget on the Dispatcher rather than blocking it. The original deadlock hazard
+        // Fire and forget on the dispatcher rather than blocking it. The original deadlock hazard
         // was blocking this thread while a continuation tried to post back onto it; this never
         // blocks, and every piece of work below is still wrapped in Task.Run so nothing captures
-        // the Dispatcher's SynchronizationContext.
+        // the dispatcher's SynchronizationContext.
         _ = CheckForManagersAsync(setupViewModel);
     }
 
@@ -323,7 +343,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             // Losing this costs the second-launch-shows-the-window nicety and nothing else, so it
-            // must not stop the app starting. The duplicate falls back to its message box.
+            // must not stop the app starting. The duplicate falls back to its dialog.
             LogError("Could not listen for a second launch", ex);
             return;
         }
@@ -334,7 +354,7 @@ public partial class App : Application
             {
                 while (_showWindowSignal.WaitOne())
                 {
-                    mainWindow.Dispatcher.BeginInvoke(() => ShowWindow(mainWindow));
+                    Dispatcher.UIThread.Post(() => ShowWindow(mainWindow));
                 }
             }
             catch (ObjectDisposedException)
@@ -366,6 +386,19 @@ public partial class App : Application
         {
             return false;
         }
+    }
+
+    private async Task ReportDuplicateInstanceAsync()
+    {
+        if (!TryShowRunningInstance())
+        {
+            await _dialogs.ShowMessageAsync(
+                "RavensPort",
+                "RavensPort is already running — look for the padlock icon in the system tray.",
+                DialogSeverity.Information);
+        }
+
+        _desktop?.Shutdown();
     }
 
     private static void ShowWindow(Window window)
@@ -420,7 +453,7 @@ public partial class App : Application
         try
         {
             // Task.Run for the same reason as the build above: this awaits vault I/O and then runs
-            // hosted-service startup, and neither may capture the Dispatcher.
+            // hosted-service startup, and neither may capture the dispatcher.
             await Task.Run(async () =>
             {
                 await configStoreCache.InitializeAsync();
@@ -430,7 +463,7 @@ public partial class App : Application
                 // Settled before the URL is chosen and before Start() binds it, because the state
                 // decides both: the scheme Kestrel listens on, and the scheme the MCP funnel dials
                 // its own routes on. Anything that read the setting a second time could disagree.
-                var kestrelMtls = _webApp.Services.GetRequiredService<RavensPort.Core.Mcp.KestrelMtlsState>();
+                var kestrelMtls = _webApp.Services.GetRequiredService<KestrelMtlsState>();
 #if STORE_BUILD
                 // The store build has no mTLS: no listener certificate, no Generate button, no
                 // MtlsCertificateFactory.GenerateClientCertificatePfx to call. See BuildProfile.
@@ -622,8 +655,6 @@ public partial class App : Application
                 + $"already listening on {_boundPort} — restart RavensPort to move it");
         }
 
-
-
         mainWindowViewModel.EnterNormalMode();
         _trayIconManager?.SetState(TrayState.Running);
     }
@@ -637,10 +668,10 @@ public partial class App : Application
     /// to disk in the meantime, so exiting is the moment they stop existing — and a credential
     /// whose token rotated in that window needs reconnecting. Worth one dialog.
     ///
-    /// Called from the tray's Exit rather than from OnExit, because OnExit runs after shutdown is
-    /// already committed and there is no way back from it.
+    /// Called from the tray's Exit rather than from the shutdown handler, because that runs after
+    /// shutdown is already committed and there is no way back from it.
     /// </summary>
-    private bool ConfirmExitWithUnsavedChanges()
+    private async Task<bool> ConfirmExitWithUnsavedChangesAsync()
     {
         var configStoreCache = _webApp?.Services.GetService<ConfigStoreCache>();
         if (configStoreCache is null) return true;
@@ -652,17 +683,17 @@ public partial class App : Application
         if (_webApp!.Services.GetService<VaultGateService>() is { IsSingleUse: true }
             && HasAnythingWorthKeeping(configStoreCache))
         {
-            return MessageBox.Show(
+            return await _dialogs.ConfirmAsync(
+                "RavensPort — single use",
                 "RavensPort is running in single use, so this configuration is held in memory only."
                 + $"{Environment.NewLine}{Environment.NewLine}"
                 + "Exiting discards every credential, route, funnel and key you set up in this "
                 + "session. None of it can be recovered."
                 + $"{Environment.NewLine}{Environment.NewLine}"
                 + "To keep it, choose Cancel and connect a password manager from the Settings tab.",
-                "RavensPort — single use",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning,
-                MessageBoxResult.Cancel) == MessageBoxResult.OK;
+                confirmText: "Exit and discard",
+                cancelText: "Cancel",
+                DialogSeverity.Warning);
         }
 
         if (!configStoreCache.HasPendingChanges) return true;
@@ -674,7 +705,7 @@ public partial class App : Application
         {
             try
             {
-                Task.Run(() => syncQueue.FlushAsync(TimeSpan.FromSeconds(15))).Wait(TimeSpan.FromSeconds(20));
+                await syncQueue.FlushAsync(TimeSpan.FromSeconds(15));
             }
             catch
             {
@@ -687,19 +718,17 @@ public partial class App : Application
         var manager = VaultLockGuidance.DisplayName(
             _webApp.Services.GetService<VaultGateService>()?.Status.Selected ?? VaultBackendKind.None);
 
-        var answer = MessageBox.Show(
+        return await _dialogs.ConfirmAsync(
+            "RavensPort — unsaved changes",
             $"Some changes have not been saved to {manager} yet."
             + $"{Environment.NewLine}{Environment.NewLine}"
             + "They are only in memory, so exiting now discards them — and any credential whose "
             + "token was refreshed while it was locked will need to be reconnected."
             + $"{Environment.NewLine}{Environment.NewLine}"
             + $"Unlock {manager} and choose Cancel to save them first.",
-            "RavensPort — unsaved changes",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning,
-            MessageBoxResult.Cancel);
-
-        return answer == MessageBoxResult.OK;
+            confirmText: "Exit and discard",
+            cancelText: "Cancel",
+            DialogSeverity.Warning);
     }
 
     /// <summary>
@@ -718,7 +747,7 @@ public partial class App : Application
                || store.McpFunnels.Count > 0;
     }
 
-    private static void ReportStartupFailure(Exception ex)
+    private async Task ReportStartupFailureAsync(Exception ex)
     {
         // The host may be half-built, so don't count on resolving ActivityLog from it.
         try
@@ -730,26 +759,32 @@ public partial class App : Application
             // ignored
         }
 
-        MessageBox.Show(
+        await _dialogs.ShowMessageAsync(
+            "RavensPort",
             $"RavensPort could not start.{Environment.NewLine}{Environment.NewLine}{ex.Message}"
             + $"{Environment.NewLine}{Environment.NewLine}"
             + "If the listen port is already in use, close the other program using it — the port "
             + "is stored in your password manager and can be changed from the Settings tab.",
-            "RavensPort", MessageBoxButton.OK, MessageBoxImage.Error);
+            DialogSeverity.Error);
+
+        _desktop?.Shutdown();
     }
 
     private void ReportError(string title, Exception ex)
     {
         LogError(title, ex);
 
-        MessageBox.Show($"{title}:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-            "RavensPort", MessageBoxButton.OK, MessageBoxImage.Warning);
+        _ = _dialogs.ShowMessageAsync(
+            "RavensPort",
+            $"{title}:{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+            DialogSeverity.Warning);
     }
 
     /// <summary>
     /// Records an error without interrupting anyone. For failures that have already been handled
     /// and reported wherever they belong — see the unobserved-task handler in
-    /// <see cref="OnStartup"/> — where a dialog would be a second telling of the same thing.
+    /// <see cref="OnFrameworkInitializationCompleted"/> — where a dialog would be a second telling
+    /// of the same thing.
     /// </summary>
     private void LogError(string title, Exception ex)
     {
@@ -765,24 +800,38 @@ public partial class App : Application
         }
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    private void ShutDown()
     {
+        // Marks the moment teardown begins, and it earns its place: this app has a history of
+        // surviving its own Exit — a foreground thread somewhere in the dependency graph, or a
+        // shutdown deadlock on the dispatcher — and "the process is still here" is a much easier
+        // report to act on when the log says whether this ran at all. It is also the only evidence
+        // that the lifetime's Exit event fired, which is not a given: the more obvious-looking
+        // ShutdownRequested is raised by the platform only and never by a Shutdown() call.
+        try
+        {
+            new ActivityLog().Log("SHUTDOWN teardown started");
+        }
+        catch
+        {
+            // Never let logging be the reason the app cannot quit.
+        }
+
         _trayIconManager?.Dispose();
         _showWindowSignal?.Dispose();
 
-        // Same reasoning as the Task.Run in OnStartup: StopAsync/DisposeAsync run on the
-        // WPF Dispatcher thread here. If anything in Kestrel/hosted-service shutdown awaits
-        // without ConfigureAwait(false) while the Dispatcher's SynchronizationContext is
-        // still ambient, its continuation tries to post back onto this exact thread — which
-        // is blocked waiting for it. That deadlock left RavensPort.exe running after "Exit"
-        // until force-killed. Task.Run drops the Dispatcher context for this whole shutdown
-        // sequence, so nothing in it can capture it.
+        // Same reasoning as the Task.Run in StartHost: StopAsync/DisposeAsync would otherwise run
+        // on the UI thread here. If anything in Kestrel/hosted-service shutdown awaits without
+        // ConfigureAwait(false) while the dispatcher's SynchronizationContext is still ambient, its
+        // continuation tries to post back onto this exact thread — which is blocked waiting for it.
+        // That deadlock left RavensPort.exe running after "Exit" until force-killed. Task.Run drops
+        // the dispatcher context for this whole shutdown sequence, so nothing in it can capture it.
         if (_webApp is not null)
         {
             try
             {
                 // Bounded overall wait too: StopAsync(5s) makes a best effort to respect that
-                // timeout internally, but nothing here should be able to hang OnExit forever —
+                // timeout internally, but nothing here should be able to hang shutdown forever —
                 // Wait() with its own timeout is the actual backstop.
                 Task.Run(async () =>
                 {
@@ -823,13 +872,11 @@ public partial class App : Application
             _singleInstanceMutex = null;
         }
 
-        base.OnExit(e);
-
-        // Belt-and-suspenders: WPF exiting is supposed to let Main() return and the process
-        // die naturally, but that only happens if every thread in the process is a background
-        // thread. A stray foreground thread anywhere in the dependency graph — YARP, a Google
-        // auth library, anything — would otherwise leave RavensPort.exe running invisibly
-        // after "Exit", exactly what was reported. This makes shutdown unconditional.
+        // Belt-and-suspenders: the process is supposed to die once the main loop returns, but that
+        // only happens if every thread in the process is a background thread. A stray foreground
+        // thread anywhere in the dependency graph — YARP, a Google auth library, anything — would
+        // otherwise leave RavensPort.exe running invisibly after "Exit", exactly what was reported.
+        // This makes shutdown unconditional.
         Environment.Exit(0);
     }
 }

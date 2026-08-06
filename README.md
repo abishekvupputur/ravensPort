@@ -1154,9 +1154,9 @@ directly in your password manager, which bypasses that check.
 dotnet build RavensPort.slnx -m:1
 ```
 
-`-m:1` (no parallel MSBuild) avoids an intermittent WPF markup-compile race on a freshly cleaned
-`obj/` that produces spurious `CS2001`/`MC1000` errors. `clean-build.bat` retries once for the
-same reason.
+`-m:1` (no parallel MSBuild) was needed for an intermittent WPF markup-compile race on a freshly
+cleaned `obj/`, which produced spurious `CS2001`/`MC1000` errors. The UI is Avalonia now and that
+race is gone with it, but the flag is harmless and `clean-build.bat` still retries once.
 
 ### Tests
 
@@ -1203,14 +1203,23 @@ Every other command on this page builds the full app, unchanged.
 
 ```
 src/RavensPort.Core/            OAuth flows, password-manager storage, YARP proxy config, MCP funnel,
-                                activity log — no WPF dependency, just the engine
-src/RavensPort.App/             WPF tray app: hosts Kestrel + YARP in-process, tray icon, UI
+                                activity log — no UI dependency, just the engine
+src/RavensPort.UI/              View models, and the interfaces through which they reach the desktop.
+                                No UI framework referenced at all, deliberately
+src/RavensPort.App/             Avalonia tray app: hosts Kestrel + YARP in-process, tray icon, views
 tests/RavensPort.Core.Tests/    xunit tests for Core
 ```
 
 `RavensPort.App` owns the process. It starts the Kestrel/YARP host on a thread-pool task rather
-than the WPF dispatcher thread — avoiding a sync-over-async deadlock — then initializes the tray
-icon. The proxy and the UI share one DI container.
+than the UI thread — avoiding a sync-over-async deadlock — then initializes the tray icon. The
+proxy and the UI share one DI container.
+
+The split between `RavensPort.UI` and `RavensPort.App` is load-bearing rather than tidy. The view
+models reach the desktop only through five interfaces — marshalling to the UI thread, repeating
+timers, the clipboard, opening a URL or a path, and the Windows Hello consent prompt — and
+`RavensPort.UI` references no UI framework, so a stray `using Avalonia` in a view model is a build
+error. The tray icon is still WinForms `NotifyIcon`, quarantined in `src/RavensPort.App/Tray/`,
+because Avalonia's own tray icon cannot theme its menu and has no balloon tip.
 
 ### Releases
 

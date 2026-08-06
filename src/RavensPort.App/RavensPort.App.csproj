@@ -1,25 +1,72 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    The tray app: Avalonia views over the view models in RavensPort.UI, hosting Kestrel and YARP
+    in-process. It kept the WPF project's path and its AssemblyName on purpose — the installer, the
+    MSIX packaging script, the release workflows and the docs all address this project by
+    src/RavensPort.App, and none of them care which UI framework draws it.
+  -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
     <AssemblyName>RavensPort</AssemblyName>
+
+    <!--
+      Still on for the tray icon, and only for that. Avalonia has a TrayIcon of its own, but its
+      menu is a native Win32 one that cannot be themed and it has no balloon tip — which is how the
+      app tells someone who closed the setup window that nothing is being served. WinForms
+      NotifyIcon keeps both. It is the one Windows-only thing in this project, and it is quarantined
+      in Tray/ so that a second platform has one file to answer rather than a search.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!--
+      Bindings are resolved at compile time, so a mistyped property name is a build error rather
+      than a control that silently renders nothing. Worth the x:DataType annotations it costs:
+      every view here is a port of XAML whose bindings currently fail quietly, and quietly is
+      exactly how a port goes wrong.
+    -->
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
+
+  <!--
+    Avalonia's rendering natives ship with debug symbols beside them: libSkiaSharp.pdb is 80 MB and
+    libHarfBuzzSharp.pdb another 20 MB, which is more than the app itself and all of it dead weight
+    in a release download. They are dropped from publish while our own symbols are kept — those are
+    a few hundred kilobytes and they are what put line numbers in the stack traces the Settings tab
+    hands the user.
+  -->
+  <Target Name="DropThirdPartyNativeSymbols" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish
+        Remove="@(ResolvedFileToPublish)"
+        Condition="'%(Extension)' == '.pdb' and !$([System.String]::Copy('%(Filename)').StartsWith('RavensPort'))" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <!--
+      UseWindowsForms puts System.Windows.Forms in every file's implicit usings, and it collides
+      with Avalonia over Application and UserControl. Settled once here rather than by an alias at
+      the top of each file: WinForms is used by exactly one folder, so Avalonia is the right default
+      and the tray can spell its own out in full.
+    -->
+    <Using Include="Avalonia.Application" Alias="Application" />
+    <Using Include="Avalonia.Controls.UserControl" Alias="UserControl" />
+  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\tray.ico" />
-    <Resource Include="Assets\logo.png" />
-    <Resource Include="Assets\proton-pass-logo.png" />
-
-    <!-- 1Password's own mark, shown on the consent window that asks before keeping a service-account
-         token. AgileBits' trademark, used to identify the manager being connected to and nothing
-         else. See THIRD-PARTY-NOTICES.md. -->
-    <Resource Include="Assets\onepassword-logo.png" />
+    <!--
+      Everything under Assets\, which is where the vendor marks live too: RavensPort's own, Proton
+      Pass's, and 1Password's — AgileBits' trademark, shown on the consent window that asks before
+      keeping a service-account token, used to identify the manager being connected to and nothing
+      else. See THIRD-PARTY-NOTICES.md.
+    -->
+    <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,11 +81,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!--
-      CommunityToolkit.Mvvm is deliberately not referenced here. It belongs to the view models, and
-      they live in RavensPort.UI now — leaving it on this project would let a [RelayCommand] be
-      written in the view layer, which is exactly the drift the split exists to stop.
-    -->
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <!-- Separate package, and a separate implementation from WPF's: thinner in places, which is
+         why the first grid ported is the simplest one. -->
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
     <ProjectReference Include="..\RavensPort.UI\RavensPort.UI.csproj" />
   </ItemGroup>
