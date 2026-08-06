@@ -35,11 +35,12 @@
   <ItemGroup>
     <!--
       UseWindowsForms puts System.Windows.Forms in every file's implicit usings, and it collides
-      with Avalonia over the name Application. Settled once here rather than by an alias at the top
-      of each file: WinForms is used by exactly one folder, so Avalonia is the right default and the
-      tray can spell its own out in full.
+      with Avalonia over Application and UserControl. Settled once here rather than by an alias at
+      the top of each file: WinForms is used by exactly one folder, so Avalonia is the right default
+      and the tray can spell its own out in full.
     -->
     <Using Include="Avalonia.Application" Alias="Application" />
+    <Using Include="Avalonia.Controls.UserControl" Alias="UserControl" />
   </ItemGroup>
 
   <ItemGroup>

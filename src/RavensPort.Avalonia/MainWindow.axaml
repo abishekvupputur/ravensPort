@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RavensPort.UI.ViewModels"
+        xmlns:views="using:RavensPort.Views"
         x:Class="RavensPort.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="RavensPort" Width="892" Height="688" MinWidth="720" MinHeight="420"
@@ -101,8 +102,7 @@
                                Classes="hint"/>
                 </TabItem>
                 <TabItem Header="Settings">
-                    <TextBlock Text="Settings — not ported yet" Margin="16"
-                               Classes="hint"/>
+                    <views:SettingsView x:Name="SettingsViewControl"/>
                 </TabItem>
             </TabControl>
         </DockPanel>
