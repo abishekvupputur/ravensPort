@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RavensPort.Core.Vault;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// One password manager as the setup page shows it: what was found, what state it is in, and the

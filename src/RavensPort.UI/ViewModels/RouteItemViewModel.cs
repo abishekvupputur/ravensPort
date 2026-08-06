@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.Core.Models;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// A route row with its upstream resolved to a name and its credentials expanded into editable

@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RavensPort.Core.Models;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// One credential attached to one route, as an editable row: which credential, and where its

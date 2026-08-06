@@ -1,10 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RavensPort.App.Services;
+using RavensPort.UI.Services;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The banner above the tabs: whether everything is in the vault, and if not, what that means.

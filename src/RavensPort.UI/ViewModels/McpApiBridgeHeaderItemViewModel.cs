@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RavensPort.Core.Models;
 
-namespace RavensPort.App.ViewModels;
+namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// One static header attached to every call a bridge makes, as an editable row.
