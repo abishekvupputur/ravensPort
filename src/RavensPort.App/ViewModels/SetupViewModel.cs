@@ -1,7 +1,9 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.App.Services;
 using RavensPort.App.Views;
 using RavensPort.Core;
 using RavensPort.Core.Diagnostics;
@@ -23,7 +25,10 @@ public sealed partial class SetupViewModel(
     ProtonPassAuthenticator protonAuthenticator,
     ActivityLog activityLog,
     OnePasswordSession onePasswordSession,
-    HelloKeyProtector helloKeyProtector) : ObservableObject
+    HelloKeyProtector helloKeyProtector,
+    IClipboardService clipboard,
+    IPlatformLauncher launcher,
+    IHelloConsentPrompt helloConsent) : ObservableObject
 {
     public ObservableCollection<ManagerCardViewModel> Managers { get; } = [];
 
@@ -195,7 +200,7 @@ public sealed partial class SetupViewModel(
 
             if (card.Kind == VaultBackendKind.ProtonPass && CanUnlockWithHello)
             {
-                if (!HelloConsentWindow.RequestUnlock(protonAuthenticator.UnlockWithHelloAsync))
+                if (!await helloConsent.RequestUnlockAsync(protonAuthenticator.UnlockWithHelloAsync))
                 {
                     StatusMessage = "Not unlocked. Try Windows Hello again, or discard this session and sign in.";
                     NotifySessionStateChanged();
@@ -216,7 +221,7 @@ public sealed partial class SetupViewModel(
             // After the connection worked, never before. A token that 1Password refused is a typo or
             // a revoked account, and storing one behind a Hello gesture would offer it back on every
             // restart as though it were good.
-            if (status.IsReady && _saveTokenAfterConnect) SaveTokenWithConsent(card);
+            if (status.IsReady && _saveTokenAfterConnect) await SaveTokenWithConsentAsync(card);
 
             if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}…");
         }
@@ -262,7 +267,7 @@ public sealed partial class SetupViewModel(
     /// hands its token out through nothing but an environment block — a property that returned it
     /// would be a second way to get at the credential, and a test pins that there is none.
     /// </param>
-    private void SaveTokenWithConsent(ManagerCardViewModel card)
+    private async Task SaveTokenWithConsentAsync(ManagerCardViewModel card)
     {
         _saveTokenAfterConnect = false;
 
@@ -272,7 +277,7 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            if (HelloConsentWindow.RequestTokenSave(() => helloKeyProtector.ProtectOnePasswordTokenAsync(token)))
+            if (await helloConsent.RequestTokenSaveAsync(() => helloKeyProtector.ProtectOnePasswordTokenAsync(token)))
             {
                 StatusMessage = "Connected. The token is saved on this PC behind Windows Hello.";
             }
@@ -301,8 +306,8 @@ public sealed partial class SetupViewModel(
         string? token = null;
 
         // The gesture runs on this thread: Hello needs a foreground window to attach to, and the
-        // consent window is the thing that owns it.
-        if (!HelloConsentWindow.RequestTokenUnlock(async () =>
+        // consent prompt is the thing that owns it.
+        if (!await helloConsent.RequestTokenUnlockAsync(async () =>
                 token = await helloKeyProtector.UnprotectOnePasswordTokenAsync()))
         {
             StatusMessage = "Not unlocked. Paste a token instead, or forget the saved one.";
@@ -665,10 +670,10 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            // Through the consent window even though the button the user just pressed says
+            // Through the consent prompt even though the button the user just pressed says
             // "Windows Hello" on it. The rule only protects anyone if it has no exceptions — see
-            // HelloConsentWindow.
-            if (!HelloConsentWindow.RequestUnlock(protonAuthenticator.UnlockWithHelloAsync))
+            // IHelloConsentPrompt.
+            if (!await helloConsent.RequestUnlockAsync(protonAuthenticator.UnlockWithHelloAsync))
             {
                 StatusMessage = "Not unlocked. Discard this session and sign in again, or try Windows Hello again.";
                 return;
@@ -749,10 +754,12 @@ public sealed partial class SetupViewModel(
     /// session whose key was in memory only and displayed nowhere — gone at the next restart, with
     /// nothing in the UI admitting it.
     ///
-    /// Synchronous on the UI thread throughout: the consent window is modal, and the Hello prompt
-    /// it raises needs a foreground window to attach to.
+    /// Awaited on the UI thread throughout: the consent prompt is modal, and the Hello prompt it
+    /// raises needs a foreground window to attach to. Nothing here may be pushed onto a background
+    /// thread to "keep the UI responsive" — that is exactly what would leave the gesture with
+    /// nothing to attach to.
     /// </summary>
-    private bool ProtectSessionKeyWithHello()
+    private async Task<bool> ProtectSessionKeyWithHelloAsync()
     {
         if (protonSession.HasKey && protonAuthenticator.HasHelloKey) return true;
 
@@ -762,7 +769,7 @@ public sealed partial class SetupViewModel(
             return false;
         }
 
-        var consented = HelloConsentWindow.RequestSetup(protonAuthenticator.PrepareSessionKeyAsync);
+        var consented = await helloConsent.RequestSetupAsync(protonAuthenticator.PrepareSessionKeyAsync);
 
         NotifySessionStateChanged();
 
@@ -790,7 +797,7 @@ public sealed partial class SetupViewModel(
 
         // Before IsSigningIn, so the consent window is not shown over a page already claiming a
         // sign-in is under way — cancelling here means none ever started.
-        if (!ProtectSessionKeyWithHello()) return;
+        if (!await ProtectSessionKeyWithHelloAsync()) return;
 
         IsSigningIn = true;
         SignInUrl = null;
@@ -841,13 +848,13 @@ public sealed partial class SetupViewModel(
 
     /// <summary>Copies a shown value — the sign-in URL, or a freshly generated key.</summary>
     [RelayCommand]
-    private void CopyToClipboard(string? text)
+    private async Task CopyToClipboardAsync(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
 
         try
         {
-            System.Windows.Clipboard.SetText(text);
+            await clipboard.SetTextAsync(text);
             StatusMessage = "Copied.";
         }
         catch (Exception ex)

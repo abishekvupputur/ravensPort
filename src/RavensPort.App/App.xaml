@@ -13,6 +13,7 @@
             <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
             <helpers:InverseBoolConverter x:Key="InverseBoolConverter"/>
             <helpers:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+            <helpers:CredentialStatusBrushConverter x:Key="CredentialStatusBrushConverter"/>
 
             <sys:String x:Key="ProxyKeyHelpText">The secret a caller must present to use this endpoint, and nothing else.
 
