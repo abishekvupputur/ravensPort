@@ -51,20 +51,18 @@
                 <StackPanel>
                     <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" TextWrapping="Wrap"
                                Foreground="{StaticResource TextBrush}"/>
-                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,2,0,0"
-                               Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                    <TextBlock Text="{Binding Detail}" Classes="hint" Margin="0,2,0,0"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                         <Button Content="I've unlocked it — save now" Margin="0,0,8,0"
                                 Command="{Binding SyncNowCommand}"/>
-                        <Button Content="Discard and reload from vault"
+                        <Button Content="Discard and reload from vault" Classes="ghost"
                                 Command="{Binding ReloadFromVaultCommand}"/>
                     </StackPanel>
 
                     <Expander Header="How do I stop this happening?" Margin="0,8,0,0"
                               IsVisible="{Binding IsWaitingForUnlock}">
-                        <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                        <TextBlock Text="{Binding Guidance}" Classes="hint" Margin="0,6,0,0"/>
                     </Expander>
                 </StackPanel>
             </Border>
@@ -79,7 +77,8 @@
                     DataContext="{Binding VaultStatus}" x:DataType="vm:VaultStatusViewModel"
                     IsVisible="{Binding HasNotice}">
                 <DockPanel>
-                    <Button Content="Dismiss" DockPanel.Dock="Right" VerticalAlignment="Top" Margin="8,0,0,0"
+                    <Button Content="Dismiss" Classes="ghost" DockPanel.Dock="Right"
+                            VerticalAlignment="Top" Margin="8,0,0,0"
                             Command="{Binding DismissNoticeCommand}"/>
                     <TextBlock Text="{Binding Notice}" TextWrapping="Wrap"
                                Foreground="{StaticResource TextBrush}"/>
@@ -91,19 +90,19 @@
                      this proves is that the shell, the switching and the reload hooks work. -->
                 <TabItem Header="Credentials">
                     <TextBlock Text="Credentials — not ported yet" Margin="16"
-                               Foreground="{StaticResource MutedTextBrush}"/>
+                               Classes="hint"/>
                 </TabItem>
                 <TabItem Header="Routes">
                     <TextBlock Text="Routes — not ported yet" Margin="16"
-                               Foreground="{StaticResource MutedTextBrush}"/>
+                               Classes="hint"/>
                 </TabItem>
                 <TabItem Header="MCP Funnel">
                     <TextBlock Text="MCP Funnel — not ported yet" Margin="16"
-                               Foreground="{StaticResource MutedTextBrush}"/>
+                               Classes="hint"/>
                 </TabItem>
                 <TabItem Header="Settings">
                     <TextBlock Text="Settings — not ported yet" Margin="16"
-                               Foreground="{StaticResource MutedTextBrush}"/>
+                               Classes="hint"/>
                 </TabItem>
             </TabControl>
         </DockPanel>
