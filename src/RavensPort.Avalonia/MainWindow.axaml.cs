@@ -31,6 +31,8 @@ public partial class MainWindow : Window
         // the real views will be wired too.
         SetupViewControl.DataContext = setupViewModel;
         CredentialsViewControl.DataContext = credentialsViewModel;
+        RoutesViewControl.DataContext = routesViewModel;
+        McpFunnelViewControl.DataContext = mcpFunnelViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
         _routes = routesViewModel;
