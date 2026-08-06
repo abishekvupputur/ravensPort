@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/RavensPort.App/RavensPort.App.csproj" />
     <Project Path="src/RavensPort.Core/RavensPort.Core.csproj" />
+    <Project Path="src/RavensPort.UI/RavensPort.UI.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj" />

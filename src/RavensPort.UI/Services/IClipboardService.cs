@@ -1,4 +1,4 @@
-namespace RavensPort.App.Services;
+namespace RavensPort.UI.Services;
 
 /// <summary>
 /// Puts text on the system clipboard.
