@@ -30,9 +30,12 @@ echo "==> Building libonepassword.so"
 # --- the app -------------------------------------------------------------------------------------
 # Loose files rather than single-file: a .deb is already an archive, and unpacking to /opt means the
 # app does not extract itself to /tmp on every cold start.
+#
+# The framework is named explicitly. The project multi-targets, and publish refuses to guess
+# (NETSDK1129) — the same reason the Windows workflows pass -p:TargetFramework beside their profile.
 echo "==> Publishing linux-x64"
 dotnet publish "$REPO_ROOT/src/RavensPort.App/RavensPort.App.csproj" \
-    -c Release -r linux-x64 --self-contained true \
+    -f net8.0 -c Release -r linux-x64 --self-contained true \
     -p:PublishSingleFile=false -p:PublishTrimmed=false \
     -o "$STAGE/opt/ravensport"
 
