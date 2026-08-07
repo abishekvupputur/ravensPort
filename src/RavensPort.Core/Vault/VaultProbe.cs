@@ -27,7 +27,7 @@ public static partial class VaultProbe
     public static readonly Version MinimumOnePasswordVersion = new(0, 4);
 
     /// <summary>The executable names the two managers ship, and the one environment variable both
-    /// searches read a per-user install out of.
+    /// searches read a per-user install out of. Windows carries the extension; nothing else does.
     ///
     /// Named for the binaries rather than the managers: a constant called OnePasswordExe holding a
     /// string is read by Sonar’s hard-coded-credential rule (S2068) as a password, because the
@@ -40,32 +40,54 @@ public static partial class VaultProbe
     /// <inheritdoc cref="OpExe"/>
     private const string LocalAppData = "LOCALAPPDATA";
 
+    private static string OnePasswordExeName => OperatingSystem.IsWindows() ? OpExe : "op";
+
+    private static string ProtonPassExeName => OperatingSystem.IsWindows() ? ProtonPassExe : "pass-cli";
+
     public static string? FindOnePassword() => Find(
         OnePasswordPathVariable,
-        OpExe,
-        [
-            Path.Combine(Env("ProgramFiles"), "1Password CLI", OpExe),
-            Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", OpExe),
-            Path.Combine(Env(LocalAppData), "Programs", "1Password CLI", OpExe),
-        ]);
+        OnePasswordExeName,
+        OperatingSystem.IsWindows()
+            ?
+            [
+                Path.Combine(Env("ProgramFiles"), "1Password CLI", OpExe),
+                Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", OpExe),
+                Path.Combine(Env(LocalAppData), "Programs", "1Password CLI", OpExe),
+            ]
+            :
+            [
+                // Where a package manager puts it. Nothing under the user’s home is listed on
+                // purpose — ExecutableTrust refuses anything outside a system location anyway, so
+                // offering to find one there would only produce a confusing refusal later.
+                "/usr/bin/op",
+                "/usr/local/bin/op",
+                "/snap/bin/op",
+            ]);
 
     public static string? FindProtonPass() => Find(
         ProtonPassPathVariable,
-        ProtonPassExe,
-        [
-            // Where the Proton Pass installer actually puts it.
-            Path.Combine(Env(LocalAppData), "Programs", "ProtonPass", ProtonPassExe),
-            Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", ProtonPassExe),
-            Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", ProtonPassExe),
-            Path.Combine(Env("USERPROFILE"), ".cargo", "bin", ProtonPassExe),
+        ProtonPassExeName,
+        OperatingSystem.IsWindows()
+            ?
+            [
+                // Where the Proton Pass installer actually puts it.
+                Path.Combine(Env(LocalAppData), "Programs", "ProtonPass", ProtonPassExe),
+                Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", ProtonPassExe),
+                Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", ProtonPassExe),
+                Path.Combine(Env("USERPROFILE"), ".cargo", "bin", ProtonPassExe),
 
-            // Last: a copy left behind by RavensPort 4.3.0 or earlier, which could fetch pass-cli
-            // itself. That feature is gone — the app installs no software now — but an existing
-            // copy still runs, and refusing to see it would break working setups on upgrade. Behind
-            // every real install, so a user who manages their own pass-cli keeps control of which
-            // one runs.
-            LegacyDownloadedProtonPass,
-        ]);
+                // Last: a copy left behind by RavensPort 4.3.0 or earlier, which could fetch
+                // pass-cli itself. That feature is gone — the app installs no software now — but an
+                // existing copy still runs, and refusing to see it would break working setups on
+                // upgrade. Behind every real install, so a user who manages their own pass-cli
+                // keeps control of which one runs.
+                LegacyDownloadedProtonPass,
+            ]
+            :
+            [
+                "/usr/bin/pass-cli",
+                "/usr/local/bin/pass-cli",
+            ]);
 
     /// <summary>
     /// Where the removed in-app installer used to unpack pass-cli. Read-only history: nothing
