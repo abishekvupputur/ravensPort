@@ -106,7 +106,8 @@ gh attestation verify RavensPort-4.5.0.msix --repo abishekvupputur/ravensPort
 
 ```powershell
 dotnet publish src/RavensPort.App/RavensPort.App.csproj `
-  -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release
+  -p:PublishProfile=win-x64-msix -p:StoreBuild=true `
+  -p:TargetFramework=net10.0-windows10.0.19041.0 -c Release
 
 ./packaging/build-msix.ps1 -Version 4.5.0 -Sign `
   -PublishDir 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-msix'
