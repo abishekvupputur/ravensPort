@@ -1,3 +1,4 @@
+using RavensPort.Core.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Protocol;
@@ -132,7 +133,12 @@ public static class ProxyStartupExtensions
         services.AddSingleton<ProxyConfigChangeNotifier>();
         services.AddSingleton<ITransformProvider, CredentialInjectionTransformProvider>();
 
-        services.AddReverseProxy();
+        // Every forwarded request connects the way HappyEyeballs describes. This is the path that
+        // matters most: a host with a broken IPv6 route would otherwise have each proxied call sit
+        // on a dead address until it timed out, which is what "upstream unreachable" turned out to
+        // mean on a machine that curl could reach in under half a second.
+        services.AddReverseProxy().ConfigureHttpClient((_, handler) =>
+            handler.ConnectCallback = HappyEyeballs.CreateHandler().ConnectCallback);
         services.AddMcpFunnel();
 
         return services;

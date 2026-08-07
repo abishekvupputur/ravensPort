@@ -268,7 +268,9 @@ public sealed class ProtonPassInstaller
     {
         // Constructed per call rather than held: this runs at most once per machine per pinned
         // version, so a pooled client would sit idle for the life of the process for nothing.
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        // Same connector as everything else: a 46 MB download that silently stalls on an
+        // unroutable address is the worst place to discover a broken IPv6 route.
+        using var client = new HttpClient(Net.HappyEyeballs.CreateHandler()) { Timeout = TimeSpan.FromMinutes(5) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("RavensPort");
 
         return await client.GetByteArrayAsync(DownloadUrl, ct).ConfigureAwait(false);

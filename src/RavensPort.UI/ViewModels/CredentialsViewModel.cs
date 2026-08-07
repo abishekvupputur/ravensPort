@@ -530,6 +530,14 @@ public sealed partial class CredentialsViewModel : ObservableObject
     private async Task RefreshNowAsync(CredentialItemViewModel? item)
     {
         if (item is null) return;
+
+        // Said before the await, not after it. A refresh is one network round trip and normally
+        // returns too fast to notice — but when it does not, this button had nothing to show for
+        // itself: no change on screen until the call finally gave up, which on a host that cannot
+        // reach the provider is a hundred seconds of a window that looks broken. Reported as
+        // "the refresh button does not work", and it was indistinguishable from that.
+        StatusMessage = $"Refreshing '{item.Name}'…";
+
         _tokenRefreshService.ResetBackoff(item.Record);
         try
         {

@@ -303,6 +303,47 @@
         <Setter Property="Margin" Value="0,18"/>
     </Style>
 
+    <!-- ── Expander ──────────────────────────────────────────────────────────
+         Fluent's Expander is a card: its own background, border and generous padding, meant to
+         stand alone on a page. Every use here is already inside a section card — "Vault integrity"
+         and "Running unattended" on the Settings tab, "How do I stop this happening?" in the vault
+         banner — so its chrome drew a box inside a box and read as a different design.
+
+         This is the flat disclosure the WPF one was: a muted line you can click, and content that
+         belongs to the card around it. -->
+    <Style Selector="Expander">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+    <!-- The clickable header. Reached through the template because it is Fluent's ToggleButton,
+         and it carries most of the card look. -->
+    <Style Selector="Expander /template/ ToggleButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Padding" Value="0,6"/>
+    </Style>
+    <Style Selector="Expander /template/ ToggleButton:pointerover">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+    <Style Selector="Expander /template/ ToggleButton:pressed">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Expander /template/ ToggleButton:checked">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+    </Style>
+
     <!-- Set by a Classes binding on a row that reports an expired proxy key, where WPF used a
          DataTrigger. Avalonia selectors match classes and pseudo-classes, never an arbitrary
          binding, so the binding moves onto the class and the style stays declarative. -->
@@ -344,7 +385,10 @@
         <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
         <Setter Property="GridLinesVisibility" Value="Horizontal"/>
         <Setter Property="HeadersVisibility" Value="Column"/>
-        <Setter Property="CanUserResizeColumns" Value="False"/>
+        <!-- Resizable, as the WPF grid was. Turning this off was a regression: these grids carry
+             URLs and scope lists whose useful width depends on the endpoint, and the columns are
+             sized for a guess about the window. -->
+        <Setter Property="CanUserResizeColumns" Value="True"/>
         <!-- Sorting off. Avalonia reserves room in every header for a sort arrow whether or not one
              is showing, which was enough to clip "KIND" to "KINE" at these column widths — and the
              rows are deliberately in store order, so the arrow was reserving space for a gesture
@@ -354,11 +398,17 @@
         <!-- No fixed row height — rows auto-size to content (wrapped scope text, buttons)
              instead of clipping it. -->
         <Setter Property="MinHeight" Value="0"/>
-        <!-- Grids sit inside the page's ScrollViewer, so they must not create a second scroll
-             region: that is what makes the wheel feel like it "sticks" over a table. With
-             scrolling disabled the grid sizes to its content and the page scrolls. -->
+        <!-- Vertical stays disabled: grids sit inside the page's ScrollViewer, and a second
+             vertical scroll region is what makes the wheel feel like it "sticks" over a table.
+             With it off the grid sizes to its content and the page scrolls.
+
+             Horizontal is Auto, where it used to be Disabled. That was carried over from WPF
+             without noticing the difference: WPF shrank columns to fit, Avalonia clips them. On the
+             Routes tab the fixed columns plus the two star minimums came to more than the window,
+             so the last column lost its Delete button and the headers were cut to "ENAB" and
+             "STRIP PREF". A scrollbar is the honest answer to more content than width. -->
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
-        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
     </Style>
 
