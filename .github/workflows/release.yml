@@ -44,7 +44,11 @@ jobs:
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "8.0.x"
+          # 10.0, not 8.0, even though everything targets net8.0. Avalonia 12's source
+          # generators are built against Roslyn 4.14; an older SDK does not fail cleanly —
+          # it emits CS9057, silently skips the generator, and then reports every x:Name
+          # in every view as undefined. The target framework is unaffected.
+          dotnet-version: "10.0.x"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

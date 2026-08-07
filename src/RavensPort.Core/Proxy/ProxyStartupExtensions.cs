@@ -53,7 +53,28 @@ public static class ProxyStartupExtensions
         services.AddSingleton<ISessionKeyProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
         services.AddSingleton<IServiceTokenProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
 #else
-        services.AddSingleton<ISessionKeyProtector, UnavailableSessionKeyProtector>();
+        // A factory with a run-time check, not just the compile-time one above. The portable build
+        // targets net8.0, which can be *run* on Windows — a developer doing
+        // -p:TargetFramework=net8.0 gets exactly that — and the keyring implementation would then be
+        // P/Invoking libsecret on a machine that has none. Refusing with a sentence that names the
+        // cause beats a DllNotFoundException from somewhere deep in a sign-in.
+        services.AddSingleton<ISessionKeyProtector>(sp =>
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException(
+                    "This is the portable build of RavensPort running on Windows. It stores the Proton "
+                    + "Pass session key in a Linux keyring, which is not here. Use the Windows build.");
+            }
+
+            return new KeyringSessionKeyProtector(sp.GetRequiredService<ActivityLog>());
+        });
+
+        // The saved 1Password token does not follow it into the keyring yet. Keeping a session key
+        // there is a trade the setup page can describe; keeping a bearer credential for every vault
+        // the service account can reach, in a store that is unlocked all day, is a different one and
+        // has not been written down for the user yet. Until it is, nothing is kept — see
+        // UnavailableServiceTokenProtector, and the Linux plan.
         services.AddSingleton<IServiceTokenProtector, UnavailableServiceTokenProtector>();
 #endif
 

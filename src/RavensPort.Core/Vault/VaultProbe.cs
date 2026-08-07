@@ -26,30 +26,54 @@ public static partial class VaultProbe
     /// </summary>
     public static readonly Version MinimumOnePasswordVersion = new(0, 4);
 
+    /// <summary>The binary name per platform: Windows carries the extension, nothing else does.</summary>
+    private static string OnePasswordExeName => OperatingSystem.IsWindows() ? "op.exe" : "op";
+
     public static string? FindOnePassword() => Find(
         OnePasswordPathVariable,
-        "op.exe",
-        [
-            Path.Combine(Env("ProgramFiles"), "1Password CLI", "op.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "op.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Programs", "1Password CLI", "op.exe"),
-        ]);
+        OnePasswordExeName,
+        OperatingSystem.IsWindows()
+            ?
+            [
+                Path.Combine(Env("ProgramFiles"), "1Password CLI", "op.exe"),
+                Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "op.exe"),
+                Path.Combine(Env("LOCALAPPDATA"), "Programs", "1Password CLI", "op.exe"),
+            ]
+            :
+            [
+                // Where a package manager puts it. Nothing under the user's home is listed on
+                // purpose — ExecutableTrust refuses anything outside a system location anyway, so
+                // offering to find one there would only produce a confusing refusal later.
+                "/usr/bin/op",
+                "/usr/local/bin/op",
+                "/snap/bin/op",
+            ]);
 
     public static string? FindProtonPass() => Find(
         ProtonPassPathVariable,
-        "pass-cli.exe",
-        [
-            // Where the Proton Pass installer actually puts it.
-            Path.Combine(Env("LOCALAPPDATA"), "Programs", "ProtonPass", "pass-cli.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "pass-cli.exe"),
-            Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", "pass-cli.exe"),
-            Path.Combine(Env("USERPROFILE"), ".cargo", "bin", "pass-cli.exe"),
+        ProtonPassInstaller.ExeName,
+        OperatingSystem.IsWindows()
+            ?
+            [
+                // Where the Proton Pass installer actually puts it.
+                Path.Combine(Env("LOCALAPPDATA"), "Programs", "ProtonPass", "pass-cli.exe"),
+                Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "pass-cli.exe"),
+                Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", "pass-cli.exe"),
+                Path.Combine(Env("USERPROFILE"), ".cargo", "bin", "pass-cli.exe"),
 
-            // Last: the copy RavensPort downloaded for itself. Deliberately behind every real
-            // install, so a user who manages their own pass-cli keeps control of which one runs
-            // and does not silently get pinned to whatever version this build knows about.
-            ProtonPassInstaller.DefaultExePath,
-        ]);
+                // Last: the copy RavensPort downloaded for itself. Deliberately behind every real
+                // install, so a user who manages their own pass-cli keeps control of which one runs
+                // and does not silently get pinned to whatever version this build knows about.
+                ProtonPassInstaller.DefaultExePath,
+            ]
+            :
+            [
+                "/usr/bin/pass-cli",
+                "/usr/local/bin/pass-cli",
+
+                // Same reasoning as on Windows: behind every real install.
+                ProtonPassInstaller.DefaultExePath,
+            ]);
 
     /// <summary>
     /// Env override, then PATH, then the places installers actually use.

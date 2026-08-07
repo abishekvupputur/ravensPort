@@ -918,8 +918,10 @@ public sealed partial class SetupViewModel(
 
         // Read once per rebuild rather than per card: both answers are the same for every card, and
         // HasProtectedOnePasswordToken touches Credential Manager.
-        var helloAvailable = _isHelloAvailable;
-        var hasSavedToken = helloAvailable && tokenProtector.HasProtectedOnePasswordToken();
+        // Both conditions, because they are different questions: whether this platform has anywhere
+        // to keep a bearer token, and whether the gesture that would seal it is enrolled here.
+        var canKeepToken = _isHelloAvailable && tokenProtector.CanKeepToken;
+        var hasSavedToken = canKeepToken && tokenProtector.HasProtectedOnePasswordToken();
 
         foreach (var manager in status.Statuses)
         {
@@ -930,7 +932,7 @@ public sealed partial class SetupViewModel(
                 // Keeping a token is only ever offered as "encrypted behind a gesture". Without
                 // Hello there is no offer, because the alternative would be plain text and there
                 // must not be one.
-                card.CanRememberToken = helloAvailable;
+                card.CanRememberToken = canKeepToken;
                 card.HasSavedToken = hasSavedToken;
 
                 // A saved token means the user already chose this mode; starting the card on the

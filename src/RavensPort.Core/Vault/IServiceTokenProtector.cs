@@ -17,6 +17,13 @@ namespace RavensPort.Core.Vault;
 public interface IServiceTokenProtector
 {
     /// <summary>
+    /// Whether this machine can keep a token at all. False means the setup page must not offer to,
+    /// because the only alternative to a store that binds it to a gesture is plain text, and there
+    /// must not be one.
+    /// </summary>
+    bool CanKeepToken { get; }
+
+    /// <summary>
     /// Whether a token has been kept for next time. Never prompts and never returns the ciphertext —
     /// the setup page binds this to decide which buttons to offer.
     /// </summary>
