@@ -3,6 +3,7 @@ using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Auth.OAuth2.Responses;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
+using RavensPort.Core.Net;
 
 namespace RavensPort.Core.Auth;
 
@@ -28,6 +29,9 @@ public sealed class GoogleOAuthService(ActivityLog activityLog)
         {
             ClientSecrets = new ClientSecrets { ClientId = credential.ClientId, ClientSecret = credential.ClientSecret },
             DataStore = new NoOpDataStore(),
+            // Connects over whichever IP family answers, and gives up in 30s rather than 100.
+            // See RavensPortGoogleHttpClientFactory.
+            HttpClientFactory = RavensPortGoogleHttpClientFactory.Instance,
             // Google only issues a refresh_token on a user's first consent for this
             // client+scope combination — every later authorization is access-token-only
             // unless the consent screen is forced to show again. Without this, a credential
@@ -70,6 +74,9 @@ public sealed class GoogleOAuthService(ActivityLog activityLog)
         {
             ClientSecrets = new ClientSecrets { ClientId = credential.ClientId, ClientSecret = credential.ClientSecret },
             DataStore = new NoOpDataStore(),
+            // Connects over whichever IP family answers, and gives up in 30s rather than 100.
+            // See RavensPortGoogleHttpClientFactory.
+            HttpClientFactory = RavensPortGoogleHttpClientFactory.Instance,
         };
 
         using var flow = new GoogleAuthorizationCodeFlow(initializer);
