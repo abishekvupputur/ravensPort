@@ -49,8 +49,14 @@ public partial class MainWindow : Window
         _settings = settingsViewModel;
 
         // Opened, where WPF used SourceInitialized: both mean "the native window now exists", and
-        // the DWM call needs an HWND.
-        Opened += (_, _) => WindowHelper.ApplyDarkTitleBar(this);
+        // the DWM call needs an HWND. Windows only — every other desktop draws its own decorations
+        // and has nothing equivalent to ask.
+        // The guard is inside the handler, not around the subscription: the body runs later, so the
+        // platform analyzer cannot carry a check made out here into it.
+        Opened += (_, _) =>
+        {
+            if (OperatingSystem.IsWindows()) WindowHelper.ApplyDarkTitleBar(this);
+        };
         Closing += MainWindow_Closing;
     }
 
