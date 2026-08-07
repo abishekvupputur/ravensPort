@@ -1,5 +1,4 @@
 ﻿using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -25,7 +24,7 @@ public sealed partial class SetupViewModel(
     ProtonPassAuthenticator protonAuthenticator,
     ActivityLog activityLog,
     OnePasswordSession onePasswordSession,
-    HelloKeyProtector helloKeyProtector,
+    IServiceTokenProtector tokenProtector,
     IClipboardService clipboard,
     IPlatformLauncher launcher,
     IHelloConsentPrompt helloConsent) : ObservableObject
@@ -319,7 +318,7 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            if (await helloConsent.RequestTokenSaveAsync(() => helloKeyProtector.ProtectOnePasswordTokenAsync(token)))
+            if (await helloConsent.RequestTokenSaveAsync(() => tokenProtector.ProtectOnePasswordTokenAsync(token)))
             {
                 StatusMessage = "Connected. The token is saved on this PC behind Windows Hello.";
             }
@@ -350,7 +349,7 @@ public sealed partial class SetupViewModel(
         // The gesture runs on this thread: Hello needs a foreground window to attach to, and the
         // consent prompt is the thing that owns it.
         if (!await helloConsent.RequestTokenUnlockAsync(async () =>
-                token = await helloKeyProtector.UnprotectOnePasswordTokenAsync()))
+                token = await tokenProtector.UnprotectOnePasswordTokenAsync()))
         {
             StatusMessage = "Not unlocked. Paste a token instead, or forget the saved one.";
             return;
@@ -401,7 +400,7 @@ public sealed partial class SetupViewModel(
     [RelayCommand]
     private async Task ForgetSavedTokenAsync(ManagerCardViewModel card)
     {
-        await helloKeyProtector.ForgetOnePasswordTokenAsync();
+        await tokenProtector.ForgetOnePasswordTokenAsync();
 
         card.HasSavedToken = false;
         card.RememberToken = false;
@@ -950,7 +949,7 @@ public sealed partial class SetupViewModel(
         // Read once per rebuild rather than per card: both answers are the same for every card, and
         // HasProtectedOnePasswordToken touches Credential Manager.
         var helloAvailable = _isHelloAvailable;
-        var hasSavedToken = helloAvailable && helloKeyProtector.HasProtectedOnePasswordToken();
+        var hasSavedToken = helloAvailable && tokenProtector.HasProtectedOnePasswordToken();
 
         foreach (var manager in status.Statuses)
         {
@@ -1010,3 +1009,4 @@ public sealed partial class SetupViewModel(
     // Nothing here opens a browser any more. The one caller was the download-page button, and the
     // Proton Pass sign-in URL is deliberately shown rather than launched — see SignInProtonAsync.
 }
+

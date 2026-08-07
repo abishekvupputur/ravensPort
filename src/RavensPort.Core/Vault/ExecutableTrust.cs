@@ -50,9 +50,21 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     /// </summary>
     private static readonly Dictionary<string, string[]> ExpectedPublishers = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["op.exe"] = ["Agilebits", "AgileBits, Inc.", "AgileBits Inc."],
-        ["pass-cli.exe"] = ["Proton AG", "Proton Technologies AG"],
+        ["op"] = ["Agilebits", "AgileBits, Inc.", "AgileBits Inc."],
+        ["pass-cli"] = ["Proton AG", "Proton Technologies AG"],
     };
+
+    /// <summary>
+    /// The name without its extension, so that <c>op</c> and <c>op.exe</c> are the same binary as
+    /// far as this policy is concerned.
+    ///
+    /// Not cosmetic. The map used to be keyed on the Windows filenames, and on any platform where
+    /// the CLI is called <c>op</c> a lookup missed — which fell through to "not a password-manager
+    /// CLI, so not signature-checked" and allowed it. The refusal further down was unreachable
+    /// there, so the effect of adding a portable build would have been to disable this gate on
+    /// exactly the platform that cannot verify a signature.
+    /// </summary>
+    private static string PolicyKey(string fileName) => Path.GetFileNameWithoutExtension(fileName);
 
     private static readonly string[] OverrideVariables =
         [VaultProbe.OnePasswordPathVariable, VaultProbe.ProtonPassPathVariable];
@@ -61,7 +73,7 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     {
         var name = Path.GetFileName(resolvedPath);
 
-        if (!ExpectedPublishers.TryGetValue(name, out var expected))
+        if (!ExpectedPublishers.TryGetValue(PolicyKey(name), out var expected))
         {
             return new TrustDecision(true, "not a password-manager CLI, so not signature-checked");
         }
@@ -73,7 +85,21 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
 
         if (!OperatingSystem.IsWindows())
         {
-            return new TrustDecision(true, "Authenticode is Windows-only");
+            // Refuses, where this used to allow. The old answer was written when this branch could
+            // not be reached — the app was Windows-only — so "Authenticode is Windows-only" was a
+            // true statement with no consequence. A portable build makes it reachable, and as an
+            // allow it would have meant: on Linux, run whatever file called 'op' turns up first on
+            // the PATH, and hand it the vault session key. That is the exact attack this class
+            // exists to stop, so the honest answer off Windows is no.
+            //
+            // Not a permanent position. Linux has no Authenticode, so the replacement is a
+            // deliberate choice — package-manager provenance, a pinned hash allowlist — and it is
+            // Phase L2 of .claude/LINUX-PORT-PLAN.md. Until then the override checked just above
+            // is the way through for someone who knows exactly which binary they mean.
+            return new TrustDecision(false,
+                $"RavensPort cannot verify who published '{name}' on this platform, and will not "
+                + "hand a vault session key to a program it cannot identify. Point "
+                + $"{VariableFor(name)} at a binary you trust to run it anyway.");
         }
 
         var signature = ExecutableSignature.Read(resolvedPath);
@@ -121,7 +147,7 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     }
 
     private static string VariableFor(string exeName) =>
-        string.Equals(exeName, "op.exe", StringComparison.OrdinalIgnoreCase)
+        string.Equals(PolicyKey(exeName), "op", StringComparison.OrdinalIgnoreCase)
             ? VaultProbe.OnePasswordPathVariable
             : VaultProbe.ProtonPassPathVariable;
 }
