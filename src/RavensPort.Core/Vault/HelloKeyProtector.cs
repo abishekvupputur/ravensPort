@@ -187,6 +187,13 @@ public sealed class HelloKeyProtector : ISessionKeyProtector, IServiceTokenProte
     public bool HasProtectedOnePasswordToken() => _store.Exists(OnePasswordTokenName);
 
     /// <summary>
+    /// True on Windows, where the token can be sealed to a Hello gesture. Whether Hello is
+    /// enrolled on this machine is a separate question the setup page asks
+    /// <see cref="IsAvailableAsync"/>; this one is about the store existing at all.
+    /// </summary>
+    public bool CanKeepToken => true;
+
+    /// <summary>
     /// Keeps the service-account token so the user need not paste it again after a restart.
     ///
     /// This is the one place the "never stored" rule bends, and only because the user asked for it.
