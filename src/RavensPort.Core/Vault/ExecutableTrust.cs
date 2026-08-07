@@ -85,21 +85,24 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
 
         if (!OperatingSystem.IsWindows())
         {
-            // Refuses, where this used to allow. The old answer was written when this branch could
-            // not be reached — the app was Windows-only — so "Authenticode is Windows-only" was a
-            // true statement with no consequence. A portable build makes it reachable, and as an
-            // allow it would have meant: on Linux, run whatever file called 'op' turns up first on
-            // the PATH, and hand it the vault session key. That is the exact attack this class
-            // exists to stop, so the honest answer off Windows is no.
+            // A different question, because there is no signature to ask about: not who published
+            // this file, but whether an unprivileged process could have put it there. See
+            // UnixExecutableProvenance for why that is the right substitute and what it does not
+            // claim.
             //
-            // Not a permanent position. Linux has no Authenticode, so the replacement is a
-            // deliberate choice — package-manager provenance, a pinned hash allowlist — and it is
-            // Phase L2 of .claude/LINUX-PORT-PLAN.md. Until then the override checked just above
-            // is the way through for someone who knows exactly which binary they mean.
+            // This branch used to allow, reasoning that Authenticode is Windows-only. That was true
+            // and harmless while the app could not run off Windows. Reachable, it meant: run
+            // whatever file called 'op' turns up first on the PATH, and hand it the vault session
+            // key — the exact attack this class exists to stop.
+            if (UnixExecutableProvenance.IsAdministratorInstalled(resolvedPath, out var why))
+            {
+                return new TrustDecision(true, "installed in a system location only an administrator can write to");
+            }
+
             return new TrustDecision(false,
-                $"RavensPort cannot verify who published '{name}' on this platform, and will not "
-                + "hand a vault session key to a program it cannot identify. Point "
-                + $"{VariableFor(name)} at a binary you trust to run it anyway.");
+                $"'{name}' at {resolvedPath} is not one RavensPort can vouch for: {why}. This is the "
+                + "program your vault session key gets handed to. Install it with your package "
+                + $"manager, or point {VariableFor(name)} at a copy you trust.");
         }
 
         var signature = ExecutableSignature.Read(resolvedPath);
