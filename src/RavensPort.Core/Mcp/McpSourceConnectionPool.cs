@@ -1,3 +1,4 @@
+using RavensPort.Core.Net;
 using System.Collections.Concurrent;
 using System.Security.Cryptography.X509Certificates;
 using ModelContextProtocol;
@@ -148,7 +149,10 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
         // or pinning its server certificate to one it has never heard of, would break it.
         var transport = source.Kind == McpSourceKind.ProxyRoute && _kestrelMtls.IsEnabled
             ? new HttpClientTransport(options, new HttpClient(CreateMtlsHandler()), null, ownsHttpClient: true)
-            : new HttpClientTransport(options);
+            // Also given an explicit client, where this used to take the transport's default. The
+            // default connects in DNS order, which on a host with a broken IPv6 route means every
+            // source times out rather than falling back — see HappyEyeballs.
+            : new HttpClientTransport(options, new HttpClient(HappyEyeballs.CreateHandler()), null, ownsHttpClient: true);
 
         var mcpClient = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken).ConfigureAwait(false);
         _activityLog.Log($"MCP source '{source.Name}' connected ({mcpClient.ServerInfo?.Name ?? "unnamed server"})");
@@ -180,9 +184,8 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
         var certificate = _kestrelMtls.Certificate!;
         var expectedThumbprint = certificate.Thumbprint;
 
-        return new SocketsHttpHandler
-        {
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+        return HappyEyeballs.CreateHandler(handler =>
+            handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
                 ClientCertificates = [certificate],
 
@@ -228,8 +231,7 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
 
                     return false;
                 },
-            },
-        };
+            });
 
         // Enough to tell two certificates apart in a log without writing a full identifier of the
         // user's own credential into it.
