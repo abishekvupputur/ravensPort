@@ -1432,7 +1432,7 @@ organisation implied by the project key.
 ### Publishing a standalone exe
 
 ```
-dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-selfcontained -c Release
+dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-selfcontained -p:TargetFramework=net8.0-windows10.0.19041.0 -c Release
 ```
 
 Produces a self-contained `RavensPort.exe` (~180 MB, runtime bundled) under
