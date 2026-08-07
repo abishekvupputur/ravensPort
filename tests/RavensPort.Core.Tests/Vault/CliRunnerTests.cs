@@ -14,7 +14,28 @@ namespace RavensPort.Core.Tests.Vault;
 public class CliRunnerTests : IDisposable
 {
     private readonly string _logPath = Path.Combine(Path.GetTempPath(), $"ravensport-cli-logs-{Guid.NewGuid()}");
-    private readonly string _comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? @"C:\Windows\System32\cmd.exe";
+
+    /// <summary>
+    /// A real process to run, per platform. CliRunner itself is portable — pipes, exit codes and
+    /// timeouts work the same everywhere — so these tests should run everywhere too, and the only
+    /// thing that has to change is which shell is asked and how.
+    /// </summary>
+    private static readonly bool OnWindows = OperatingSystem.IsWindows();
+
+    private readonly string _shell = OnWindows
+        ? Environment.GetEnvironmentVariable("ComSpec") ?? @"C:\Windows\System32\cmd.exe"
+        : "/bin/sh";
+
+    /// <summary>Echoes stdin back on stdout, which is how a secret reaches stdout for real.</summary>
+    private static string[] EchoStdin => OnWindows ? ["/c", "more"] : ["-c", "cat"];
+
+    private static string[] Exit(int code) =>
+        OnWindows ? ["/c", "exit", code.ToString()] : ["-c", $"exit {code}"];
+
+    /// <summary>Runs long enough to be killed by a timeout measured in milliseconds.</summary>
+    private static string[] Hang => OnWindows
+        ? ["/c", "ping", "-n", "30", "127.0.0.1"]
+        : ["-c", "sleep 30"];
 
     private CliRunner NewRunner() => new(new ActivityLog(_logPath));
 
@@ -26,7 +47,7 @@ public class CliRunnerTests : IDisposable
         // process just hangs until the timeout, looking like a slow password manager.
         var payload = string.Join('\n', Enumerable.Range(0, 500).Select(i => $"line-{i}-{new string('x', 200)}"));
 
-        var result = await NewRunner().RunAsync(_comSpec, ["/c", "more"], stdin: payload);
+        var result = await NewRunner().RunAsync(_shell, EchoStdin, stdin: payload);
 
         Assert.True(result.Succeeded, result.StdErr);
         Assert.Contains("line-499", result.StdOut);
@@ -37,7 +58,7 @@ public class CliRunnerTests : IDisposable
     {
         // Stdin is closed unconditionally. Skipping that on the no-stdin path would hang every
         // CLI that reads a template from stdin and waits for EOF.
-        var result = await NewRunner().RunAsync(_comSpec, ["/c", "exit", "0"]);
+        var result = await NewRunner().RunAsync(_shell, Exit(0));
 
         Assert.Equal(0, result.ExitCode);
     }
@@ -47,7 +68,7 @@ public class CliRunnerTests : IDisposable
     {
         // "Not signed in" and "no such vault" both arrive this way. Throwing would turn a state
         // the setup page knows how to explain into an unhandled error.
-        var result = await NewRunner().RunAsync(_comSpec, ["/c", "exit", "7"]);
+        var result = await NewRunner().RunAsync(_shell, Exit(7));
 
         Assert.Equal(7, result.ExitCode);
         Assert.False(result.Succeeded);
@@ -56,7 +77,7 @@ public class CliRunnerTests : IDisposable
     [Fact]
     public async Task AMissingBinaryIsReportedAsAVaultCliException()
     {
-        var missing = Path.Combine(Path.GetTempPath(), $"definitely-not-here-{Guid.NewGuid()}.exe");
+        var missing = Path.Combine(Path.GetTempPath(), $"definitely-not-here-{Guid.NewGuid()}");
 
         await Assert.ThrowsAsync<VaultCliException>(() => NewRunner().RunAsync(missing, ["--version"]));
     }
@@ -68,7 +89,7 @@ public class CliRunnerTests : IDisposable
         var runner = NewRunner();
 
         var exception = await Assert.ThrowsAsync<VaultCliException>(() =>
-            runner.RunAsync(_comSpec, ["/c", "ping", "-n", "30", "127.0.0.1"],
+            runner.RunAsync(_shell, Hang,
                 timeout: TimeSpan.FromMilliseconds(500)));
 
         Assert.Contains("did not respond", exception.Message);
@@ -85,7 +106,7 @@ public class CliRunnerTests : IDisposable
         // contents, never as an argument. (An argument *is* logged, which is exactly why the
         // providers are forbidden from putting a secret in one.)
         var activityLog = new ActivityLog(_logPath);
-        var result = await new CliRunner(activityLog).RunAsync(_comSpec, ["/c", "more"], stdin: Secret);
+        var result = await new CliRunner(activityLog).RunAsync(_shell, EchoStdin, stdin: Secret);
 
         Assert.Contains(Secret, result.StdOut);
         Assert.DoesNotContain(activityLog.GetRecent(100), line => line.Contains(Secret));
@@ -103,15 +124,15 @@ public class CliRunnerTests : IDisposable
 
         // Deliberately non-canonical: what is recorded has to be the file that ran, not whatever
         // string the caller happened to be holding.
-        var indirect = Path.Combine(Path.GetDirectoryName(_comSpec)!, ".", Path.GetFileName(_comSpec));
+        var indirect = Path.Combine(Path.GetDirectoryName(_shell)!, ".", Path.GetFileName(_shell));
 
-        await runner.RunAsync(indirect, ["/c", "exit", "0"]);
-        await runner.RunAsync(_comSpec, ["/c", "exit", "0"]);
+        await runner.RunAsync(indirect, Exit(0));
+        await runner.RunAsync(_shell, Exit(0));
 
         var launches = activityLog.GetRecent(100).Where(line => line.Contains("launching CLI from")).ToList();
 
         Assert.Single(launches);
-        Assert.Contains(_comSpec, launches[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(_shell, launches[0], StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()

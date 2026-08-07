@@ -44,7 +44,7 @@ namespace RavensPort.Core.Vault;
 /// why <see cref="ProtonPassAuthenticator.DiscardLocalSessionAsync"/> exists and is offered on the
 /// setup page. Losing the key costs the session and never the data.
 /// </summary>
-public sealed class HelloKeyProtector
+public sealed class HelloKeyProtector : ISessionKeyProtector, IServiceTokenProtector
 {
     private readonly ActivityLog _activityLog;
     private readonly IHelloSigner _signer;
