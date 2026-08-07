@@ -9,7 +9,15 @@ namespace RavensPort.Core.Vault;
 
 public static partial class OnePasswordNativeClient
 {
-    private const string DllName = "onepassword.dll";
+    /// <summary>
+    /// No extension and no prefix, so the runtime probes for the right artefact per platform:
+    /// <c>onepassword.dll</c> on Windows, <c>libonepassword.so</c> on Linux. Both are the same Go
+    /// source in src/OnePasswordNative built with <c>-buildmode=c-shared</c>.
+    ///
+    /// It used to name the DLL outright, which worked only because there was one platform. Naming
+    /// the extension would make the Linux build look for a file called <c>onepassword.dll</c>.
+    /// </summary>
+    private const string DllName = "onepassword";
 
     // LibraryImport rather than DllImport, so the marshalling is generated at compile time instead
     // of being built by the runtime on first call. The reason it matters here is the string
