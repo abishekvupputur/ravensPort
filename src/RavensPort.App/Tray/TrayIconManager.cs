@@ -8,29 +8,16 @@ using Avalonia.Threading;
 namespace RavensPort.Tray;
 
 /// <summary>
-/// What the app is currently doing, as far as the tray is concerned. The proxy no longer starts
-/// unconditionally — it waits for a password manager — so "there is an icon" stopped meaning
-/// "requests are being served", and the tooltip has to say which.
-/// </summary>
-public enum TrayState
-{
-    Starting,
-    SetupRequired,
-    Running,
-    VaultLocked,
-}
-
-/// <summary>
-/// Still plain WinForms NotifyIcon, now next to Avalonia rather than WPF.
+/// <see cref="ITrayIcon"/> on WinForms NotifyIcon, for Windows.
 ///
-/// Avalonia has a TrayIcon of its own and it was considered. It draws the icon and a native menu,
-/// but that menu cannot be themed — so the dark palette below would be a light Win32 popup — and it
-/// has no balloon tip, which is how <see cref="NotifyIdleWhileGated"/> tells someone who closed the
-/// setup window that nothing is being served. Neither is worth losing while the app is
-/// Windows-only, so this is the one deliberately Windows-bound file in the project. A second
-/// platform replaces this class and nothing else.
+/// Avalonia has a TrayIcon of its own, and every other platform now uses it — see
+/// <c>AvaloniaTrayIconManager</c>. Windows keeps this one because it does two things Avalonia's
+/// cannot: the menu below is drawn by the app, so the dark palette reaches it, and
+/// <see cref="NotifyIdleWhileGated"/> has a balloon tip to tell someone who closed the setup window
+/// that nothing is being served. Losing both on Linux is a real cost; paying it on Windows too, for
+/// symmetry, would be a worse answer than keeping this file.
 /// </summary>
-public sealed class TrayIconManager : IDisposable
+public sealed class TrayIconManager : ITrayIcon
 {
     private NotifyIcon? _notifyIcon;
     private Window? _mainWindow;
@@ -45,9 +32,7 @@ public sealed class TrayIconManager : IDisposable
     /// A Task now rather than a bool: the question is asked by a dialog, and Avalonia has no
     /// synchronous modal to ask it with.
     /// </param>
-    public void Initialize(
-        Window mainWindow,
-        Func<Task<bool>>? confirmExit = null)
+    public void Initialize(Window mainWindow, Func<Task<bool>>? confirmExit = null)
     {
         _mainWindow = mainWindow;
 

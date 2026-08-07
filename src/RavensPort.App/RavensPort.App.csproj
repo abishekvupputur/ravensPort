@@ -8,20 +8,28 @@
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <!--
+      One framework, chosen by the machine doing the building — not both at once, unlike Core and
+      the tests.
+
+      Publish is why. A multi-targeting project refuses to publish without being told which
+      framework to publish (NETSDK1129), and a publish profile cannot answer that: profiles are read
+      during the inner build, after the decision to fan out has already been made. The four
+      workflows, the installer, the MSIX script and the docs all invoke publish by profile name and
+      pass no framework, so multi-targeting here would mean editing every one of them — changes to
+      release machinery that cannot be tested from a developer machine.
+
+      So the app builds for the platform you are on, which is what an application project should
+      do anyway. Overridable when the other one is wanted: -p:TargetFramework=net8.0 on Windows
+      builds the portable app, and that is what the Linux CI job proves rather than assumes.
+    -->
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">$(WindowsTargetFramework)</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">$(PortableTargetFramework)</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
     <AssemblyName>RavensPort</AssemblyName>
 
-    <!--
-      Still on for the tray icon, and only for that. Avalonia has a TrayIcon of its own, but its
-      menu is a native Win32 one that cannot be themed and it has no balloon tip — which is how the
-      app tells someone who closed the setup window that nothing is being served. WinForms
-      NotifyIcon keeps both. It is the one Windows-only thing in this project, and it is quarantined
-      in Tray/ so that a second platform has one file to answer rather than a search.
-    -->
-    <UseWindowsForms>true</UseWindowsForms>
 
     <!--
       Bindings are resolved at compile time, so a mistyped property name is a build error rather
@@ -47,15 +55,39 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    WinForms, for the tray icon, and only on Windows.
+
+    Avalonia has a TrayIcon of its own and the portable build uses it — but it draws a native menu
+    that cannot be themed and it has no balloon tip, which is how the app tells someone who closed
+    the setup window that nothing is being served. Windows keeps the better one; every other
+    platform gets Avalonia's and loses those two things. Both live in Tray/, one file each.
+  -->
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net8.0-windows'))">
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!--
-      UseWindowsForms puts System.Windows.Forms in every file's implicit usings, and it collides
-      with Avalonia over Application and UserControl. Settled once here rather than by an alias at
-      the top of each file: WinForms is used by exactly one folder, so Avalonia is the right default
-      and the tray can spell its own out in full.
+      Both targets, for two different reasons. On Windows, UseWindowsForms puts
+      System.Windows.Forms into every file's implicit usings and it collides with Avalonia over both
+      of these names — settled once here rather than by an alias at the top of each file, since
+      WinForms is used by exactly one folder and Avalonia is the right default. On the portable
+      target there is no collision, but these names are then not in scope at all, so the alias is
+      what makes them resolve. Conditioning it on Windows breaks the portable build.
     -->
     <Using Include="Avalonia.Application" Alias="Application" />
     <Using Include="Avalonia.Controls.UserControl" Alias="UserControl" />
+  </ItemGroup>
+
+  <!-- The WinForms tray and its themed menu renderer; the portable build has AvaloniaTrayIcon. -->
+  <ItemGroup Condition="!$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Tray\TrayIconManager.cs" />
+    <Compile Remove="Tray\DarkMenuRenderer.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Tray\AvaloniaTrayIconManager.cs" />
   </ItemGroup>
 
   <ItemGroup>

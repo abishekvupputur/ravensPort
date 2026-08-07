@@ -1,7 +1,33 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <!-- Both frameworks, matching Core — the portable run is what proves a Linux build is honest
+         rather than merely compiling. See the note in Directory.Build.props. -->
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
+  </PropertyGroup>
+
+  <!--
+    The Hello tests, which cover types that only exist on the Windows target — the WinRT signer, the
+    Credential Manager store, and the protector that binds them. Everything else in this suite is
+    portable and runs on both, which is the point: a Linux build that passes 700-odd tests has been
+    checked, not merely compiled.
+  -->
+  <ItemGroup Condition="!$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Vault\HelloCredentialBindingTests.cs" />
+    <Compile Remove="Vault\HelloKeyStorageTests.cs" />
+    <Compile Remove="Vault\HelloSealedKeyTests.cs" />
+    <Compile Remove="Vault\HelloFakes.cs" />
+    <!-- Keeping the 1Password service-account token is Hello-backed too, so its storage tests are
+         written against the same protector and fakes. What the portable build does instead — keep
+         nothing, and refuse rather than pretend — is UnavailableServiceTokenProtector. -->
+    <Compile Remove="Vault\OnePasswordTokenStorageTests.cs" />
+    <Compile Remove="Vault\ProtonPassSignInTests.cs" />
+    <!-- Reads Authenticode signatures, which is the one thing ExecutableTrust cannot do off
+         Windows. What it does instead — refuse — is covered by ExecutableTrustPortableTests. -->
+    <Compile Remove="Vault\ExecutableTrustTests.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 

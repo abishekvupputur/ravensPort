@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -22,7 +22,7 @@ public sealed partial class SetupViewModel(
     ProtonPassAuthenticator protonAuthenticator,
     ActivityLog activityLog,
     OnePasswordSession onePasswordSession,
-    HelloKeyProtector helloKeyProtector,
+    IServiceTokenProtector tokenProtector,
     IClipboardService clipboard,
     IPlatformLauncher launcher,
     IHelloConsentPrompt helloConsent) : ObservableObject
@@ -35,7 +35,7 @@ public sealed partial class SetupViewModel(
 
     public ObservableCollection<ManagerCardViewModel> Managers { get; } = [];
 
-    [ObservableProperty] private string _statusMessage = "Checking for a password manager…";
+    [ObservableProperty] private string _statusMessage = "Checking for a password managerâ€¦";
     [ObservableProperty] private bool _isBusy;
 
     /// <summary>Whether a fresh manager check can run without interrupting another setup flow.</summary>
@@ -75,8 +75,8 @@ public sealed partial class SetupViewModel(
     /// Looks at what is installed, and stops there.
     ///
     /// Deliberately a discovery probe. The version that ran a full probe on both managers opened the
-    /// app with a queue of authentication prompts — a 1Password desktop approval per CLI call, a
-    /// Proton Pass unlock — before the user had said which manager they wanted, or whether they
+    /// app with a queue of authentication prompts â€” a 1Password desktop approval per CLI call, a
+    /// Proton Pass unlock â€” before the user had said which manager they wanted, or whether they
     /// wanted one at all. Connecting is now a button per card, and the prompts belong to it.
     /// </summary>
     [RelayCommand]
@@ -87,12 +87,12 @@ public sealed partial class SetupViewModel(
         NativeCliRunner.ResetInitialization();
 
         IsBusy = true;
-        StatusMessage = "Looking for password managers…";
+        StatusMessage = "Looking for password managersâ€¦";
 
         try
         {
             // Asked once and cached: a WinRT capability check that cannot change while the app runs.
-            // It raises no prompt of its own — it reports whether Hello could prompt.
+            // It raises no prompt of its own â€” it reports whether Hello could prompt.
             if (!_helloChecked)
             {
                 _isHelloAvailable = await protonAuthenticator.IsHelloAvailableAsync();
@@ -102,7 +102,7 @@ public sealed partial class SetupViewModel(
             var status = await Task.Run(() => gate.EvaluateAsync(VaultProbeDepth.Discovery));
             Apply(status);
 
-            if (status.IsReady) await StartAsync("Loading your configuration from the vault…");
+            if (status.IsReady) await StartAsync("Loading your configuration from the vaultâ€¦");
         }
         catch (Exception ex)
         {
@@ -118,7 +118,7 @@ public sealed partial class SetupViewModel(
     }
 
     /// <summary>
-    /// Asks one password manager for real — the button that owns the authentication prompt.
+    /// Asks one password manager for real â€” the button that owns the authentication prompt.
     ///
     /// Everything the startup check refuses to do happens here, for this manager only: the Hello
     /// gesture that opens RavensPort's Proton Pass session, the 1Password desktop approval, the
@@ -132,17 +132,17 @@ public sealed partial class SetupViewModel(
 
         // Answered here rather than by attempting the connection: the SDK opens against a named
         // account, so a blank name fails inside the runner and comes back as a CLI error on the
-        // card — which reads as "1Password refused" rather than "you have not filled the box in".
+        // card â€” which reads as "1Password refused" rather than "you have not filled the box in".
         if (card.Kind == VaultBackendKind.OnePassword && !card.UsesServiceToken
             && string.IsNullOrWhiteSpace(card.OnePasswordAccountName))
         {
-            StatusMessage = "Enter your 1Password account name first — it is at the top of the "
+            StatusMessage = "Enter your 1Password account name first â€” it is at the top of the "
                             + "1Password desktop app's sidebar.";
             return;
         }
 
         // The token has to reach the session before anything probes, because its presence is what
-        // selects the whole authentication mode — the runner reads it to decide whether to open the
+        // selects the whole authentication mode â€” the runner reads it to decide whether to open the
         // desktop app's channel or go straight to 1Password over the network.
         if (card.Kind == VaultBackendKind.OnePassword && card.UsesServiceToken)
         {
@@ -157,7 +157,7 @@ public sealed partial class SetupViewModel(
             }
 
             // The SDK client is cached per authentication mode, so a switch between the desktop app
-            // and a token — or a corrected token after a refusal — would otherwise keep using the
+            // and a token â€” or a corrected token after a refusal â€” would otherwise keep using the
             // connection made for the previous one.
             NativeCliRunner.ResetInitialization();
 
@@ -168,14 +168,14 @@ public sealed partial class SetupViewModel(
         else if (card.Kind == VaultBackendKind.OnePassword && onePasswordSession.HasToken)
         {
             // Switching back to the desktop app. The token has to go, because holding one is what
-            // puts the runner in service-account mode — leaving it would mean pressing "Connect" on
+            // puts the runner in service-account mode â€” leaving it would mean pressing "Connect" on
             // the desktop option and silently connecting as the service account instead.
             onePasswordSession.Clear();
             NativeCliRunner.ResetInitialization();
         }
 
         IsBusy = true;
-        StatusMessage = $"Connecting to {card.Name}…";
+        StatusMessage = $"Connecting to {card.Name}â€¦";
 
         try
         {
@@ -199,8 +199,8 @@ public sealed partial class SetupViewModel(
                 NotifySessionStateChanged();
             }
 
-            // A successful unlock has already connected this manager — see
-            // ProtonPassAuthenticator.UnlockWithHelloAsync — so probing again would be a second
+            // A successful unlock has already connected this manager â€” see
+            // ProtonPassAuthenticator.UnlockWithHelloAsync â€” so probing again would be a second
             // round of CLI calls for an answer already on hand.
             var status = unlocked ? gate.Status : await Task.Run(() => gate.ConnectAsync(card.Kind));
             Apply(status);
@@ -210,7 +210,7 @@ public sealed partial class SetupViewModel(
             // restart as though it were good.
             if (status.IsReady && _saveTokenAfterConnect) await SaveTokenWithConsentAsync(card);
 
-            if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}…");
+            if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}â€¦");
         }
         catch (VaultCliException ex)
         {
@@ -229,7 +229,7 @@ public sealed partial class SetupViewModel(
     }
 
     /// <summary>
-    /// Starts the app on memory alone — every tab, every route, every funnel, and no password
+    /// Starts the app on memory alone â€” every tab, every route, every funnel, and no password
     /// manager anywhere near it.
     ///
     /// The point is to be able to try the whole thing, or test a change to it, without unlocking a
@@ -251,7 +251,7 @@ public sealed partial class SetupViewModel(
     /// </summary>
     /// <param name="card">
     /// Where the token is read from. Deliberately not from <see cref="OnePasswordSession"/>, which
-    /// hands its token out through nothing but an environment block — a property that returned it
+    /// hands its token out through nothing but an environment block â€” a property that returned it
     /// would be a second way to get at the credential, and a test pins that there is none.
     /// </param>
     private async Task SaveTokenWithConsentAsync(ManagerCardViewModel card)
@@ -264,13 +264,13 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            if (await helloConsent.RequestTokenSaveAsync(() => helloKeyProtector.ProtectOnePasswordTokenAsync(token)))
+            if (await helloConsent.RequestTokenSaveAsync(() => tokenProtector.ProtectOnePasswordTokenAsync(token)))
             {
                 StatusMessage = "Connected. The token is saved on this PC behind Windows Hello.";
             }
             else
             {
-                StatusMessage = "Connected. The token was not saved — you will be asked for it again next time.";
+                StatusMessage = "Connected. The token was not saved â€” you will be asked for it again next time.";
             }
         }
         catch (Exception ex)
@@ -295,7 +295,7 @@ public sealed partial class SetupViewModel(
         // The gesture runs on this thread: Hello needs a foreground window to attach to, and the
         // consent prompt is the thing that owns it.
         if (!await helloConsent.RequestTokenUnlockAsync(async () =>
-                token = await helloKeyProtector.UnprotectOnePasswordTokenAsync()))
+                token = await tokenProtector.UnprotectOnePasswordTokenAsync()))
         {
             StatusMessage = "Not unlocked. Paste a token instead, or forget the saved one.";
             return;
@@ -309,7 +309,7 @@ public sealed partial class SetupViewModel(
         }
 
         IsBusy = true;
-        StatusMessage = $"Connecting to {card.Name}…";
+        StatusMessage = $"Connecting to {card.Name}â€¦";
 
         try
         {
@@ -319,7 +319,7 @@ public sealed partial class SetupViewModel(
             var status = await Task.Run(() => gate.ConnectAsync(card.Kind));
             Apply(status);
 
-            if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}…");
+            if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}â€¦");
         }
         catch (VaultCliException ex)
         {
@@ -346,7 +346,7 @@ public sealed partial class SetupViewModel(
     [RelayCommand]
     private async Task ForgetSavedTokenAsync(ManagerCardViewModel card)
     {
-        await helloKeyProtector.ForgetOnePasswordTokenAsync();
+        await tokenProtector.ForgetOnePasswordTokenAsync();
 
         card.HasSavedToken = false;
         card.RememberToken = false;
@@ -365,7 +365,7 @@ public sealed partial class SetupViewModel(
         {
             Apply(gate.UseSingleUse());
 
-            await StartAsync("Starting in single use — nothing will be saved to a password manager…");
+            await StartAsync("Starting in single use â€” nothing will be saved to a password managerâ€¦");
         }
         catch (Exception ex)
         {
@@ -393,7 +393,7 @@ public sealed partial class SetupViewModel(
             Apply(gate.SelectBackend(card.Kind));
             activityLog.Log($"STARTUP using {card.Name} for this session");
 
-            await StartAsync($"Loading the vault from {card.Name}…");
+            await StartAsync($"Loading the vault from {card.Name}â€¦");
         }
         finally
         {
@@ -410,7 +410,7 @@ public sealed partial class SetupViewModel(
         var name = card.NewVaultName;
 
         // Caught here as well as in the provider so the answer is instant and says what to do
-        // instead: a second vault of the same name is the one thing this page must not produce —
+        // instead: a second vault of the same name is the one thing this page must not produce â€”
         // two vaults called RavensPort are indistinguishable in the picker, and the app would
         // pick between them by list order.
         if (card.Vaults.Contains(name, StringComparer.OrdinalIgnoreCase))
@@ -422,14 +422,14 @@ public sealed partial class SetupViewModel(
         }
 
         IsBusy = true;
-        StatusMessage = $"Creating the '{name}' vault in {card.Name}…";
+        StatusMessage = $"Creating the '{name}' vault in {card.Name}â€¦";
 
         try
         {
             var status = await Task.Run(() => gate.CreateVaultAsync(card.Kind, name));
             Apply(status);
 
-            if (status.IsReady) await StartAsync($"Loading the '{name}' vault…");
+            if (status.IsReady) await StartAsync($"Loading the '{name}' vaultâ€¦");
         }
         catch (VaultAdoptionException ex)
         {
@@ -450,7 +450,7 @@ public sealed partial class SetupViewModel(
 
     /// <summary>
     /// Uses a vault the user already has instead of creating RavensPort. The gate refuses
-    /// anything that is neither empty nor already RavensPort's, and says why — see
+    /// anything that is neither empty nor already RavensPort's, and says why â€” see
     /// <see cref="VaultAdoption"/>.
     /// </summary>
     [RelayCommand]
@@ -466,18 +466,18 @@ public sealed partial class SetupViewModel(
         }
 
         IsBusy = true;
-        StatusMessage = $"Checking the '{name}' vault in {card.Name}…";
+        StatusMessage = $"Checking the '{name}' vault in {card.Name}â€¦";
 
         try
         {
             var status = await Task.Run(() => gate.UseExistingVaultAsync(card.Kind, name));
             Apply(status);
 
-            if (status.IsReady) await StartAsync($"Loading the '{name}' vault…");
+            if (status.IsReady) await StartAsync($"Loading the '{name}' vaultâ€¦");
         }
         catch (VaultAdoptionException ex)
         {
-            // The user's answer is wrong rather than broken — a typo, or a vault with their own
+            // The user's answer is wrong rather than broken â€” a typo, or a vault with their own
             // things in it. Says which, and leaves the name in the box to be corrected.
             StatusMessage = ex.Message;
         }
@@ -494,7 +494,7 @@ public sealed partial class SetupViewModel(
 
     /// <summary>
     /// Opens one of the vaults that already holds a configuration. Offered when more than one
-    /// does — separate profiles, where guessing would open one and overwrite the other.
+    /// does â€” separate profiles, where guessing would open one and overwrite the other.
     /// </summary>
     [RelayCommand]
     private async Task UseNamedVaultAsync(VaultChoiceViewModel choice)
@@ -502,14 +502,14 @@ public sealed partial class SetupViewModel(
         if (IsBusy) return;
 
         IsBusy = true;
-        StatusMessage = $"Opening the '{choice.Name}' vault…";
+        StatusMessage = $"Opening the '{choice.Name}' vaultâ€¦";
 
         try
         {
             var status = await Task.Run(() => gate.UseExistingVaultAsync(choice.Kind, choice.Name));
             Apply(status);
 
-            if (status.IsReady) await StartAsync($"Loading the '{choice.Name}' vault…");
+            if (status.IsReady) await StartAsync($"Loading the '{choice.Name}' vaultâ€¦");
         }
         catch (Exception ex)
         {
@@ -534,10 +534,10 @@ public sealed partial class SetupViewModel(
         if (IsBusy) return;
 
         IsBusy = true;
-        StatusMessage = $"Saving port {port} to the vault…";
+        StatusMessage = $"Saving port {port} to the vaultâ€¦";
 
         // Written straight to the vault: the proxy is not running, so there is no other way to
-        // change it — which is precisely why the old "edit the file in %APPDATA%" advice had to go.
+        // change it â€” which is precisely why the old "edit the file in %APPDATA%" advice had to go.
         try
         {
             var vault = gate.Selected;
@@ -546,7 +546,7 @@ public sealed partial class SetupViewModel(
             await vault.SaveAsync(store);
 
             HasPortConflict = false;
-            await StartAsync($"Starting the proxy on port {port}…");
+            await StartAsync($"Starting the proxy on port {port}â€¦");
         }
         catch (Exception ex)
         {
@@ -565,12 +565,12 @@ public sealed partial class SetupViewModel(
     // ---- Proton Pass: install, unlock, sign in, sign out ------------------------------------
     //
     // All of this is Proton Pass only, and the asymmetry is not an oversight. 1Password's CLI has
-    // no browser sign-in to drive — it wants a Secret Key and an account password typed at a
-    // terminal — and its licence does not allow RavensPort to ship it. Offering a "Sign in" button
+    // no browser sign-in to drive â€” it wants a Secret Key and an account password typed at a
+    // terminal â€” and its licence does not allow RavensPort to ship it. Offering a "Sign in" button
     // that could only ever open a text box asking for someone's 1Password master credentials would
     // be worse than the honest instructions the card already shows.
 
-    /// <summary>The URL pass-cli printed. Shown, never launched — see <see cref="SignInProtonAsync"/>.</summary>
+    /// <summary>The URL pass-cli printed. Shown, never launched â€” see <see cref="SignInProtonAsync"/>.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSignInUrl))]
     private string? _signInUrl;
@@ -590,7 +590,7 @@ public sealed partial class SetupViewModel(
     /// Whether to show the Sign in button.
     ///
     /// Gated on Hello for a first sign-in, because signing in is what creates the session key and
-    /// Hello is the only thing that can store it — the key is never shown, so there is no other way
+    /// Hello is the only thing that can store it â€” the key is never shown, so there is no other way
     /// back into the session after a restart. A button that could only produce an unopenable
     /// session is worse than the explanation shown in its place.
     /// </summary>
@@ -600,7 +600,7 @@ public sealed partial class SetupViewModel(
     public bool NeedsHelloSetup => IsFirstSignIn && !_isHelloAvailable;
 
     /// <summary>
-    /// The one place that message is written — see <see cref="ProtonPassAuthenticator.HelloRequired"/>.
+    /// The one place that message is written â€” see <see cref="ProtonPassAuthenticator.HelloRequired"/>.
     /// An instance property despite being constant: WPF resolves binding paths through
     /// <c>TypeDescriptor</c>, which does not enumerate static members, so a static one would bind
     /// to nothing and show an empty block where the explanation should be.
@@ -612,7 +612,7 @@ public sealed partial class SetupViewModel(
     ///
     /// Split from <see cref="IsFirstSignIn"/> because the two need opposite advice and opposite
     /// buttons. Showing Unlock and Generate side by side asked the user to know which of two
-    /// situations they were in — and picking Generate in this one destroys the session they were
+    /// situations they were in â€” and picking Generate in this one destroys the session they were
     /// trying to open.
     /// </summary>
     public bool NeedsSessionKey => !protonSession.HasKey && protonSession.HasSessionOnDisk;
@@ -621,7 +621,7 @@ public sealed partial class SetupViewModel(
     public bool IsFirstSignIn => !protonSession.HasKey && !protonSession.HasSessionOnDisk;
 
     /// <summary>
-    /// Whether a Hello gesture can open this session — a key is stored and this PC can still do it.
+    /// Whether a Hello gesture can open this session â€” a key is stored and this PC can still do it.
     ///
     /// The availability half is cached rather than awaited per binding: it is an async WinRT call,
     /// and a property getter that blocks on one is a deadlock waiting for a slow TPM.
@@ -657,7 +657,7 @@ public sealed partial class SetupViewModel(
         try
         {
             // Through the consent prompt even though the button the user just pressed says
-            // "Windows Hello" on it. The rule only protects anyone if it has no exceptions — see
+            // "Windows Hello" on it. The rule only protects anyone if it has no exceptions â€” see
             // IHelloConsentPrompt.
             if (!await helloConsent.RequestUnlockAsync(protonAuthenticator.UnlockWithHelloAsync))
             {
@@ -668,7 +668,7 @@ public sealed partial class SetupViewModel(
             NotifySessionStateChanged();
             Apply(gate.Status);
 
-            if (gate.Status.IsReady) await StartAsync("Loading your configuration from the vault…");
+            if (gate.Status.IsReady) await StartAsync("Loading your configuration from the vaultâ€¦");
         }
         catch (VaultCliException ex)
         {
@@ -719,7 +719,7 @@ public sealed partial class SetupViewModel(
     /// The way out for someone who has lost their session key.
     ///
     /// It has to live here, on the setup page. Sign out is on the Settings tab, which is only
-    /// reachable once a vault is open — so pointing a locked-out user at it sent them to the far
+    /// reachable once a vault is open â€” so pointing a locked-out user at it sent them to the far
     /// side of the door they could not open.
     /// </summary>
     [RelayCommand]
@@ -758,17 +758,17 @@ public sealed partial class SetupViewModel(
     }
 
     /// <summary>
-    /// Asks consent, then creates the session key and protects it — before any sign-in runs.
+    /// Asks consent, then creates the session key and protects it â€” before any sign-in runs.
     ///
     /// Asked, not assumed: it is the moment RavensPort begins keeping something on this PC that was
     /// not there before. Cancelling leaves nothing behind, which is only true because this happens
     /// first. Offering it *after* a sign-in, as this used to, meant declining produced a live
-    /// session whose key was in memory only and displayed nowhere — gone at the next restart, with
+    /// session whose key was in memory only and displayed nowhere â€” gone at the next restart, with
     /// nothing in the UI admitting it.
     ///
     /// Awaited on the UI thread throughout: the consent prompt is modal, and the Hello prompt it
     /// raises needs a foreground window to attach to. Nothing here may be pushed onto a background
-    /// thread to "keep the UI responsive" — that is exactly what would leave the gesture with
+    /// thread to "keep the UI responsive" â€” that is exactly what would leave the gesture with
     /// nothing to attach to.
     /// </summary>
     private async Task<bool> ProtectSessionKeyWithHelloAsync()
@@ -788,7 +788,7 @@ public sealed partial class SetupViewModel(
         if (!consented)
         {
             StatusMessage =
-                "Sign-in cancelled. Nothing was created — RavensPort needs Windows Hello to hold its "
+                "Sign-in cancelled. Nothing was created â€” RavensPort needs Windows Hello to hold its "
                 + "Proton Pass session key, because the key is never shown to you.";
         }
 
@@ -800,7 +800,7 @@ public sealed partial class SetupViewModel(
     ///
     /// The URL is deliberately not opened for the user. It carries a live single-use
     /// authentication handle, and launching it fires it at whichever browser happens to be default
-    /// — quite possibly a profile signed in as someone else. Showing it lets them choose.
+    /// â€” quite possibly a profile signed in as someone else. Showing it lets them choose.
     /// </summary>
     [RelayCommand]
     private async Task SignInProtonAsync()
@@ -808,7 +808,7 @@ public sealed partial class SetupViewModel(
         if (IsBusy || IsSigningIn) return;
 
         // Before IsSigningIn, so the consent window is not shown over a page already claiming a
-        // sign-in is under way — cancelling here means none ever started.
+        // sign-in is under way â€” cancelling here means none ever started.
         if (!await ProtectSessionKeyWithHelloAsync()) return;
 
         IsSigningIn = true;
@@ -830,7 +830,7 @@ public sealed partial class SetupViewModel(
             var status = gate.Status;
             Apply(status);
 
-            if (status.IsReady) await StartAsync("Loading your configuration from the vault…");
+            if (status.IsReady) await StartAsync("Loading your configuration from the vaultâ€¦");
         }
         catch (OperationCanceledException)
         {
@@ -849,8 +849,8 @@ public sealed partial class SetupViewModel(
             _signInCts = null;
             IsSigningIn = false;
 
-            // A failed sign-in takes the key and the protected copy with it — see
-            // ProtonPassAuthenticator.AbandonAsync — so the buttons this page shows have changed.
+            // A failed sign-in takes the key and the protected copy with it â€” see
+            // ProtonPassAuthenticator.AbandonAsync â€” so the buttons this page shows have changed.
             NotifySessionStateChanged();
         }
     }
@@ -858,7 +858,7 @@ public sealed partial class SetupViewModel(
     [RelayCommand]
     private void CancelSignIn() => _signInCts?.Cancel();
 
-    /// <summary>Copies a shown value — the sign-in URL, or a freshly generated key.</summary>
+    /// <summary>Copies a shown value â€” the sign-in URL, or a freshly generated key.</summary>
     [RelayCommand]
     private async Task CopyToClipboardAsync(string? text)
     {
@@ -871,7 +871,7 @@ public sealed partial class SetupViewModel(
         }
         catch (Exception ex)
         {
-            // The clipboard is genuinely flaky — another process can hold it open — and this is
+            // The clipboard is genuinely flaky â€” another process can hold it open â€” and this is
             // never worth failing anything over. The text is on screen to select by hand.
             StatusMessage = $"Could not copy: {ex.Message}";
         }
@@ -879,7 +879,7 @@ public sealed partial class SetupViewModel(
 
     /// <summary>
     /// Deletes the pre-vault store. Offered rather than done automatically: it is an encrypted
-    /// file full of the user's secrets, and this version can no longer read it — silently
+    /// file full of the user's secrets, and this version can no longer read it â€” silently
     /// destroying it on their behalf is not this app's call to make.
     /// </summary>
     [RelayCommand]
@@ -899,7 +899,7 @@ public sealed partial class SetupViewModel(
     }
 
     /// <summary>
-    /// Hands off to the host, which reads the whole vault and starts the proxy — a CLI round trip
+    /// Hands off to the host, which reads the whole vault and starts the proxy â€” a CLI round trip
     /// per item, so seconds rather than an instant. The message says so: <see cref="Apply"/> has
     /// just written "Ready.", which would otherwise be the last thing on screen while the window
     /// sat there looking finished and doing nothing.
@@ -919,7 +919,7 @@ public sealed partial class SetupViewModel(
         // Read once per rebuild rather than per card: both answers are the same for every card, and
         // HasProtectedOnePasswordToken touches Credential Manager.
         var helloAvailable = _isHelloAvailable;
-        var hasSavedToken = helloAvailable && helloKeyProtector.HasProtectedOnePasswordToken();
+        var hasSavedToken = helloAvailable && tokenProtector.HasProtectedOnePasswordToken();
 
         foreach (var manager in status.Statuses)
         {
@@ -958,17 +958,17 @@ public sealed partial class SetupViewModel(
             _ when status.Statuses.Any(s => s.Availability == VaultAvailability.VaultChoiceNeeded) =>
                 "More than one vault holds a configuration. Choose which one to open.",
             _ when status.Statuses.Any(s => s.CanCreateVault) =>
-                $"Almost there — create the '{VaultConstants.VaultName}' vault to finish.",
+                $"Almost there â€” create the '{VaultConstants.VaultName}' vault to finish.",
             _ when status.Statuses.All(s => s.Availability == VaultAvailability.NotInstalled) =>
                 "No supported password manager found. Install 1Password or Proton Pass to continue, "
                 + "or try RavensPort in single use.",
 
-            // Nothing has been asked yet, which is the normal state at startup now — say so, rather
+            // Nothing has been asked yet, which is the normal state at startup now â€” say so, rather
             // than reporting a lock nobody has actually run into.
             _ when status.Statuses.Any(s => s.Availability == VaultAvailability.NotConnected) =>
                 gate.IsDisconnected
                     ? "Disconnected. Connect a password manager to load a configuration again."
-                    : "Choose a password manager and connect to it — that is when it will ask you to unlock.",
+                    : "Choose a password manager and connect to it â€” that is when it will ask you to unlock.",
 
             _ => "Unlock or sign in to your password manager, then choose Check again.",
         };
@@ -979,7 +979,7 @@ public sealed partial class SetupViewModel(
         if (string.IsNullOrWhiteSpace(url)) return;
 
         // The launcher hands the string to the desktop to resolve, and every desktop will happily
-        // run a registered protocol handler, a UNC path, or an executable — a browser is only one
+        // run a registered protocol handler, a UNC path, or an executable â€” a browser is only one
         // of the things it might pick. Today every caller passes a compile-time constant, so this
         // changes nothing; it is here so that stays true if a URL ever arrives from config or a
         // vault item.
@@ -999,3 +999,4 @@ public sealed partial class SetupViewModel(
         }
     }
 }
+

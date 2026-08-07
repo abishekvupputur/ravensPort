@@ -46,7 +46,7 @@ public partial class App : Application
 
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private WebApplication? _webApp;
-    private TrayIconManager? _trayIconManager;
+    private ITrayIcon? _trayIconManager;
     private EventWaitHandle? _showWindowSignal;
 
     /// <summary>
@@ -210,7 +210,14 @@ public partial class App : Application
         builder.Services.AddSingleton<McpFunnelViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<MainWindow>();
-        builder.Services.AddSingleton<TrayIconManager>();
+        // The only registration here that differs by platform. Windows keeps the WinForms tray for
+        // its themable menu and its balloon tip; everywhere else gets Avalonia's, which has
+        // neither. See ITrayIcon.
+#if WINDOWS
+        builder.Services.AddSingleton<ITrayIcon, TrayIconManager>();
+#else
+        builder.Services.AddSingleton<ITrayIcon, AvaloniaTrayIconManager>();
+#endif
 
         // Build the host on a thread-pool thread (via Task.Run) rather than inline on the UI
         // thread. Anything in this call graph that awaits async I/O would, with the dispatcher's
@@ -225,7 +232,7 @@ public partial class App : Application
 
         _desktop!.MainWindow = mainWindow;
 
-        _trayIconManager = _webApp.Services.GetRequiredService<TrayIconManager>();
+        _trayIconManager = _webApp.Services.GetRequiredService<ITrayIcon>();
         _trayIconManager.Initialize(
             mainWindow,
             confirmExit: ConfirmExitWithUnsavedChangesAsync);
@@ -344,17 +351,27 @@ public partial class App : Application
 
     /// <summary>
     /// Asks an already-running instance to show itself. False when there is nothing listening —
-    /// an instance older than this change, or one whose listener failed to start.
+    /// an instance older than this change, one whose listener failed to start, or a platform with
+    /// no named events at all.
+    ///
+    /// That last case is the whole of Unix: .NET supports a named <see cref="Mutex"/> there, which
+    /// is what makes single-instance work, but a named <see cref="EventWaitHandle"/> throws
+    /// <see cref="PlatformNotSupportedException"/>. So the duplicate still exits — it just explains
+    /// itself with a dialog instead of raising the first instance's window.
     /// </summary>
     private static bool TryShowRunningInstance()
     {
+        if (!OperatingSystem.IsWindows()) return false;
+
         try
         {
             if (!EventWaitHandle.TryOpenExisting(ShowWindowEventName, out var handle)) return false;
 
             using (handle) return handle.Set();
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException)
+        catch (Exception ex) when (ex is UnauthorizedAccessException
+                                      or WaitHandleCannotBeOpenedException
+                                      or PlatformNotSupportedException)
         {
             return false;
         }

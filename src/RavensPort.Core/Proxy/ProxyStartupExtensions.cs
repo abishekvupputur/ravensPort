@@ -40,7 +40,22 @@ public static class ProxyStartupExtensions
 
         services.AddSingleton<ProtonPassSession>();
         services.AddSingleton<ProtonPassInstaller>();
+        // Where the Proton Pass session key is kept, and the one registration in this file that
+        // differs by platform. Windows binds it to a Hello gesture; the portable build has nowhere
+        // to put it yet and says so rather than pretending, so the setup page never offers to keep
+        // a session it could not reopen. See ISessionKeyProtector.
+        //
+        // The saved 1Password service-account token goes the same way and for the same reason, and
+        // on Windows it is the same object: HelloKeyProtector holds both, so it is registered once
+        // and both interfaces resolve to that instance.
+#if WINDOWS
         services.AddSingleton<HelloKeyProtector>();
+        services.AddSingleton<ISessionKeyProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
+        services.AddSingleton<IServiceTokenProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
+#else
+        services.AddSingleton<ISessionKeyProtector, UnavailableSessionKeyProtector>();
+        services.AddSingleton<IServiceTokenProtector, UnavailableServiceTokenProtector>();
+#endif
 
         // Constructed by hand rather than by convention: the provider's exePathOverride parameter
         // is a test seam that takes a string, and letting the container guess at a string is how

@@ -6,13 +6,15 @@
     rather than an accident of what it happens to need — a WPF type that creeps back into a view
     model fails the build here instead of being noticed during the Avalonia port.
 
-    TargetFramework still comes from Directory.Build.props, so this is a net8.0-windows assembly
-    like everything else. Not because anything in it is Windows-specific — nothing is — but because
-    it references Core, and a plain net8.0 project cannot reference a net8.0-windows one. Core is
-    pinned there by Windows Hello (see the note in Directory.Build.props), and freeing it is a
-    separate job from this one.
+    Portable only. Nothing here is Windows-specific, and it used to be a net8.0-windows assembly
+    solely because Core was one and a plain net8.0 project cannot reference a net8.0-windows one.
+    Core multi-targets now, so this can be what it always was.
+
+    That is worth more than tidiness: this project is where a Windows dependency would do the most
+    damage, and a net8.0 target means one cannot be added by accident.
   -->
   <PropertyGroup>
+    <TargetFramework>$(PortableTargetFramework)</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
