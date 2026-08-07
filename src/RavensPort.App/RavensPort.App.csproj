@@ -101,12 +101,34 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="..\OnePasswordNative\onepassword.dll">
+  <!--
+    The 1Password SDK, as a native library built from the Go in src/OnePasswordNative. One artefact
+    per platform, from the same source: onepassword.dll on Windows, libonepassword.so on Linux.
+
+    Guarded on Exists because the artefact is a build output, not a source file — CI runs `go build
+    -buildmode=c-shared` before the dotnet build, and a developer who has not may reasonably want to
+    work on everything else. The warning below is so that produces a usable app that says what it is
+    missing, rather than one that fails at the first 1Password call with a DllNotFoundException.
+  -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <Content Include="..\OnePasswordNative\onepassword.dll" Condition="Exists('..\OnePasswordNative\onepassword.dll')">
       <Link>onepassword.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <Content Include="../OnePasswordNative/libonepassword.so" Condition="Exists('../OnePasswordNative/libonepassword.so')">
+      <Link>libonepassword.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="WarnAboutMissingOnePasswordNative" BeforeTargets="Build">
+    <Warning Condition="'$(OS)' == 'Windows_NT' and !Exists('..\OnePasswordNative\onepassword.dll')"
+             Text="onepassword.dll is missing. Build it with: cd src/OnePasswordNative &amp;&amp; go build -buildmode=c-shared -o onepassword.dll main.go — 1Password will be unavailable until you do." />
+    <Warning Condition="'$(OS)' != 'Windows_NT' and !Exists('../OnePasswordNative/libonepassword.so')"
+             Text="libonepassword.so is missing. Build it with: cd src/OnePasswordNative &amp;&amp; go build -buildmode=c-shared -o libonepassword.so main.go — 1Password will be unavailable until you do." />
+  </Target>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

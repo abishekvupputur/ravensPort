@@ -8,7 +8,15 @@ namespace RavensPort.Core.Vault;
 
 public static class OnePasswordNativeClient
 {
-    private const string DllName = "onepassword.dll";
+    /// <summary>
+    /// No extension and no prefix, so the runtime probes for the right artefact per platform:
+    /// <c>onepassword.dll</c> on Windows, <c>libonepassword.so</c> on Linux. Both are the same Go
+    /// source in src/OnePasswordNative built with <c>-buildmode=c-shared</c>.
+    ///
+    /// It used to name the DLL outright, which worked only because there was one platform. Naming
+    /// the extension would make the Linux build look for a file called <c>onepassword.dll</c>.
+    /// </summary>
+    private const string DllName = "onepassword";
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr InitializeOP([MarshalAs(UnmanagedType.LPUTF8Str)] string accountName);

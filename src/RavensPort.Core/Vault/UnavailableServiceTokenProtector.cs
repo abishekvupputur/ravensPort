@@ -18,6 +18,8 @@ internal sealed class UnavailableServiceTokenProtector : IServiceTokenProtector
         "RavensPort cannot keep a 1Password service account token on this platform yet. Paste it "
         + "again after a restart.";
 
+    public bool CanKeepToken => false;
+
     public bool HasProtectedOnePasswordToken() => false;
 
     public Task ProtectOnePasswordTokenAsync(string token) =>
