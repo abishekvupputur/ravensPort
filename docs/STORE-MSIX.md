@@ -99,7 +99,7 @@ gh attestation verify RavensPort-4.1.5.msix --repo abishekvupputur/ravensPort
 ## Building locally
 
 ```powershell
-dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -c Release
+dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -p:TargetFramework=net8.0-windows10.0.19041.0 -c Release
 
 ./packaging/build-msix.ps1 -Version 4.1.5 `
   -PublishDir 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-msix'

@@ -43,10 +43,10 @@ if errorlevel 1 (
 )
 
 echo Building Release Single Exe...
-dotnet publish src\RavensPort.App\RavensPort.App.csproj -c Release -r win-x64 -o "%~dp0publish" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --self-contained false
+dotnet publish src\RavensPort.App\RavensPort.App.csproj -c Release -f net8.0-windows10.0.19041.0 -r win-x64 -o "%~dp0publish" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --self-contained false
 if errorlevel 1 (
     echo First build pass failed - retrying once ^(WPF markup-compile quirk^)...
-    dotnet publish src\RavensPort.App\RavensPort.App.csproj -c Release -r win-x64 -o "%~dp0publish" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --self-contained false
+    dotnet publish src\RavensPort.App\RavensPort.App.csproj -c Release -f net8.0-windows10.0.19041.0 -r win-x64 -o "%~dp0publish" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --self-contained false
     if errorlevel 1 (
         echo Build FAILED.
         exit /b 1

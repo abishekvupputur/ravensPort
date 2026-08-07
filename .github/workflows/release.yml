@@ -98,6 +98,7 @@ jobs:
           $publishArgs = @(
             'publish', 'src/RavensPort.App/RavensPort.App.csproj',
             '-p:PublishProfile=win-x64-selfcontained',
+            '-p:TargetFramework=net8.0-windows10.0.19041.0',
             '-c', 'Release',
             '-p:EnableCompressionInSingleFile=false',
             '-p:PublishDir=bin\Release\net8.0-windows\publish\win-x64-raw\'
@@ -173,6 +174,7 @@ jobs:
           $publishArgs = @(
             'publish', 'src/RavensPort.App/RavensPort.App.csproj',
             '-p:PublishProfile=win-x64-msix',
+            '-p:TargetFramework=net8.0-windows10.0.19041.0',
             '-c', 'Release'
           )
           & dotnet @publishArgs

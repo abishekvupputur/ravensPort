@@ -114,7 +114,7 @@ installer ever stops working on ARM64.
 Verified locally against Inno Setup 6.7.3: compiles clean, exit code 0, 67.9 MB output. To repeat:
 
 ```powershell
-dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-selfcontained `
+dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-selfcontained -p:TargetFramework=net8.0-windows10.0.19041.0 `
   -c Release -p:EnableCompressionInSingleFile=false `
   -p:PublishDir="bin\Release\net8.0-windows\publish\win-x64-raw\"
 

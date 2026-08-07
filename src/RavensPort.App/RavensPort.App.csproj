@@ -9,22 +9,21 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!--
-      One framework, chosen by the machine doing the building — not both at once, unlike Core and
-      the tests.
+      Both frameworks, like Core and the tests.
 
-      Publish is why. A multi-targeting project refuses to publish without being told which
-      framework to publish (NETSDK1129), and a publish profile cannot answer that: profiles are read
-      during the inner build, after the decision to fan out has already been made. The four
-      workflows, the installer, the MSIX script and the docs all invoke publish by profile name and
-      pass no framework, so multi-targeting here would mean editing every one of them — changes to
-      release machinery that cannot be tested from a developer machine.
+      This was briefly one framework chosen by the host OS, to avoid telling publish which to
+      build: a multi-targeting project refuses to publish without being told (NETSDK1129), and a
+      publish profile cannot answer because profiles are read during the inner build, after the
+      fan-out decision. That saved editing the release machinery and broke something worse —
+      packages.lock.json records the frameworks the project declares, so a lock file generated on
+      Windows had only the Windows one and a locked restore on Linux failed with NU1004. A project
+      whose dependency graph depends on who built it cannot have a lock file at all.
 
-      So the app builds for the platform you are on, which is what an application project should
-      do anyway. Overridable when the other one is wanted: -p:TargetFramework=net8.0 on Windows
-      builds the portable app, and that is what the Linux CI job proves rather than assumes.
+      So publish is told explicitly instead, with -p:TargetFramework alongside the profile, in the
+      workflows and the docs. More places to keep in step, but they fail loudly rather than only on
+      the platform nobody built on.
     -->
-    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">$(WindowsTargetFramework)</TargetFramework>
-    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">$(PortableTargetFramework)</TargetFramework>
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
