@@ -51,7 +51,13 @@ Thumbs.db
 # Go generated files
 onepassword.dll
 onepassword.h
+libonepassword.so
+libonepassword.h
 
 # SonarScanner working directory, written by `dotnet sonarscanner begin` during a local
 # analysis run. Build state, not source.
 .sonarqube/
+
+# What the .deb build stages and produces; dist/ above already covers the installers.
+/packaging/deb/
+/packaging/*.deb
