@@ -94,8 +94,9 @@ jobs:
   # portable target compiles without the WinRT signer, the Credential Manager store or the WinForms
   # tray, and nothing else notices until this job fails.
   #
-  # No publish step here. Linux packaging is not wired up yet, and building the app is what proves
-  # the port; producing an artefact nothing consumes would only slow the job down.
+  # It ends by building the .deb, which is what makes it the mirror of the Windows job rather than a
+  # compile check: `dotnet build` never resolves a runtime pack or writes an apphost, so until
+  # something publishes, "it builds on Linux" and "it produces a program" are different claims.
   build-and-test-linux:
     runs-on: ubuntu-latest
 
@@ -124,6 +125,14 @@ jobs:
       - name: Restore
         run: dotnet restore RavensPort.slnx --locked-mode
 
+      # The Go module's own tests, before anything links against it, exactly as the Windows job
+      # runs them. They are the same tests on both platforms; running them here is what stops a
+      # Windows-only assumption in the Go source reaching the .so unnoticed.
+      - name: Test Go shared library
+        run: |
+          cd src/OnePasswordNative
+          go test
+
       # The same source as the Windows DLL, built as an ELF shared object. This is the step that
       # proves onepassword-sdk-go cross-compiles at all; it needs cgo, and so a C compiler, which
       # the runner has and a bare developer machine may not.
@@ -142,3 +151,31 @@ jobs:
         env:
           DOTNET_USE_POLLING_FILE_WATCHER: "1"
         run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net8.0 -c Release --no-restore --verbosity normal
+
+      # The counterpart to "Validate installer script" on Windows, and it earns its ~90 seconds
+      # twice over. It is the only step that publishes self-contained linux-x64 — so the only one
+      # that resolves the runtime pack and produces an apphost, neither of which `dotnet build`
+      # above touches — and it is the only check on build-deb.sh, which is run by hand and would
+      # otherwise break silently between releases.
+      #
+      # Version 0.0.0 because this package exists to be thrown away. Nothing consumes it; the
+      # release still cuts Windows-only. See #23.
+      - name: Build the .deb
+        run: packaging/build-deb.sh 0.0.0
+
+      # A package that unpacks is not the same as a package that works. These four paths are what
+      # an install has to put on disk for the app to start and be launchable: the binary, the
+      # 1Password native beside it, the PATH wrapper, and the desktop entry. dpkg-deb --build is
+      # happy to produce a package missing any of them.
+      - name: Check what the package contains
+        run: |
+          deb=packaging/ravensport_0.0.0_amd64.deb
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          contents=$(dpkg-deb -c "$deb")
+          for path in ./opt/ravensport/RavensPort \
+                      ./opt/ravensport/libonepassword.so \
+                      ./usr/bin/ravensport \
+                      ./usr/share/applications/ravensport.desktop; do
+            echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
+          done
