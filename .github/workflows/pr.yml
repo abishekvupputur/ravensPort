@@ -117,10 +117,16 @@ jobs:
 
       # Avalonia needs an X11 client library present to build against and to start; the runner
       # image does not carry one by default.
+      #
+      # libsecret is here for the same reason it is in the .deb's Depends: SecretServiceStore
+      # P/Invokes it, and KeyringKeyStorageTests constructs the real store to prove the shipping
+      # app is wired to it. Without the library that test fails with a DllNotFoundException from
+      # a static initialiser, which reads as a broken test rather than a missing package.
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libx11-6 libice6 libsm6 libfontconfig1
+          sudo apt-get install -y --no-install-recommends \
+            libx11-6 libice6 libsm6 libfontconfig1 libsecret-1-0
 
       - name: Restore
         run: dotnet restore RavensPort.slnx --locked-mode

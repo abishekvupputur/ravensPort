@@ -26,9 +26,28 @@ namespace RavensPort.Core.Vault;
 /// is no weaker version of it to write; there is a different arrangement.
 /// </summary>
 [UnsupportedOSPlatform("windows")]
-internal sealed class KeyringSessionKeyProtector(ActivityLog activityLog) : ISessionKeyProtector
+internal sealed class KeyringSessionKeyProtector : ISessionKeyProtector
 {
-    private readonly SecretServiceStore _store = new();
+    private readonly ActivityLog _activityLog;
+    private readonly ISecretStore _store;
+
+    /// <summary>What the app builds: the real Secret Service on the session bus.</summary>
+    public KeyringSessionKeyProtector(ActivityLog activityLog)
+        : this(activityLog, new SecretServiceStore())
+    {
+    }
+
+    /// <summary>
+    /// For the tests, which have no session bus on a CI runner and must still be able to assert
+    /// what is stored, under what name, and what the user is told about it. The same seam
+    /// <see cref="HelloKeyProtector"/> takes, for the same reason: without it the only way to
+    /// exercise any of this is to have a keyring, so none of it was exercised at all.
+    /// </summary>
+    internal KeyringSessionKeyProtector(ActivityLog activityLog, ISecretStore store)
+    {
+        _activityLog = activityLog;
+        _store = store;
+    }
 
     public Task<bool> IsAvailableAsync() => Task.FromResult(SecretServiceStore.IsAvailable());
 
@@ -40,7 +59,7 @@ internal sealed class KeyringSessionKeyProtector(ActivityLog activityLog) : ISes
         // succeeded lets the user finish a sign-in believing the session survives a restart.
         _store.Write(NameFor(sessionDirectory), Encoding.UTF8.GetBytes(sessionKey));
 
-        activityLog.Log(
+        _activityLog.Log(
             "VAULT stored the Proton Pass session key in the system keyring — it is encrypted at "
             + "rest and readable by anything running as this user while the keyring is unlocked");
 
@@ -65,6 +84,6 @@ internal sealed class KeyringSessionKeyProtector(ActivityLog activityLog) : ISes
     /// Keyed on the session directory, so two RavensPort profiles pointing at different sessions do
     /// not overwrite one another's key. Matches what <see cref="HelloKeyProtector"/> does.
     /// </summary>
-    private static string NameFor(string sessionDirectory) =>
+    internal static string NameFor(string sessionDirectory) =>
         $"RavensPort.ProtonPassSessionKey:{sessionDirectory}";
 }
