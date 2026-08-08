@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using RavensPort.Core.Diagnostics;
 
@@ -23,13 +24,37 @@ public sealed class ProtonPassInstaller
     public const string PinnedVersion = "2.2.4";
 
     /// <summary>
-    /// SHA-256 of <c>pass-cli-windows-x86_64.zip</c> 2.2.4, as published alongside the release.
-    /// Bumping <see cref="PinnedVersion"/> without bumping this is a deliberate hard failure.
+    /// Whether the platform's asset is a zip holding the exe and a DLL beside it, or the bare
+    /// binary. Proton ships a zip for Windows and an unwrapped executable for Linux and macOS.
     /// </summary>
-    public const string PinnedSha256 = "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77";
+    private static bool AssetIsZipped => OperatingSystem.IsWindows();
 
-    public const string DownloadUrl =
-        $"https://github.com/protonpass/pass-cli/releases/download/{PinnedVersion}/pass-cli-windows-x86_64.zip";
+    /// <summary>
+    /// SHA-256 of the pinned release asset for this platform, as published by Proton alongside it
+    /// and independently recomputed from the downloaded bytes before being written here. Bumping
+    /// <see cref="PinnedVersion"/> without bumping these is a deliberate hard failure.
+    /// </summary>
+    public static string PinnedSha256 => OperatingSystem.IsWindows()
+        // pass-cli-windows-x86_64.zip
+        ? "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77"
+        // pass-cli-linux-x86_64
+        : "9d50cb8604e3c7aee0bdd29fcecf4696ed3259134a6c17e4b8adadfde17d7bb6";
+
+    /// <summary>
+    /// x86_64 only. An arm64 Linux gets no in-app install — Proton publishes an aarch64 build, but
+    /// pinning a hash for an architecture nothing here can verify against would be pinning a number
+    /// someone read off a web page. Those users install it themselves.
+    /// </summary>
+    public static bool CanInstallInApp =>
+        RuntimeInformation.OSArchitecture == Architecture.X64
+        && (OperatingSystem.IsWindows() || OperatingSystem.IsLinux());
+
+    public static string DownloadUrl => OperatingSystem.IsWindows()
+        ? $"https://github.com/protonpass/pass-cli/releases/download/{PinnedVersion}/pass-cli-windows-x86_64.zip"
+        : $"https://github.com/protonpass/pass-cli/releases/download/{PinnedVersion}/pass-cli-linux-x86_64";
+
+    /// <summary>The file name the CLI is installed and probed under, per platform.</summary>
+    public static string ExeName => OperatingSystem.IsWindows() ? "pass-cli.exe" : "pass-cli";
 
     /// <summary>Where the upstream source can be obtained, for the GPL notice and the UI.</summary>
     public const string SourceUrl = "https://github.com/protonpass/pass-cli";
@@ -50,7 +75,7 @@ public sealed class ProtonPassInstaller
     /// rather than being handed one, so it has no instance to ask.
     /// </summary>
     public static string DefaultExePath { get; } =
-        Path.Combine(DefaultInstallRoot, PinnedVersion, "pass-cli.exe");
+        Path.Combine(DefaultInstallRoot, PinnedVersion, ExeName);
 
     public string InstallRoot { get; }
 
@@ -87,7 +112,7 @@ public sealed class ProtonPassInstaller
 
         InstallRoot = installRootOverride ?? DefaultInstallRoot;
         VersionDirectory = Path.Combine(InstallRoot, PinnedVersion);
-        ExePath = Path.Combine(VersionDirectory, "pass-cli.exe");
+        ExePath = Path.Combine(VersionDirectory, ExeName);
     }
 
     /// <summary>
@@ -162,9 +187,11 @@ public sealed class ProtonPassInstaller
         {
             Directory.CreateDirectory(staging);
 
-            using (var stream = new MemoryStream(archive, writable: false))
-            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+            if (AssetIsZipped)
             {
+                using var stream = new MemoryStream(archive, writable: false);
+                using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
+
                 foreach (var entry in zip.Entries)
                 {
                     // Flattened deliberately: the archive is two files at the root today, and a
@@ -176,11 +203,27 @@ public sealed class ProtonPassInstaller
                     entry.ExtractToFile(Path.Combine(staging, name), overwrite: true);
                 }
             }
+            else
+            {
+                // Not an archive at all on Linux and macOS: Proton publishes the executable itself,
+                // statically linked, with nothing to unpack and no sibling library to place. The
+                // bytes have already passed the hash check, so this is the whole of the install.
+                var target = Path.Combine(staging, ExeName);
+                File.WriteAllBytes(target, archive);
 
-            if (!File.Exists(Path.Combine(staging, "pass-cli.exe")))
+                // Downloaded files are not executable, and the CLI is about to be launched.
+                // Owner-only: this is the program the vault session key is handed to.
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(target,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+            }
+
+            if (!File.Exists(Path.Combine(staging, ExeName)))
             {
                 throw new VaultCliException(
-                    "The Proton Pass CLI download did not contain pass-cli.exe. Nothing was installed.");
+                    $"The Proton Pass CLI download did not contain {ExeName}. Nothing was installed.");
             }
 
             Directory.CreateDirectory(InstallRoot);
@@ -225,7 +268,9 @@ public sealed class ProtonPassInstaller
     {
         // Constructed per call rather than held: this runs at most once per machine per pinned
         // version, so a pooled client would sit idle for the life of the process for nothing.
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        // Same connector as everything else: a 46 MB download that silently stalls on an
+        // unroutable address is the worst place to discover a broken IPv6 route.
+        using var client = new HttpClient(Net.HappyEyeballs.CreateHandler()) { Timeout = TimeSpan.FromMinutes(5) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("RavensPort");
 
         return await client.GetByteArrayAsync(DownloadUrl, ct).ConfigureAwait(false);

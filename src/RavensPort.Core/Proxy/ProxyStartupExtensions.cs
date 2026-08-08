@@ -1,3 +1,4 @@
+using RavensPort.Core.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Protocol;
@@ -40,7 +41,43 @@ public static class ProxyStartupExtensions
 
         services.AddSingleton<ProtonPassSession>();
         services.AddSingleton<ProtonPassInstaller>();
+        // Where the Proton Pass session key is kept, and the one registration in this file that
+        // differs by platform. Windows binds it to a Hello gesture; the portable build has nowhere
+        // to put it yet and says so rather than pretending, so the setup page never offers to keep
+        // a session it could not reopen. See ISessionKeyProtector.
+        //
+        // The saved 1Password service-account token goes the same way and for the same reason, and
+        // on Windows it is the same object: HelloKeyProtector holds both, so it is registered once
+        // and both interfaces resolve to that instance.
+#if WINDOWS
         services.AddSingleton<HelloKeyProtector>();
+        services.AddSingleton<ISessionKeyProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
+        services.AddSingleton<IServiceTokenProtector>(sp => sp.GetRequiredService<HelloKeyProtector>());
+#else
+        // A factory with a run-time check, not just the compile-time one above. The portable build
+        // targets net8.0, which can be *run* on Windows — a developer doing
+        // -p:TargetFramework=net8.0 gets exactly that — and the keyring implementation would then be
+        // P/Invoking libsecret on a machine that has none. Refusing with a sentence that names the
+        // cause beats a DllNotFoundException from somewhere deep in a sign-in.
+        services.AddSingleton<ISessionKeyProtector>(sp =>
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException(
+                    "This is the portable build of RavensPort running on Windows. It stores the Proton "
+                    + "Pass session key in a Linux keyring, which is not here. Use the Windows build.");
+            }
+
+            return new KeyringSessionKeyProtector(sp.GetRequiredService<ActivityLog>());
+        });
+
+        // The saved 1Password token does not follow it into the keyring yet. Keeping a session key
+        // there is a trade the setup page can describe; keeping a bearer credential for every vault
+        // the service account can reach, in a store that is unlocked all day, is a different one and
+        // has not been written down for the user yet. Until it is, nothing is kept — see
+        // UnavailableServiceTokenProtector, and the Linux plan.
+        services.AddSingleton<IServiceTokenProtector, UnavailableServiceTokenProtector>();
+#endif
 
         // Constructed by hand rather than by convention: the provider's exePathOverride parameter
         // is a test seam that takes a string, and letting the container guess at a string is how
@@ -96,7 +133,12 @@ public static class ProxyStartupExtensions
         services.AddSingleton<ProxyConfigChangeNotifier>();
         services.AddSingleton<ITransformProvider, CredentialInjectionTransformProvider>();
 
-        services.AddReverseProxy();
+        // Every forwarded request connects the way HappyEyeballs describes. This is the path that
+        // matters most: a host with a broken IPv6 route would otherwise have each proxied call sit
+        // on a dead address until it timed out, which is what "upstream unreachable" turned out to
+        // mean on a machine that curl could reach in under half a second.
+        services.AddReverseProxy().ConfigureHttpClient((_, handler) =>
+            handler.ConnectCallback = HappyEyeballs.CreateHandler().ConnectCallback);
         services.AddMcpFunnel();
 
         return services;

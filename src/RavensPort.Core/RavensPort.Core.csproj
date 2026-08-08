@@ -1,10 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <!-- Both frameworks — see the note in Directory.Build.props on which projects take which. -->
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <!--
+    The SDK defines WINDOWS for a net8.0-windows target already; this states it so the one #if in
+    this project does not depend on knowing that, and so it reads the same as any other conditional
+    constant.
+  -->
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net8.0-windows'))">
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <!--
+    The three files that cannot compile without Windows: WinRT KeyCredentialManager, the Credential
+    Manager P/Invokes it stores into, and the protector that binds them together. Everything else in
+    this project — the OAuth flows, the proxy config, the MCP funnel, the vault mapping, the CLI
+    runner — builds for both.
+
+    Deliberately a short list. ExecutableSignature and OnePasswordNativeClient look Windows-bound
+    and are not: a DllImport is resolved at run time, not compile time, so both build portable and
+    fail — or, in the 1Password case, succeed against a .so — where it actually matters. Excluding
+    a file that compiles fine only moves the problem into its callers.
+  -->
+  <ItemGroup Condition="!$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Vault\IHelloSigner.cs" />
+    <Compile Remove="Vault\HelloKeyProtector.cs" />
+    <Compile Remove="Vault\WindowsCredentialStore.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

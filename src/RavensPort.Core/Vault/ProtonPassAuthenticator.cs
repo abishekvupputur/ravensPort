@@ -25,7 +25,7 @@ public sealed partial class ProtonPassAuthenticator(
     ICliRunner cliRunner,
     ProtonPassSession session,
     ProtonPassInstaller installer,
-    HelloKeyProtector helloKeyProtector,
+    ISessionKeyProtector helloKeyProtector,
     VaultGateService gate,
     ActivityLog activityLog)
 {

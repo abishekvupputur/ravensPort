@@ -1,3 +1,4 @@
+using RavensPort.Core.Net;
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using RavensPort.Core.Diagnostics;
@@ -40,7 +41,7 @@ public sealed class CredentialTestService : IDisposable
         // Redirects are not followed on purpose. An API that rejects an unauthenticated request
         // by bouncing it to a login page would otherwise return 200 for the login page, and the
         // test would pass for a key that does not work.
-        _httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        _httpClient = new HttpClient(HappyEyeballs.CreateHandler(h => h.AllowAutoRedirect = false))
         {
             Timeout = RequestTimeout,
         };

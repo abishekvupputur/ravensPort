@@ -1,44 +1,150 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    The tray app: Avalonia views over the view models in RavensPort.UI, hosting Kestrel and YARP
+    in-process. It kept the WPF project's path and its AssemblyName on purpose — the installer, the
+    MSIX packaging script, the release workflows and the docs all address this project by
+    src/RavensPort.App, and none of them care which UI framework draws it.
+  -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <!--
+      Both frameworks, like Core and the tests.
+
+      This was briefly one framework chosen by the host OS, to avoid telling publish which to
+      build: a multi-targeting project refuses to publish without being told (NETSDK1129), and a
+      publish profile cannot answer because profiles are read during the inner build, after the
+      fan-out decision. That saved editing the release machinery and broke something worse —
+      packages.lock.json records the frameworks the project declares, so a lock file generated on
+      Windows had only the Windows one and a locked restore on Linux failed with NU1004. A project
+      whose dependency graph depends on who built it cannot have a lock file at all.
+
+      So publish is told explicitly instead, with -p:TargetFramework alongside the profile, in the
+      workflows and the docs. More places to keep in step, but they fail loudly rather than only on
+      the platform nobody built on.
+    -->
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
     <AssemblyName>RavensPort</AssemblyName>
+
+
+    <!--
+      Bindings are resolved at compile time, so a mistyped property name is a build error rather
+      than a control that silently renders nothing. Worth the x:DataType annotations it costs:
+      every view here is a port of XAML whose bindings currently fail quietly, and quietly is
+      exactly how a port goes wrong.
+    -->
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!--
+    Avalonia's rendering natives ship with debug symbols beside them: libSkiaSharp.pdb is 80 MB and
+    libHarfBuzzSharp.pdb another 20 MB, which is more than the app itself and all of it dead weight
+    in a release download. They are dropped from publish while our own symbols are kept — those are
+    a few hundred kilobytes and they are what put line numbers in the stack traces the Settings tab
+    hands the user.
+  -->
+  <Target Name="DropThirdPartyNativeSymbols" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish
+        Remove="@(ResolvedFileToPublish)"
+        Condition="'%(Extension)' == '.pdb' and !$([System.String]::Copy('%(Filename)').StartsWith('RavensPort'))" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    WinForms, for the tray icon, and only on Windows.
+
+    Avalonia has a TrayIcon of its own and the portable build uses it — but it draws a native menu
+    that cannot be themed and it has no balloon tip, which is how the app tells someone who closed
+    the setup window that nothing is being served. Windows keeps the better one; every other
+    platform gets Avalonia's and loses those two things. Both live in Tray/, one file each.
+  -->
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net8.0-windows'))">
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Assets\tray.ico" />
-    <Resource Include="Assets\logo.png" />
-    <Resource Include="Assets\proton-pass-logo.png" />
+    <!--
+      Both targets, for two different reasons. On Windows, UseWindowsForms puts
+      System.Windows.Forms into every file's implicit usings and it collides with Avalonia over both
+      of these names — settled once here rather than by an alias at the top of each file, since
+      WinForms is used by exactly one folder and Avalonia is the right default. On the portable
+      target there is no collision, but these names are then not in scope at all, so the alias is
+      what makes them resolve. Conditioning it on Windows breaks the portable build.
+    -->
+    <Using Include="Avalonia.Application" Alias="Application" />
+    <Using Include="Avalonia.Controls.UserControl" Alias="UserControl" />
+  </ItemGroup>
 
-    <!-- 1Password's own mark, shown on the consent window that asks before keeping a service-account
-         token. AgileBits' trademark, used to identify the manager being connected to and nothing
-         else. See THIRD-PARTY-NOTICES.md. -->
-    <Resource Include="Assets\onepassword-logo.png" />
+  <!-- The WinForms tray and its themed menu renderer; the portable build has AvaloniaTrayIcon. -->
+  <ItemGroup Condition="!$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Tray\TrayIconManager.cs" />
+    <Compile Remove="Tray\DarkMenuRenderer.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.0-windows'))">
+    <Compile Remove="Tray\AvaloniaTrayIconManager.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\OnePasswordNative\onepassword.dll">
+    <EmbeddedResource Include="Assets\tray.ico" />
+    <!--
+      Everything under Assets\, which is where the vendor marks live too: RavensPort's own, Proton
+      Pass's, and 1Password's — AgileBits' trademark, shown on the consent window that asks before
+      keeping a service-account token, used to identify the manager being connected to and nothing
+      else. See THIRD-PARTY-NOTICES.md.
+    -->
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!--
+    The 1Password SDK, as a native library built from the Go in src/OnePasswordNative. One artefact
+    per platform, from the same source: onepassword.dll on Windows, libonepassword.so on Linux.
+
+    Guarded on Exists because the artefact is a build output, not a source file — CI runs `go build
+    -buildmode=c-shared` before the dotnet build, and a developer who has not may reasonably want to
+    work on everything else. The warning below is so that produces a usable app that says what it is
+    missing, rather than one that fails at the first 1Password call with a DllNotFoundException.
+  -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <Content Include="..\OnePasswordNative\onepassword.dll" Condition="Exists('..\OnePasswordNative\onepassword.dll')">
       <Link>onepassword.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <Content Include="../OnePasswordNative/libonepassword.so" Condition="Exists('../OnePasswordNative/libonepassword.so')">
+      <Link>libonepassword.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="WarnAboutMissingOnePasswordNative" BeforeTargets="Build">
+    <Warning Condition="'$(OS)' == 'Windows_NT' and !Exists('..\OnePasswordNative\onepassword.dll')"
+             Text="onepassword.dll is missing. Build it with: cd src/OnePasswordNative &amp;&amp; go build -buildmode=c-shared -o onepassword.dll main.go — 1Password will be unavailable until you do." />
+    <Warning Condition="'$(OS)' != 'Windows_NT' and !Exists('../OnePasswordNative/libonepassword.so')"
+             Text="libonepassword.so is missing. Build it with: cd src/OnePasswordNative &amp;&amp; go build -buildmode=c-shared -o libonepassword.so main.go — 1Password will be unavailable until you do." />
+  </Target>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <!-- Separate package, and a separate implementation from WPF's: thinner in places, which is
+         why the first grid ported is the simplest one. -->
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
+    <ProjectReference Include="..\RavensPort.UI\RavensPort.UI.csproj" />
   </ItemGroup>
 
 </Project>
