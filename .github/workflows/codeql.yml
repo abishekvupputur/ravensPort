@@ -11,8 +11,11 @@ on:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    # The repository requires Windows for C# because of WPF usage.
-    runs-on: windows-latest
+    # The repository requires Windows for C# because of WPF usage, and the Go DLL is built with CGO
+    # against the Windows toolchain. 'actions' compiles nothing, so it has no reason to occupy a
+    # Windows runner -- those are billed at ten times the Linux rate on private repos and are slower
+    # to start on public ones.
+    runs-on: ${{ matrix.language == 'actions' && 'ubuntu-latest' || 'windows-latest' }}
     permissions:
       actions: read
       contents: read
@@ -21,7 +24,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'csharp', 'go' ]
+        # 'actions' analyses the workflows in this repository as code, which is what they are: they
+        # run with the tree checked out and, in release.yml, with contents: write. zizmor.yml audits
+        # the same files and this is not redundant with it -- zizmor pattern-matches known-dangerous
+        # Actions constructs, while CodeQL builds a dataflow graph and follows untrusted input from a
+        # trigger through to a sink, which is how an injection that no single line looks wrong in
+        # gets found.
+        language: [ 'csharp', 'go', 'actions' ]
 
     steps:
     - name: Checkout repository
@@ -58,7 +67,7 @@ jobs:
       uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
         languages: ${{ matrix.language }}
-        # Autobuild triggers clean-build.bat, which launches the app and hangs, so both
+        # Autobuild triggers clean-build.bat, which launches the app and hangs, so the two compiled
         # languages are built by the explicit steps below.
         #
         # This is what produces the "Cannot build an overlay-base database because build-mode is
@@ -68,9 +77,17 @@ jobs:
         # thorough analysis, not a degraded one. Silencing it would mean switching C# to buildless
         # analysis and giving up the real compilation this project's WPF and P/Invoke code is
         # actually checked against. Left as it is on purpose.
-        build-mode: manual
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # queries: security-extended,security-and-quality
+        #
+        # 'actions' is the exception and has to be none: there is nothing to compile, and CodeQL
+        # refuses build-mode manual for it outright rather than ignoring it.
+        build-mode: ${{ matrix.language == 'actions' && 'none' || 'manual' }}
+        # security-extended over the default suite. The default is tuned for a low false-positive
+        # rate on any repository at all; extended adds the queries that trade some precision for
+        # reach, which is the right trade for something that holds credentials, brokers OAuth
+        # tokens and P/Invokes into CNG. security-and-quality is deliberately not included -- its
+        # extra queries are maintainability findings, and filing those as security alerts is how
+        # the Security tab becomes something nobody opens.
+        queries: security-extended
 
     - name: Build Go DLL (Required for C#)
       if: matrix.language == 'csharp'
