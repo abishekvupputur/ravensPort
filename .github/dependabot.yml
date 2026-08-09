@@ -19,6 +19,19 @@ updates:
       - "/tests/RavensPort.Core.Tests"
     schedule:
       interval: "weekly"
+    # Wait a week before proposing a version that has just shipped.
+    #
+    # The attack this closes is the one every recent supply-chain incident used: a maintainer
+    # account is compromised, a malicious version is published, and it is yanked within a day or
+    # two once someone notices. Without a cooldown Dependabot opens a pull request for that version
+    # within hours, and a grouped patch bump with a green CI run is precisely the pull request that
+    # gets merged without anyone reading the diff. A week is long enough that the bad releases are
+    # gone before they are ever proposed here.
+    #
+    # Applies to version updates only. Dependabot *security* updates ignore cooldown, which is the
+    # behaviour wanted: a fix for a known advisory should not be held back for a week.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
@@ -32,6 +45,9 @@ updates:
     directory: "/src/OnePasswordNative"
     schedule:
       interval: "weekly"
+    # Same reasoning as the NuGet block above.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "deps"
 
@@ -43,5 +59,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Same reasoning again, and this is the ecosystem where it matters most: an action bump is a
+    # SHA nobody can read, running with the repository checked out and, in release.yml, with
+    # contents: write.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "ci"
