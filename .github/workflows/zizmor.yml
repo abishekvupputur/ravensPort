@@ -1,0 +1,87 @@
+name: Workflow security audit
+
+# Static analysis of the workflows themselves. Nothing else here reads them.
+#
+# CodeQL analyses the application, Trivy analyses the dependencies, and both of them run *inside*
+# GitHub Actions with the source tree checked out. The CI configuration is the one piece of code in
+# this repository that no scanner was looking at, which is awkward given what these jobs hold:
+# release.yml runs with contents: write, id-token: write and attestations: write, and codeql.yml and
+# trivy.yml with security-events: write. A template-injection bug in a `run:` block is the shortest
+# path from an untrusted pull request to those permissions.
+#
+# zizmor is the tool trivy.yml's misconfiguration step points at and cannot do: it knows the Actions
+# threat model specifically -- expression injection through ${{ github.event.* }}, pull_request_target
+# with a checkout of the head ref, artifact poisoning, credential persistence, over-broad permissions,
+# and impostor commits, where a SHA pin points at a commit that is not reachable from the action's
+# own branches. That last one only works because every action here is SHA-pinned, and it is exactly
+# the check that makes the pinning worth something.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Offset from the other scanners' Sunday slots for the reason dependency-scan.yml gives: three
+    # simultaneous failures do not say which one moved.
+    - cron: '30 4 * * 0'
+
+permissions:
+  contents: read
+  # upload-sarif. Same reasoning as trivy.yml: findings belong in the Security tab, where they have
+  # history and can be dismissed with a reason, rather than only in a log that ages out.
+  security-events: write
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installed with pip at a pinned version rather than through zizmorcore/zizmor-action. The
+      # action would be a fourth third-party action running in a job that holds security-events:
+      # write; pip install of a pinned version is the same trade dependency-scan.yml already makes
+      # for govulncheck, and it keeps the tool that audits the workflows from being one more thing
+      # the workflows have to trust.
+      #
+      # Pinned, not latest -- unlike the Trivy binary next door. The difference is what goes stale:
+      # Trivy's value is a vulnerability database that only moves forward, while zizmor's is a
+      # ruleset, and a new rule arriving on its own schedule turns an unrelated pull request red.
+      # Dependabot does not track pip installs, so this needs bumping by hand; the version is worth
+      # that because the bump is the moment to read what the new rules do.
+      - name: Install zizmor
+        run: pipx install zizmor==1.29.0
+
+      # Two passes over the same files, for the same reason trivy.yml makes two: SARIF carries
+      # everything to the Security tab, and a second human-readable pass decides whether the build
+      # fails. `|| true` because zizmor exits non-zero on findings and the upload has to happen
+      # regardless -- the gate below is what enforces anything.
+      #
+      # GH_TOKEN enables the online audits. Without it zizmor still runs, but skips impostor-commit
+      # detection and the known-vulnerable-action checks, which need the GitHub API to resolve what
+      # a pinned SHA actually is. contents: read is all they ask for.
+      - name: Run zizmor (SARIF, for code scanning)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format sarif . > zizmor.sarif || true
+
+      - name: Upload zizmor SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: zizmor.sarif
+          category: 'zizmor'
+
+      # The gate. Held at medium severity *and* medium confidence deliberately: zizmor's low-confidence
+      # findings are pattern matches it cannot prove are reachable, and blocking merges on those is how
+      # a security check becomes something people learn to re-run until it passes. Everything below the
+      # threshold still reaches the Security tab through the SARIF above -- it is filtered out of the
+      # gate, not out of sight.
+      - name: Run zizmor (gate)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --min-severity medium --min-confidence medium .
