@@ -1,9 +1,24 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
 name: DevSkim
+
+# A pattern-based linter for insecure API use, run over the whole tree.
+#
+# The other scanners here each have a language they understand. CodeQL builds a dataflow graph for
+# C#, Go and the workflows; govulncheck walks the Go call graph; Trivy and dependency-scan.yml read
+# lock files. Between them they do not read a single line of the PowerShell and shell that builds,
+# signs, scans and installs this application -- installer/*.ps1, packaging/build-msix.ps1 and
+# packaging/build-deb.sh are the scripts that produce the artifact people download, and no check in
+# this repository looks inside them. DevSkim does: it is language-agnostic pattern matching, and
+# PowerShell and shell are in its ruleset.
+#
+# On the C# and Go it overlaps with CodeQL and is worth keeping anyway, because it flags a different
+# class of thing -- a weak hash, a deprecated crypto primitive, a banned string API -- which is a
+# statement about the call itself rather than about a path reaching it. This project P/Invokes into
+# CNG and stores credentials; those calls are exactly the ones a dataflow query will not object to
+# because nothing untrusted flows into them.
+#
+# Findings are notes, not gates. DevSkim has no severity input worth gating on and its output is
+# advisory by nature; this job reports to the Security tab and never fails the build. The scanners
+# that block a merge are trivy.yml, dependency-scan.yml and zizmor.yml.
 
 on:
   push:
@@ -11,24 +26,47 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '38 15 * * 5'
+    # Sunday, offset from the other scanners for the reason dependency-scan.yml gives: three
+    # simultaneous failures do not say which one moved. 01:30 CodeQL, 02:30 Trivy, 03:30
+    # dependency-scan, 04:30 zizmor, 05:30 here.
+    - cron: '30 5 * * 0'
+
+# Third-party actions are pinned to commit SHAs, not tags. A tag is mutable: whoever controls the
+# action's repo can repoint v1 at new code that then runs inside this job with the tree checked out
+# and security-events: write in hand. The trailing comment records which version each SHA was, since
+# the SHA alone is unreadable.
+permissions:
+  contents: read
 
 jobs:
   lint:
     name: DevSkim
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
+      # upload-sarif. Same reasoning as trivy.yml: findings belong in the Security tab, where they
+      # have history and can be dismissed with a reason, rather than only in a log that ages out.
       security-events: write
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so don't leave GITHUB_TOKEN sitting in
+          # .git/config where any later step or action could read it.
+          persist-credentials: false
 
       - name: Run DevSkim scanner
-        uses: microsoft/DevSkim-Action@v1
+        uses: microsoft/DevSkim-Action@4b5047945a44163b94642a1cecc0d93a3f428cc6 # v1.0.16
 
+      # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
+      # is what tells code scanning that a previously reported finding is gone, and skipping the
+      # upload leaves the old alert open forever.
       - name: Upload DevSkim scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           sarif_file: devskim-results.sarif
+          # Its own bucket, so a CodeQL or Trivy run never looks like it resolved a DevSkim finding
+          # or the other way round.
+          category: 'devskim'
