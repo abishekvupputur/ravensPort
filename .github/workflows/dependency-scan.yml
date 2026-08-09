@@ -1,16 +1,15 @@
 name: Dependency Vulnerability Scan
 
-# Two ecosystem-native scanners, kept apart from trivy.yml because they answer a different question.
+# Two ecosystem-native scanners, kept apart from osv-scanner.yml because they answer a different
+# question.
 #
-# Trivy reads the lock files and reports what is in them. These two ask their own toolchains: the Go
-# team's govulncheck walks the call graph and reports a CVE only when the vulnerable symbol is
-# actually reachable, and `dotnet list package --vulnerable` queries the GitHub Advisory Database
-# through NuGet itself. Between them they see things a generic SCA pass does not, and govulncheck in
-# particular sees *fewer* things -- deliberately, because a vulnerability in a package whose code
-# this project never calls is not a live failure path.
-#
-# OSV-Scanner is not here on purpose. It would be a third pass over the same two lock files, and
-# trivy.yml already gates on exactly that.
+# OSV-Scanner reads the lock files and asks one database, OSV.dev, about what is in them. These two
+# ask their own toolchains instead: the Go team's govulncheck walks the call graph and reports a CVE
+# only when the vulnerable symbol is actually reachable, and `dotnet list package --vulnerable`
+# queries the GitHub Advisory Database through NuGet itself. Between them they see things a generic
+# SCA pass does not -- a different advisory source on the .NET side, and on the Go side *fewer*
+# things, deliberately, because a vulnerability in a package whose code this project never calls is
+# not a live failure path.
 
 on:
   push:
@@ -18,18 +17,18 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    # Offset from the Trivy and CodeQL schedules so a bad Sunday morning does not arrive as three
-    # simultaneous failures with no clue which one moved.
+    # Offset from the OSV-Scanner and CodeQL schedules so a bad Sunday morning does not arrive as
+    # three simultaneous failures with no clue which one moved.
     - cron: '30 3 * * 0'
 
 # Third-party actions are pinned to commit SHAs, not tags. A tag is mutable: whoever controls the
 # action's repo can repoint it at new code that then runs inside this job with the repo checked out.
 # The trailing comment records which version each SHA was, since the SHA alone is unreadable.
 #
-# Both jobs report to code scanning, for the reason trivy.yml gives: a finding that exists only in a
-# job log has no history, cannot be dismissed with a reason, and is gone when the log ages out.
-# Neither of these tools speaks SARIF as readily as Trivy does -- govulncheck needs its paths
-# rewritten and the NuGet side has no SARIF output at all -- so both jobs below build it by hand.
+# Both jobs report to code scanning, for the reason osv-scanner.yml gives: a finding that exists only
+# in a job log has no history, cannot be dismissed with a reason, and is gone when the log ages out.
+# Neither of these tools emits usable SARIF on its own -- govulncheck needs its paths rewritten and
+# the NuGet side has no SARIF output at all -- so both jobs below build it by hand.
 #
 # The write that needs is granted per job rather than here. It reads as a distinction without a
 # difference while both jobs happen to want it, and stops being one the moment a third job is added:

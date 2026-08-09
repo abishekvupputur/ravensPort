@@ -3,8 +3,8 @@ name: DevSkim
 # A pattern-based linter for insecure API use, run over the whole tree.
 #
 # The other scanners here each have a language they understand. CodeQL builds a dataflow graph for
-# C#, Go and the workflows; govulncheck walks the Go call graph; Trivy and dependency-scan.yml read
-# lock files. Between them they do not read a single line of the PowerShell and shell that builds,
+# C#, Go and the workflows; govulncheck walks the Go call graph; OSV-Scanner and dependency-scan.yml
+# read lock files. Between them they do not read a single line of the PowerShell and shell that builds,
 # signs, scans and installs this application -- installer/*.ps1, packaging/build-msix.ps1 and
 # packaging/build-deb.sh are the scripts that produce the artifact people download, and no check in
 # this repository looks inside them. DevSkim does: it is language-agnostic pattern matching, and
@@ -18,7 +18,7 @@ name: DevSkim
 #
 # Findings are notes, not gates. DevSkim has no severity input worth gating on and its output is
 # advisory by nature; this job reports to the Security tab and never fails the build. The scanners
-# that block a merge are trivy.yml, dependency-scan.yml and zizmor.yml.
+# that block a merge are osv-scanner.yml, dependency-scan.yml and zizmor.yml.
 
 on:
   push:
@@ -27,7 +27,7 @@ on:
     branches: [ "main" ]
   schedule:
     # Sunday, offset from the other scanners for the reason dependency-scan.yml gives: three
-    # simultaneous failures do not say which one moved. 01:30 CodeQL, 02:30 Trivy, 03:30
+    # simultaneous failures do not say which one moved. 01:30 CodeQL, 02:30 OSV-Scanner, 03:30
     # dependency-scan, 04:30 zizmor, 05:30 here.
     - cron: '30 5 * * 0'
 
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # upload-sarif. Same reasoning as trivy.yml: findings belong in the Security tab, where they
+      # upload-sarif. Same reasoning as osv-scanner.yml: findings belong in the Security tab, where they
       # have history and can be dismissed with a reason, rather than only in a log that ages out.
       security-events: write
 
@@ -87,6 +87,6 @@ jobs:
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           sarif_file: devskim-results.sarif
-          # Its own bucket, so a CodeQL or Trivy run never looks like it resolved a DevSkim finding
+          # Its own bucket, so a CodeQL or OSV-Scanner run never looks like it resolved a DevSkim finding
           # or the other way round.
           category: 'devskim'

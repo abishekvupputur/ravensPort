@@ -2,14 +2,14 @@ name: Workflow security audit
 
 # Static analysis of the workflows themselves. Nothing else here reads them.
 #
-# CodeQL analyses the application, Trivy analyses the dependencies, and both of them run *inside*
-# GitHub Actions with the source tree checked out. The CI configuration is the one piece of code in
-# this repository that no scanner was looking at, which is awkward given what these jobs hold:
-# release.yml runs with contents: write, id-token: write and attestations: write, and codeql.yml and
-# trivy.yml with security-events: write. A template-injection bug in a `run:` block is the shortest
-# path from an untrusted pull request to those permissions.
+# CodeQL analyses the application, OSV-Scanner analyses the dependencies, and both of them run
+# *inside* GitHub Actions with the source tree checked out. The CI configuration is the one piece of
+# code in this repository that no scanner was looking at, which is awkward given what these jobs
+# hold: release.yml runs with contents: write, id-token: write and attestations: write, and
+# codeql.yml and osv-scanner.yml with security-events: write. A template-injection bug in a `run:`
+# block is the shortest path from an untrusted pull request to those permissions.
 #
-# zizmor is the tool trivy.yml's misconfiguration step points at and cannot do: it knows the Actions
+# zizmor is what a generic misconfiguration scanner points at and cannot do: it knows the Actions
 # threat model specifically -- expression injection through ${{ github.event.* }}, pull_request_target
 # with a checkout of the head ref, artifact poisoning, credential persistence, over-broad permissions,
 # and impostor commits, where a SHA pin points at a commit that is not reachable from the action's
@@ -28,7 +28,7 @@ on:
 
 permissions:
   contents: read
-  # upload-sarif. Same reasoning as trivy.yml: findings belong in the Security tab, where they have
+  # upload-sarif. Same reasoning as osv-scanner.yml: findings belong in the Security tab, where they have
   # history and can be dismissed with a reason, rather than only in a log that ages out.
   security-events: write
 
@@ -47,15 +47,15 @@ jobs:
       # for govulncheck, and it keeps the tool that audits the workflows from being one more thing
       # the workflows have to trust.
       #
-      # Pinned, not latest -- unlike the Trivy binary next door. The difference is what goes stale:
-      # Trivy's value is a vulnerability database that only moves forward, while zizmor's is a
-      # ruleset, and a new rule arriving on its own schedule turns an unrelated pull request red.
-      # Dependabot does not track pip installs, so this needs bumping by hand; the version is worth
-      # that because the bump is the moment to read what the new rules do.
+      # Pinned rather than floating, for the same reason osv-scanner.yml pins its binary: what goes
+      # stale in a scanner is its database, and zizmor's value is a ruleset instead -- a new rule
+      # arriving on its own schedule turns an unrelated pull request red. Dependabot does not track
+      # pip installs, so this needs bumping by hand; the version is worth that because the bump is
+      # the moment to read what the new rules do.
       - name: Install zizmor
         run: pipx install zizmor==1.29.0
 
-      # Two passes over the same files, for the same reason trivy.yml makes two: this one reports to
+      # Two passes over the same files, for the same reason osv-scanner.yml makes two: this one reports to
       # the Security tab, and a second human-readable pass decides whether the build fails. `|| true`
       # because zizmor exits non-zero on findings and the upload has to happen regardless -- the
       # gate below is what enforces anything.
