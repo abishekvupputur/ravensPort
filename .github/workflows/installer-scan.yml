@@ -8,14 +8,29 @@ name: Installer scan
 # there costs a resubmission and, for a Defender hit, a false-positive report to Microsoft. The
 # same failure here costs one build.
 #
-# Runs on pull requests and on version tags. release.yml runs the same two scripts again before it
-# publishes anything, so a tag that somehow reaches release without passing here still cannot ship
-# an unscanned installer -- see the note on that job.
+# It also runs BinSkim over the two native binaries the build produces, which is a different
+# question again -- the link-time mitigations baked into the image rather than anything Defender or
+# the source scanners look at. See the note on that step.
+#
+# Runs on pull requests, on version tags, and weekly. release.yml runs the same two scripts again
+# before it publishes anything, so a tag that somehow reaches release without passing here still
+# cannot ship an unscanned installer -- see the note on that job.
 on:
   pull_request:
     branches: ["main"]
   push:
     tags: ["v*"]
+  schedule:
+    # Sunday 06:30, last in the run the other scanners make -- 01:30 CodeQL, 02:30 Trivy, 03:30
+    # dependency-scan, 04:30 zizmor, 05:30 DevSkim -- and offset for the reason
+    # dependency-scan.yml gives: simultaneous failures do not say which one moved.
+    #
+    # Worth running on a clock even though nothing in the tree has changed, because the thing
+    # being asked has: a Defender scan is a question about today's signature database, not about
+    # today's code. The failure this catches is a dependency already inside a shipped installer
+    # that Defender starts flagging next month, which is otherwise discovered by a user, or by the
+    # winget pipeline at submission time. Everything else here re-runs for free alongside it.
+    - cron: "30 6 * * 0"
 
 # Third-party actions are pinned to commit SHAs, not tags, for the reason spelled out in
 # release.yml: a tag is mutable and whoever controls the action's repo can repoint it.
@@ -51,6 +66,12 @@ jobs:
   installer:
     name: Scan and test the installer
     runs-on: windows-latest
+    permissions:
+      contents: read
+      # upload-sarif, for the BinSkim results below. The rest of this job writes nowhere; this is
+      # the narrowest scope that lets a binary-hardening regression land in the Security tab with
+      # history instead of only in a log that ages out.
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,6 +113,98 @@ jobs:
             & dotnet @publishArgs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }
+
+      # --- Binary hardening -----------------------------------------------------------------
+      # BinSkim asks the one question nothing else here asks: not "is this code wrong" but "was
+      # this binary linked with the mitigations the loader can only apply if the image opts in".
+      # ASLR, DEP, Control Flow Guard, /GS, a non-writable-and-executable section layout -- all of
+      # them are flags baked into the PE at link time, and all of them are silently droppable by a
+      # csproj property or a Go build flag that looks unrelated. A dataflow analyser will never
+      # object, because nothing in the source changed.
+      #
+      # It runs here rather than in its own workflow because the two binaries it wants have just
+      # been built four steps up, and building them again on a second Windows runner would cost
+      # eight minutes to analyse bytes that already exist.
+      #
+      # What it covers: the published apphost and the Go DLL, which are the two native PEs this
+      # project produces. The managed assemblies are inside the single-file bundle and BinSkim
+      # cannot see into one, so this is not a claim about every byte in the installer -- it is a
+      # claim about the parts whose link-time flags this repository chooses.
+      - name: Install BinSkim
+        shell: pwsh
+        run: |
+          # Version-pinned, and by hand, for the reason zizmor.yml pins zizmor: this is a ruleset,
+          # not a vulnerability database, and a new rule arriving on its own schedule turns an
+          # unrelated pull request red. Microsoft ships no release asset and no dotnet tool for
+          # BinSkim, only the NuGet package, so the package is what gets unpacked. Note that the
+          # tools/ path carries a target framework, so bumping the version may move it.
+          $version = '4.4.9.11'
+          $url = "https://api.nuget.org/v3-flatcontainer/microsoft.codeanalysis.binskim/$version/microsoft.codeanalysis.binskim.$version.nupkg"
+
+          $archive = Join-Path $env:RUNNER_TEMP 'binskim.zip'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath (Join-Path $env:RUNNER_TEMP 'binskim') -Force
+
+      - name: Scan the binaries with BinSkim
+        shell: pwsh
+        run: |
+          $binskim = Join-Path $env:RUNNER_TEMP 'binskim\tools\net9.0\win-x64\BinSkim.exe'
+
+          # --disable-telemetry: BinSkim links Application Insights and reports to Microsoft by
+          #   default. A build agent's analysis run is not theirs to collect.
+          # --ignorePdbLoadError: the Go DLL is built with -buildmode=c-shared and carries DWARF,
+          #   not a PDB, so the PDB-dependent rules cannot run against it. Without this the
+          #   missing PDB aborts the whole target rather than skipping those rules.
+          # Both take an explicit `true` -- BinSkim's parser treats them as taking a value, and
+          # leaving it off makes the tool swallow whichever argument comes next.
+          & $binskim analyze `
+            'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-raw/RavensPort.exe' `
+            'src/OnePasswordNative/onepassword.dll' `
+            --output binskim.sarif `
+            --log ForceOverwrite `
+            --disable-telemetry true `
+            --ignorePdbLoadError true
+
+          # Deliberately no `exit 1` here. BinSkim returns 0 whether or not it found anything --
+          # the exit code reports whether the *analysis* ran -- so the gate below reads the SARIF,
+          # and this step staying green is what lets the upload run first.
+          if (-not (Test-Path binskim.sarif)) {
+            Write-Error 'BinSkim produced no SARIF; the analysis did not run.'
+            exit 1
+          }
+
+      - name: Upload BinSkim results to the Security tab
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: binskim.sarif
+          # Its own bucket, so a CodeQL, Trivy, DevSkim or zizmor run never looks like
+          # it resolved a BinSkim finding or the other way round.
+          category: "binskim"
+        # A pull request from a fork gets a read-only token, so security-events: write is not
+        # granted and this upload would fail on exactly the contributions worth scanning. The gate
+        # below still runs there and still blocks the merge; the alert simply lands when the same
+        # commit is scanned on the tag or the Sunday run.
+
+      # The gate. Both binaries report clean today, so any result at all is a regression -- which
+      # is the whole reason to run this on every pull request rather than reading a score. Only
+      # failures reach the SARIF: BinSkim's default --kind is Fail, so passing and not-applicable
+      # rules are not in the file.
+      - name: Fail on BinSkim findings
+        shell: pwsh
+        run: |
+          $sarif = Get-Content binskim.sarif -Raw | ConvertFrom-Json
+          $results = @($sarif.runs[0].results)
+
+          if ($results.Count -gt 0) {
+            foreach ($result in $results) {
+              Write-Host "$($result.ruleId) [$($result.level)] $($result.message.text)"
+            }
+            Write-Error "BinSkim reported $($results.Count) finding(s)."
+            exit 1
+          }
+
+          Write-Host 'BinSkim: no findings.'
 
       - name: Determine version
         id: version
