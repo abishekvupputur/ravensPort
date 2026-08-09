@@ -1,0 +1,11 @@
+# Ownership of everything in this repository.
+#
+# Read by GitHub from the default branch only. A CODEOWNERS file on a branch has no effect until
+# that branch is merged into main, which is worth knowing when this one appears to do nothing on the
+# pull request that adds it.
+#
+# The pattern syntax is gitignore's, not glob's: the last matching line wins, so a narrower rule
+# added below this one overrides it rather than adding to it.
+
+# Everything, unless a later line says otherwise.
+* @abishekvupputur
