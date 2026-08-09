@@ -25,19 +25,26 @@ on:
 # Third-party actions are pinned to commit SHAs, not tags. A tag is mutable: whoever controls the
 # action's repo can repoint it at new code that then runs inside this job with the repo checked out.
 # The trailing comment records which version each SHA was, since the SHA alone is unreadable.
+#
+# Both jobs report to code scanning, for the reason trivy.yml gives: a finding that exists only in a
+# job log has no history, cannot be dismissed with a reason, and is gone when the log ages out.
+# Neither of these tools speaks SARIF as readily as Trivy does -- govulncheck needs its paths
+# rewritten and the NuGet side has no SARIF output at all -- so both jobs below build it by hand.
+#
+# The write that needs is granted per job rather than here. It reads as a distinction without a
+# difference while both jobs happen to want it, and stops being one the moment a third job is added:
+# a workflow-level grant is inherited by everything, including whatever gets added later by someone
+# who never thought about it.
 permissions:
   contents: read
-  # Both jobs report to code scanning, for the reason trivy.yml gives: a finding that exists only in
-  # a job log has no history, cannot be dismissed with a reason, and is gone when the log ages out.
-  # Neither of these tools speaks SARIF as readily as Trivy does -- govulncheck needs its paths
-  # rewritten and the NuGet side has no SARIF output at all -- which is why both jobs below build it
-  # by hand.
-  security-events: write
 
 jobs:
   govulncheck:
     name: govulncheck (Go)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,6 +112,9 @@ jobs:
     # windows-latest because the target framework is net8.0-windows10.0.19041.0; a restore on Linux
     # cannot resolve the Windows SDK targeting packs, and this command needs a completed restore.
     runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
