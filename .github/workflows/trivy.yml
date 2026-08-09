@@ -12,8 +12,17 @@ on:
 # is mutable: whoever controls the action's repo can repoint it at new code that then runs
 # inside this job with the repo checked out. The trailing comment records which version each
 # SHA was, since the SHA alone is unreadable.
+#
+# The Trivy *binary* is the deliberate exception, and it is a different kind of dependency from the
+# action that fetches it. A scanner's value is its vulnerability database and its detection logic,
+# both of which only move forward; a pinned Trivy quietly stops recognising package formats and
+# advisory sources that shipped after it, and the failure mode is a green check rather than an
+# error. `latest` is used everywhere below for that reason. The action wrapping it stays SHA-pinned
+# — that one runs code in this job, and it holds security-events: write.
 permissions:
   contents: read
+  # Required by upload-sarif. Scoped to this job only; nothing else here writes anywhere.
+  security-events: write
 
 jobs:
   trivy_scan:
@@ -27,13 +36,48 @@ jobs:
           # .git/config where any later step or action could read it.
           persist-credentials: false
 
-      - name: Run Trivy Vulnerability Scanner
+      # One pass over all three scanners, written to SARIF and uploaded to the Security tab; the
+      # gating steps below re-run them for the log. The split is the point.
+      #
+      # Before this, every Trivy finding existed only as text in a job log: no history, no way to
+      # dismiss a reviewed finding with a reason, no inline annotation on the pull request that
+      # introduced it, and nothing at all once the log aged out. The table steps also stop at the
+      # first scanner that fails, so a secret could hide a misconfiguration for a whole run.
+      #
+      # No severity filter here, unlike the gates. A MEDIUM is not worth blocking a merge on and is
+      # worth being able to look at; the Security tab is where the full picture belongs, and
+      # exit-code 0 keeps this step from ever being the thing that fails the build.
+      - name: Run Trivy (SARIF, for code scanning)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Pinned rather than left to the action's default, for the same reason the action itself
-          # is pinned to a SHA: what a scan reports should change when this file says so, not when
-          # the action ships a new default underneath it.
-          version: 'v0.73.0'
+          version: 'latest'
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'vuln,secret,misconfig'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          # Matches the gate below. An advisory with no fixed version upstream is not something a
+          # pull request here can act on, and filing it as an alert only trains people to ignore
+          # the tab.
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF
+        # The scan step cannot fail (exit-code 0), but a cache or network fault can. Uploading
+        # whatever was produced is still better than losing the run.
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: 'trivy-results.sarif'
+          # Keeps these alerts in their own bucket, so a CodeQL run never looks like it resolved
+          # a Trivy finding or the other way round.
+          category: 'trivy'
+
+      - name: Run Trivy Vulnerability Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: 'latest'
           scan-type: 'fs'
           scan-ref: '.'
           scanners: 'vuln'
@@ -49,7 +93,7 @@ jobs:
         if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: 'v0.73.0'
+          version: 'latest'
           scan-type: 'fs'
           scan-ref: '.'
           scanners: 'secret'
@@ -63,7 +107,7 @@ jobs:
       # broken: Trivy's misconfiguration scanner covers Terraform, CloudFormation, Kubernetes,
       # Dockerfile, Helm and Azure ARM, and this repository contains none of them -- the log says
       # "Detected config files num=0". GitHub Actions workflows are not in that set, so nothing here
-      # lints them; that would want a dedicated tool such as actionlint or zizmor.
+      # lints them; that is what zizmor.yml is for.
       #
       # Kept anyway. It costs seconds, and the day a Dockerfile or a Helm chart lands in this repo
       # is the day it starts earning its place, with nobody having to remember to add it.
@@ -71,7 +115,7 @@ jobs:
         if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: 'v0.73.0'
+          version: 'latest'
           scan-type: 'fs'
           scan-ref: '.'
           scanners: 'misconfig'
