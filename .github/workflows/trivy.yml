@@ -100,6 +100,40 @@ jobs:
           format: 'table'
           exit-code: '1'
 
+      # Licences, gated at CRITICAL and HIGH -- which for this scanner means Trivy's "forbidden" and
+      # "restricted" classes, the copyleft terms an MIT binary shipped as an installer cannot absorb.
+      #
+      # TRIVY_LICENSE_FULL is not optional here, and this is the part worth knowing. Without it
+      # Trivy reads licence metadata out of the lock files, and neither packages.lock.json nor
+      # go.sum carries any: a scan without the flag reports "-" against every single target and
+      # passes, which looks exactly like a clean result. With it, Trivy reads the licence texts and
+      # headers themselves and finds 35 declarations in this tree. The action has no input for the
+      # flag, so it goes through the environment, which is how every Trivy flag can be set.
+      #
+      # As of this commit all of them are permissive -- 12 notice-class, the rest unclassified, and
+      # nothing above LOW -- so this step reports nothing today. It is not decorative: it is the
+      # check that fires the day a GPL package arrives underneath something. dependency-review.yml
+      # gates licences too, but only on what a pull request adds and only when GitHub can classify
+      # the package; this one looks at everything already in the tree.
+      #
+      # No SARIF from this one, unlike the scanners above. Every finding it has is a permissive
+      # licence correctly detected, and filing a dozen of those as security alerts is the noise the
+      # other severity thresholds here exist to avoid. If a restricted licence ever does land, this
+      # step fails the build, which is louder than an alert.
+      - name: Run Trivy License Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_LICENSE_FULL: 'true'
+        with:
+          version: 'latest'
+          scan-type: 'fs'
+          scan-ref: '.'
+          scanners: 'license'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
       # 'misconfig' is the current name; 'config' is the old spelling, which Trivy still accepts
       # while logging a deprecation warning. Renaming it silences that warning and nothing else.
       #
