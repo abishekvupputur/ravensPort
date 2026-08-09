@@ -27,6 +27,12 @@ on:
 # The trailing comment records which version each SHA was, since the SHA alone is unreadable.
 permissions:
   contents: read
+  # Both jobs report to code scanning, for the reason trivy.yml gives: a finding that exists only in
+  # a job log has no history, cannot be dismissed with a reason, and is gone when the log ages out.
+  # Neither of these tools speaks SARIF as readily as Trivy does -- govulncheck needs its paths
+  # rewritten and the NuGet side has no SARIF output at all -- which is why both jobs below build it
+  # by hand.
+  security-events: write
 
 jobs:
   govulncheck:
@@ -50,9 +56,47 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
+      # SARIF pass, uploaded below; the gate re-runs it for a readable log. `|| true` because
+      # govulncheck's exit code depends on its output format and this step must not be what fails
+      # the build -- the gate is.
+      #
+      # The path rewrite is required, not cosmetic. govulncheck has to run inside the module, so the
+      # file URIs it emits are relative to src/OnePasswordNative, while code scanning resolves every
+      # SARIF path against the repository root. Uploaded unrewritten, an alert in main.go anchors to
+      # a main.go at the top of the repo, which does not exist -- GitHub then drops the location and
+      # the alert points nowhere. Absolute and http URIs are left alone; so is a path that already
+      # carries the prefix, so this stays correct if govulncheck ever changes what it emits.
+      - name: Run govulncheck (SARIF, for code scanning)
+        working-directory: src/OnePasswordNative
+        run: govulncheck -format sarif ./... > govulncheck.raw.sarif || true
+
+      - name: Rewrite SARIF paths to be repository-relative
+        run: |
+          jq 'walk(
+                if type == "object"
+                   and ((.uri // null) | type) == "string"
+                   and ((.uri | startswith("src/OnePasswordNative/")) | not)
+                   and ((.uri | startswith("/")) | not)
+                   and ((.uri | test("^[a-z][a-z0-9+.-]*:")) | not)
+                then .uri = "src/OnePasswordNative/" + .uri
+                else .
+                end
+              )' src/OnePasswordNative/govulncheck.raw.sarif > govulncheck.sarif
+
+      # Uploaded even when it found nothing. An empty run is what tells code scanning that a
+      # previously reported vulnerability is gone; skipping the upload leaves the old alert open
+      # forever.
+      - name: Upload govulncheck SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: govulncheck.sarif
+          category: 'govulncheck'
+
       # Exits non-zero when it finds a reachable vulnerability, so no result parsing is needed --
       # unlike the .NET side below, which reports and then exits 0 regardless.
       - name: Run govulncheck
+        if: always()
         working-directory: src/OnePasswordNative
         run: govulncheck ./...
 
@@ -101,18 +145,85 @@ jobs:
                     Version  = $package.resolvedVersion
                     Severity = $vulnerability.severity
                     Advisory = $vulnerability.advisoryurl
+                    # Kept alongside the display name because the SARIF below needs the full path
+                    # to relativize; the table prints Project instead.
+                    ProjectPath = $project.path
                   }
                 }
               }
             }
           }
 
+          # SARIF, assembled by hand. `dotnet list package` has no SARIF formatter and there is no
+          # NuGet-side tool that produces one, so the alternative was leaving these findings in the
+          # log only -- which is what every other scanner here has now stopped doing.
+          #
+          # A package has no line to point at, so each result anchors to line 1 of the project file
+          # that pulled it in. That is the actionable location anyway: the fix is a version bump in
+          # a csproj, or in whatever declares the package above it.
+          $level = @{ 'Critical' = 'error'; 'High' = 'error'; 'Moderate' = 'warning'; 'Low' = 'note' }
+
+          $results = foreach ($finding in $findings) {
+            # Absolute on the runner; code scanning resolves SARIF paths against the repository
+            # root, so anything absolute would silently fail to anchor. Trimmed by hand rather than
+            # with Path.GetRelativePath, which does not exist on Windows PowerShell -- this step
+            # runs under pwsh and would work, but the failure if that ever changed is a null uri
+            # and a SARIF that uploads clean with every alert pointing nowhere.
+            $relative = $finding.ProjectPath
+            if ($relative.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase)) {
+              $relative = $relative.Substring($env:GITHUB_WORKSPACE.Length)
+            }
+            $relative = $relative.TrimStart('\', '/').Replace('\', '/')
+            @{
+              ruleId  = 'nuget/vulnerable-package'
+              level   = if ($level.ContainsKey($finding.Severity)) { $level[$finding.Severity] } else { 'warning' }
+              message = @{ text = "$($finding.Package) $($finding.Version) has a known $($finding.Severity) severity vulnerability. See $($finding.Advisory)." }
+              locations = @(@{
+                physicalLocation = @{
+                  artifactLocation = @{ uri = $relative }
+                  region           = @{ startLine = 1 }
+                }
+              })
+              # Keyed on the advisory and the exact version rather than the location, so bumping an
+              # unrelated dependency does not close and reopen this alert, and so the same advisory
+              # reported against two projects stays two alerts.
+              partialFingerprints = @{ 'packageAdvisory/v1' = "$($finding.Package)@$($finding.Version)|$($finding.Advisory)" }
+            }
+          }
+
+          $sarif = @{
+            '$schema' = 'https://json.schemastore.org/sarif-2.1.0.json'
+            version   = '2.1.0'
+            runs      = @(@{
+              tool = @{ driver = @{
+                name           = 'dotnet list package --vulnerable'
+                informationUri = 'https://learn.microsoft.com/nuget/consume-packages/dotnet-list-package'
+                rules          = @(@{
+                  id               = 'nuget/vulnerable-package'
+                  name             = 'VulnerablePackage'
+                  shortDescription = @{ text = 'Vulnerable NuGet package' }
+                  fullDescription  = @{ text = 'A NuGet package in this project''s dependency graph, direct or transitive, has a known vulnerability in the GitHub Advisory Database.' }
+                  helpUri          = 'https://github.com/advisories'
+                })
+              } }
+              results = @($results)
+            })
+          }
+
+          # Depth matters: the default of 2 silently truncates the nested location objects into
+          # strings, and the upload then fails schema validation with nothing pointing at why.
+          #
+          # `shell: pwsh` above is load-bearing on the clean run, too. Windows PowerShell serialises
+          # an empty array as "" rather than [], which would make the no-findings SARIF invalid --
+          # exactly the upload that exists to close alerts for packages that have been fixed.
+          $sarif | ConvertTo-Json -Depth 12 | Set-Content dotnet-vulnerable.sarif -Encoding utf8
+
           if (-not $findings) {
             Write-Host 'No vulnerable NuGet packages, transitive included.'
             exit 0
           }
 
-          $findings | Format-Table -AutoSize | Out-String | Write-Host
+          $findings | Select-Object Project, Package, Version, Severity, Advisory | Format-Table -AutoSize | Out-String | Write-Host
 
           # Gated on High and Critical, with everything else reported rather than hidden. A Moderate
           # advisory in a transitive package is worth seeing and is not worth blocking a merge on;
@@ -124,3 +235,13 @@ jobs:
           }
 
           Write-Host "$($findings.Count) advisory(ies) found, none High or Critical. Not failing the build."
+
+      # always(), because the step above exits 1 on a High or Critical finding and those are exactly
+      # the alerts worth having. An empty SARIF is uploaded too: that is what closes an alert for a
+      # package that has since been bumped.
+      - name: Upload dotnet SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: dotnet-vulnerable.sarif
+          category: 'dotnet-vulnerable'
