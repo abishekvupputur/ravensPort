@@ -94,7 +94,7 @@ public class McpFunnelValidationTests
         Assert.NotNull(McpFunnelValidation.ValidateTarget(McpSourceKind.RemoteUrl, Guid.Empty, "not-a-url", []));
 
         // Plain http off-box would put the session on the wire in cleartext.
-        Assert.NotNull(McpFunnelValidation.ValidateTarget(McpSourceKind.RemoteUrl, Guid.Empty, "http://example.com/mcp", []));
+        Assert.NotNull(McpFunnelValidation.ValidateTarget(McpSourceKind.RemoteUrl, Guid.Empty, "http://example.com/mcp", [])); // DevSkim: ignore DS137138
     }
 
     [Theory]

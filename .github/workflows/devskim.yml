@@ -58,6 +58,26 @@ jobs:
 
       - name: Run DevSkim scanner
         uses: microsoft/DevSkim-Action@4b5047945a44163b94642a1cecc0d93a3f428cc6 # v1.0.16
+        with:
+          # DS162092 ("accessing localhost could indicate debug code, or could hinder scaling") is
+          # excluded outright rather than suppressed line by line. It fired 67 times, and every one
+          # of them is the product working as designed: RavensPort is a loopback proxy, so
+          # 127.0.0.1 is where it listens, where the OAuth redirect comes back to, and what
+          # LocalAccessGuard exists to enforce. The rule assumes a service that ought to be
+          # reachable from elsewhere; this one must not be. Nothing is lost by turning it off,
+          # because there is no finding it could produce here that would be a defect.
+          #
+          # Note what is *not* excluded: DS137138 (insecure URL) and DS173237 (hardcoded secret)
+          # stay on. Their handful of false positives are suppressed at the line, with the reason
+          # next to them, so a genuine plain-http endpoint or a real key added later still fails.
+          exclude-rules: DS162092
+          # The action's default, plus obj/ (build output, same as bin/) and the MSIX manifest.
+          # AppxManifest.xml trips the insecure-URL rule on its `xmlns=` declarations, which are
+          # namespace identifiers that nothing ever fetches. It cannot be suppressed in place --
+          # a DevSkim suppression has to sit on the finding's line or the one above it, and both
+          # are inside the `<Package>` start tag, where XML forbids a comment. The file is a
+          # static manifest with no code in it, so skipping it costs nothing.
+          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/packaging/AppxManifest.xml"
 
       # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
       # is what tells code scanning that a previously reported finding is gone, and skipping the

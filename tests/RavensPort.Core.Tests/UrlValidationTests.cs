@@ -17,8 +17,10 @@ public class UrlValidationTests
         Assert.Null(UrlValidation.ValidateEndpoint(url, "Upstream base URL"));
 
     [Theory]
-    [InlineData("http://example.com/token")]
-    [InlineData("http://192.168.1.50/api")]
+    // The plain-http URLs below are the input this test rejects, not a transport this project
+    // uses, so DevSkim's insecure-URL rule is suppressed on them rather than the strings changed.
+    [InlineData("http://example.com/token")] // DevSkim: ignore DS137138
+    [InlineData("http://192.168.1.50/api")] // DevSkim: ignore DS137138
     public void ValidateEndpoint_RejectsPlainHttpOffMachine(string url)
     {
         // The whole point: these carry the client secret or access token, so cleartext here
