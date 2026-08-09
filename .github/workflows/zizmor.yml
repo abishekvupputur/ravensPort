@@ -55,10 +55,20 @@ jobs:
       - name: Install zizmor
         run: pipx install zizmor==1.29.0
 
-      # Two passes over the same files, for the same reason trivy.yml makes two: SARIF carries
-      # everything to the Security tab, and a second human-readable pass decides whether the build
-      # fails. `|| true` because zizmor exits non-zero on findings and the upload has to happen
-      # regardless -- the gate below is what enforces anything.
+      # Two passes over the same files, for the same reason trivy.yml makes two: this one reports to
+      # the Security tab, and a second human-readable pass decides whether the build fails. `|| true`
+      # because zizmor exits non-zero on findings and the upload has to happen regardless -- the
+      # gate below is what enforces anything.
+      #
+      # Confidence held at medium here as well as in the gate, so the two passes see the same
+      # findings and differ only in severity. Zizmor's low-confidence output is pattern matching it
+      # cannot show is reachable, and an alert is a claim that something is wrong: filing a dozen of
+      # those against workflows that are fine is how the Security tab stops being read at all, and
+      # dismissing each one by hand is worse. Severity is still unfiltered, so a low-severity finding
+      # zizmor is actually confident about does get an alert without blocking a merge.
+      #
+      # The cost is real and worth naming: the low-confidence findings are now nowhere but a local
+      # run. `zizmor .` with no thresholds is the command that shows them.
       #
       # GH_TOKEN enables the online audits. Without it zizmor still runs, but skips impostor-commit
       # detection and the known-vulnerable-action checks, which need the GitHub API to resolve what
@@ -66,7 +76,7 @@ jobs:
       - name: Run zizmor (SARIF, for code scanning)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: zizmor --format sarif . > zizmor.sarif || true
+        run: zizmor --min-confidence medium --format sarif . > zizmor.sarif || true
 
       - name: Upload zizmor SARIF
         if: always()
@@ -75,11 +85,9 @@ jobs:
           sarif_file: zizmor.sarif
           category: 'zizmor'
 
-      # The gate. Held at medium severity *and* medium confidence deliberately: zizmor's low-confidence
-      # findings are pattern matches it cannot prove are reachable, and blocking merges on those is how
-      # a security check becomes something people learn to re-run until it passes. Everything below the
-      # threshold still reaches the Security tab through the SARIF above -- it is filtered out of the
-      # gate, not out of sight.
+      # The gate. Medium confidence for the reason given above, plus medium severity: an
+      # informational or low finding zizmor is confident about is worth an alert and is not worth
+      # blocking a merge on, which is the one thing this pass does that the SARIF pass does not.
       - name: Run zizmor (gate)
         if: always()
         env:
