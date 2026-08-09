@@ -1,0 +1,59 @@
+name: Dependency review
+
+# Gate on what a pull request *adds*, which is a different question from the ones already asked.
+#
+# trivy.yml and dependency-scan.yml both audit the dependency set as it stands: whatever is in the
+# lock files today, is any of it vulnerable. Neither says who put it there. This one diffs the
+# dependency graph between the base commit and the head commit and reports only the delta, so a
+# pull request that pulls in a vulnerable transitive package is refused at the point someone can
+# still choose a different package -- rather than merged, and then reported on Sunday as a
+# repository-wide finding with no obvious owner.
+#
+# The licence check is the part nothing else in this repository does at all. RavensPort is MIT and
+# ships as a downloadable installer with the dependency tree linked into it; THIRD-PARTY-NOTICES.md
+# is maintained by hand, and a copyleft package arriving three levels under YARP would be a
+# distribution problem discovered by someone else, long after the merge.
+#
+# Requires the dependency graph, which is already on -- Dependabot in .github/dependabot.yml does
+# not work without it.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  # All the action needs: it reads the graph for base and head through the API using the job's own
+  # token. Deliberately no pull-requests: write -- the action can post its summary as a PR comment,
+  # but a pull request from a fork gets a read-only token, so that setting would work for branches
+  # and silently do nothing for exactly the contributions worth reviewing. The job summary carries
+  # the same information for both.
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # High and above, matching the gate in dependency-scan.yml. A moderate advisory in a new
+          # transitive package is worth seeing in the summary and is not worth blocking on; the two
+          # thresholds are kept the same so a package does not pass here and fail there.
+          fail-on-severity: high
+
+          # Strong copyleft only. This is a licence *compatibility* gate for an MIT binary that is
+          # distributed, not a policy of avoiding copyleft: LGPL and MPL are absent on purpose,
+          # since both are satisfiable for a linked library, and an allow-list instead of a deny-list
+          # would fail every package GitHub cannot classify -- which is most private and many small
+          # NuGet packages, and would make this the check everyone bypasses.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, SSPL-1.0
+
+          # Explicit, to match the permissions block above rather than leave it to the default. The
+          # action writes its findings to the job summary either way, which is where they are
+          # readable for fork pull requests too.
+          comment-summary-in-pr: never
