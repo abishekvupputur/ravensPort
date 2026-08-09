@@ -2,14 +2,18 @@ name: Dependency review
 
 # Gate on what a pull request *adds*, which is a different question from the ones already asked.
 #
-# trivy.yml and dependency-scan.yml both audit the dependency set as it stands: whatever is in the
-# lock files today, is any of it vulnerable. Neither says who put it there. This one diffs the
+# osv-scanner.yml and dependency-scan.yml both audit the dependency set as it stands: whatever is in
+# the lock files today, is any of it vulnerable. Neither says who put it there. This one diffs the
 # dependency graph between the base commit and the head commit and reports only the delta, so a
 # pull request that pulls in a vulnerable transitive package is refused at the point someone can
 # still choose a different package -- rather than merged, and then reported on Sunday as a
 # repository-wide finding with no obvious owner.
 #
-# The licence check is the part nothing else in this repository does at all. RavensPort is MIT and
+# The licence check is the part nothing else in this repository does -- and since trivy.yml was
+# replaced by osv-scanner.yml, the only licence gate there is. OSV-Scanner works from an allowlist
+# and deps.dev cannot classify most of this tree's Microsoft and xunit packages, so an allowlist
+# there fails on correctly-licensed dependencies; see the note in that file. What follows is
+# therefore not belt-and-braces any more. RavensPort is MIT and
 # ships as a downloadable installer with the dependency tree linked into it; THIRD-PARTY-NOTICES.md
 # is maintained by hand, and a copyleft package arriving three levels under YARP would be a
 # distribution problem discovered by someone else, long after the merge.

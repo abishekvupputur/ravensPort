@@ -1,0 +1,141 @@
+name: OSV-Scanner
+
+# Dependency vulnerability scanning against OSV.dev, replacing trivy.yml.
+#
+# It reads the lock files -- packages.lock.json for the three .NET projects, go.mod for the native
+# module -- resolves what is actually pinned, and asks OSV.dev whether any of it has a known
+# advisory. Same question Trivy answered, different database and a much smaller thing to trust.
+#
+# What this does *not* inherit from trivy.yml, said plainly rather than left for someone to notice:
+#
+#   Secrets. GitHub's own secret scanning and push protection are enabled on this repository, and
+#   push protection is strictly better than a CI scan -- it refuses the push rather than reporting
+#   the leak after it is in the history. The gap is generic/entropy-based patterns, which GitHub
+#   calls non-provider patterns and which are off by default; Trivy did cover those. Turning them
+#   on is a repository setting, not a workflow.
+#
+#   Licences of the whole tree. Trivy classified licence *text* into forbidden/restricted classes.
+#   OSV-Scanner takes an allowlist instead, and the allowlist is unusable here: deps.dev cannot
+#   classify 81 of this tree's packages -- almost every Microsoft and xunit one -- so it returns
+#   them as "non-standard" and any allowlist fails the build on correctly-licensed dependencies.
+#   dependency-review.yml still denies GPL-2.0, GPL-3.0, AGPL-3.0 and SSPL-1.0 on what a pull
+#   request adds, which is where a copyleft package would arrive; what is lost is the sweep over
+#   what is already in the tree.
+#
+#   Misconfiguration. No loss. Trivy's misconfig scanner covers Terraform, CloudFormation,
+#   Kubernetes, Dockerfile, Helm and ARM, and reported "Detected config files num=0" on every run
+#   because this repository contains none of them. The workflow files it did not read are
+#   zizmor.yml's job.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Trivy's old slot, so the offsets stay contiguous: 01:30 CodeQL, 02:30 here, 03:30
+    # dependency-scan, 04:30 zizmor, 05:30 DevSkim, 06:30 installer-scan. Offset for the reason
+    # dependency-scan.yml gives: simultaneous failures do not say which one moved.
+    #
+    # Weekly matters more for this one than for a linter. The tree does not change between runs;
+    # the advisory database does, and an advisory published on Tuesday against a package that has
+    # been pinned for a year is invisible until something re-asks.
+    - cron: "30 2 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # upload-sarif. Findings belong in the Security tab, where they have history and can be
+      # dismissed with a reason, rather than only in a log that ages out.
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so don't leave GITHUB_TOKEN sitting in
+          # .git/config where any later step or action could read it.
+          persist-credentials: false
+
+      # Deliberately not google/osv-scanner-action, and deliberately not the reusable workflows it
+      # publishes. This replaced Trivy over supply-chain concerns, and calling a third-party
+      # *reusable workflow* would be a step in the wrong direction: a reusable workflow is a whole
+      # job definition -- its own steps, its own actions, its own permissions request -- executed
+      # inside this repository, which is strictly more to trust than a single pinned action, let
+      # alone a single pinned binary. Same trade zizmor.yml and dependency-scan.yml already make.
+      #
+      # Pinned by version *and* by hash. The version alone would be enough to make the run
+      # reproducible; the hash is what makes it verifiable, because a release asset on GitHub can
+      # be deleted and re-uploaded under the same tag by whoever holds the repository. Bumping the
+      # version without bumping the digest is a deliberate hard failure -- the same property
+      # ProtonPassInstaller.cs relies on for the pass-cli download, for the same reason.
+      #
+      # Pinned, not latest, unlike the Trivy binary this replaces. Trivy was left floating because
+      # a scanner's detection logic only moves forward and a stale one fails green. That argument
+      # is weaker here: OSV-Scanner's value is the OSV.dev database, which is queried live at scan
+      # time and is therefore current no matter how old the binary is. What the binary version
+      # controls is only which lock-file formats it can parse, and that is worth a deliberate bump.
+      - name: Install OSV-Scanner
+        env:
+          OSV_VERSION: v2.5.0
+          OSV_SHA256: edcfc41d257db36148f065055655fe3fcfc434b0b423ea67468a84c207524e0c
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+          sudo mv osv-scanner /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      # Two passes over the same lock files, for the reason trivy.yml made two: this one reports to
+      # the Security tab and must never be the thing that fails the build, and the gate below is
+      # what enforces anything. `|| true` because OSV-Scanner exits non-zero on findings and the
+      # upload has to happen regardless.
+      #
+      # --all-vulns here and not below, which is the deliberate difference between the passes.
+      # OSV-Scanner hides two categories by default: advisories it grades unimportant, and -- for
+      # Go, where it does call-graph analysis the way govulncheck does -- vulnerabilities in code
+      # nothing in this project actually calls. Those are worth being able to look at and are not
+      # worth blocking a merge on, which is exactly the split trivy.yml drew with severity.
+      - name: Run OSV-Scanner (SARIF, for code scanning)
+        run: |
+          osv-scanner scan source --recursive ./ \
+            --all-vulns \
+            --format sarif \
+            --output-file osv-scanner.sarif || true
+
+      # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
+      # is what tells code scanning that a previously reported finding is gone, and skipping the
+      # upload leaves the old alert open forever.
+      - name: Upload OSV-Scanner SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: osv-scanner.sarif
+          # Its own bucket, so a CodeQL, DevSkim, zizmor or BinSkim run never looks like it
+          # resolved an OSV finding or the other way round.
+          category: "osv-scanner"
+
+      # The gate. Any advisory fails it -- no severity threshold, matching what trivy.yml settled
+      # on: a LOW advisory in a dependency of a thing that holds credentials is still a known way
+      # in, and the fix for one is the same as the fix for a CRITICAL, which is to bump the package.
+      # The tree is clean at every level as of this commit, so the cost is a build that fails the
+      # first time any advisory lands rather than the first time a bad one does.
+      #
+      # There is no `ignore-unfixed` equivalent, and that is an improvement rather than a gap. Trivy
+      # needed one because an advisory with no upstream fix cannot be acted on from here and would
+      # otherwise wedge the build shut. OSV-Scanner's answer is an osv-scanner.toml with the
+      # specific vulnerability ID, a written reason, and an expiry date -- which is the same escape
+      # hatch, granted one advisory at a time and reviewed in a diff, rather than a blanket setting
+      # that also hides the next one.
+      - name: Run OSV-Scanner (gate)
+        if: always()
+        run: osv-scanner scan source --recursive ./
