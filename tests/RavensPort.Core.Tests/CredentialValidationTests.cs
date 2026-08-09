@@ -57,7 +57,7 @@ public class CredentialValidationTests
     {
         // The credential's secret is sent there, so plain http would put it on the wire in
         // cleartext — the same rule every other endpoint in the app is held to.
-        var error = CredentialValidation.ValidateTestEndpoint("http://api.example.com/v1/me");
+        var error = CredentialValidation.ValidateTestEndpoint("http://api.example.com/v1/me"); // DevSkim: ignore DS137138
 
         Assert.NotNull(error);
         Assert.Contains("cleartext", error);

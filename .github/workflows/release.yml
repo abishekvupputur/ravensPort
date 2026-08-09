@@ -212,18 +212,31 @@ jobs:
             ${{ steps.installer.outputs.setupPath }}
             ${{ steps.msix.outputs.packagePath }}
 
-      # v3.0.x exists only to move the action runtime from Node 20 to Node 24. GitHub now forces
-      # Node 20 actions onto the Node 24 runtime anyway and warns about it; running one built for
-      # the runtime it is given is the fix. No inputs changed between v2 and v3 — the release notes
-      # describe the runtime bump and nothing else — so this is a drop-in.
+      # `gh release create` rather than a release action, which is what zizmor's superfluous-actions
+      # rule was pointing at: the GitHub CLI is preinstalled on the runner, so the action was a
+      # third-party dependency doing something the runner already does — inside the one job that
+      # holds contents: write, id-token: write and attestations: write, and at the last step, where
+      # it decides what bytes get published under this repo's name. The same trade zizmor.yml makes
+      # for zizmor itself, for the same reason.
+      #
+      # Every value is passed through env rather than interpolated into the script, so a tag name
+      # is data the shell never parses. The tag is the trigger for this workflow, and pushing one
+      # takes write access, but "only a trusted person can reach it" is the argument that stops
+      # being true first.
       - name: Create release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: ${{ steps.version.outputs.version }}
-          generate_release_notes: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
           # Two assets: the installer for people installing outside the Store, and the MSIX to
           # upload to Partner Center.
-          files: |
-            ${{ steps.installer.outputs.setupPath }}
-            ${{ steps.msix.outputs.packagePath }}
+          SETUP_PATH: ${{ steps.installer.outputs.setupPath }}
+          MSIX_PATH: ${{ steps.msix.outputs.packagePath }}
+        run: |
+          gh release create $env:VERSION `
+            --title $env:VERSION `
+            --generate-notes `
+            $env:SETUP_PATH `
+            $env:MSIX_PATH
+          if ($LASTEXITCODE -ne 0) { exit 1 }

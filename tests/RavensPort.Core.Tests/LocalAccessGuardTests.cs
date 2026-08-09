@@ -304,7 +304,7 @@ public class LocalAccessGuardTests : IAsyncLifetime
     {
         // DNS rebinding: evil.com re-resolves to 127.0.0.1, so the browser treats the response
         // as same-origin and lets attacker JavaScript read it.
-        var request = new HttpRequestMessage(HttpMethod.Get, "http://evil.com/anything");
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://evil.com/anything"); // DevSkim: ignore DS137138
         request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ValidKey);
 
         var response = await _client.SendAsync(request);

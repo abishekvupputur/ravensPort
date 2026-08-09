@@ -42,7 +42,7 @@ public class StartupDiagnosticsTests : IDisposable
         // Validation runs when a record is added, but the vault can also be edited directly in
         // the password manager, which bypasses it entirely.
         var store = new ConfigStore();
-        store.Upstreams.Add(new UpstreamRecord { Name = "insecure", BaseUrl = "http://api.example.com" });
+        store.Upstreams.Add(new UpstreamRecord { Name = "insecure", BaseUrl = "http://api.example.com" }); // DevSkim: ignore DS137138
 
         var activityLog = await RunStartupAsync(InMemoryVault.Empty().Seeded(store));
 
@@ -59,7 +59,7 @@ public class StartupDiagnosticsTests : IDisposable
             Name = "insecure-credential",
             ClientId = "id",
             ClientSecret = "secret",
-            TokenEndpoint = "http://idp.example.com/token",
+            TokenEndpoint = "http://idp.example.com/token", // DevSkim: ignore DS137138
         });
 
         var activityLog = await RunStartupAsync(InMemoryVault.Empty().Seeded(store));

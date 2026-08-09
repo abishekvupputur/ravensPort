@@ -25,8 +25,13 @@ public sealed class ProtonPassInstaller
     /// <summary>
     /// SHA-256 of <c>pass-cli-windows-x86_64.zip</c> 2.2.4, as published alongside the release.
     /// Bumping <see cref="PinnedVersion"/> without bumping this is a deliberate hard failure.
+    ///
+    /// The DevSkim suppression is for its hardcoded-secret rule, which sees 64 hex characters and
+    /// cannot tell a published digest from a key. This one is meant to be in source and public:
+    /// hiding it in configuration would let whatever supplies the configuration choose which bytes
+    /// RavensPort trusts, which is the attack the pin exists to stop.
     /// </summary>
-    public const string PinnedSha256 = "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77";
+    public const string PinnedSha256 = "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77"; // DevSkim: ignore DS173237
 
     public const string DownloadUrl =
         $"https://github.com/protonpass/pass-cli/releases/download/{PinnedVersion}/pass-cli-windows-x86_64.zip";

@@ -230,7 +230,7 @@ public class CredentialTestServiceTests : IAsyncLifetime
     public async Task APlainHttpEndpointOffLocalhostIsRefusedBeforeTheSecretIsSent()
     {
         var credential = await AddApiKeyAsync("/header");
-        credential.TestEndpoint = "http://api.example.com/me";
+        credential.TestEndpoint = "http://api.example.com/me"; // DevSkim: ignore DS137138
 
         var result = await _service.TestAsync(credential);
 
