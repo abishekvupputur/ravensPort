@@ -73,6 +73,14 @@ jobs:
           # a Trivy finding or the other way round.
           category: 'trivy'
 
+      # Every severity, not just CRITICAL and HIGH. A LOW advisory in a dependency of a thing that
+      # holds credentials is still a known way in, and the fix for one is the same as the fix for a
+      # CRITICAL: bump the package. The tree is clean at every level as of this commit, so the cost
+      # of this is a build that fails the first time any advisory lands rather than the first time a
+      # bad one does -- which is the trade being made deliberately, not a threshold nobody set.
+      #
+      # ignore-unfixed stays. An advisory with no fixed version upstream cannot be acted on from
+      # here, and failing the build on one leaves no way forward except switching the gate off.
       - name: Run Trivy Vulnerability Scanner
         if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -82,7 +90,7 @@ jobs:
           scan-ref: '.'
           scanners: 'vuln'
           format: 'table'
-          severity: 'CRITICAL,HIGH'
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
 
@@ -102,6 +110,13 @@ jobs:
 
       # Licences, gated at CRITICAL and HIGH -- which for this scanner means Trivy's "forbidden" and
       # "restricted" classes, the copyleft terms an MIT binary shipped as an installer cannot absorb.
+      #
+      # The one step here that is not gated on every severity, and the reason is that Trivy's licence
+      # severities are not risk grades at all: they are the classification itself. MIT, BSD and
+      # Apache come back as LOW/notice, so a gate at LOW fails the build on correctly-licensed
+      # permissive dependencies -- 12 of them in this tree today -- and would have to be switched off
+      # within a day. CRITICAL and HIGH are the two classes that actually mean "this licence is a
+      # problem for this project".
       #
       # TRIVY_LICENSE_FULL is not optional here, and this is the part worth knowing. Without it
       # Trivy reads licence metadata out of the lock files, and neither packages.lock.json nor
@@ -154,5 +169,8 @@ jobs:
           scan-ref: '.'
           scanners: 'misconfig'
           format: 'table'
-          severity: 'CRITICAL,HIGH'
+          # Every severity, matching the vulnerability gate above. Currently academic -- this
+          # scanner finds no config files to grade at all -- but it means the thresholds do not
+          # disagree with each other the day one of those files appears.
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
           exit-code: '1'
