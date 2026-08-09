@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -30,7 +30,8 @@ namespace RavensPort.Core.Tests;
 /// </summary>
 public class ProxyForwardingTests : IAsyncLifetime
 {
-    private const string ApiKey = "forwarding-test-key-0123456789";
+    // Fixtures, not credentials.
+    private const string ApiKey = "forwarding-test-key-0123456789"; // gitleaks:allow
     private const string Token = "UPSTREAM-ACCESS-TOKEN";
 
     private readonly string _logPath = Path.Combine(Path.GetTempPath(), $"ravensport-fwd-logs-{Guid.NewGuid()}");

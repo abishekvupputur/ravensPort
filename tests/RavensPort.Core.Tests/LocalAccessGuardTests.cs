@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -25,7 +25,8 @@ public class LocalAccessGuardTests : IAsyncLifetime
     /// <summary>A second route's key, which must open that route and nothing else.</summary>
     private const string OtherRouteKey = "other-route-key-zyxwvutsrqponmlkjihgfedcba";
 
-    private const string FunnelKey = "funnel-key-0123456789abcdefghijklmnop";
+    // Fixtures, not credentials.
+    private const string FunnelKey = "funnel-key-0123456789abcdefghijklmnop"; // gitleaks:allow
 
     private IHost _host = null!;
     private HttpClient _client = null!;

@@ -1,4 +1,4 @@
-using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -24,7 +24,8 @@ namespace RavensPort.Core.Tests.Mcp;
 /// </summary>
 internal sealed class FunnelTestHost : IAsyncDisposable
 {
-    public const string ApiKey = "funnel-test-key-0123456789";
+    // A fixture the test host hands to itself, not a credential.
+    public const string ApiKey = "funnel-test-key-0123456789"; // gitleaks:allow
 
     private readonly WebApplication _proxy;
     private readonly string _logPath;
