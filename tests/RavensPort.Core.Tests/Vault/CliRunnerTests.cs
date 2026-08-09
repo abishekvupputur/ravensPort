@@ -32,9 +32,16 @@ public class CliRunnerTests : IDisposable
     private static string[] Exit(int code) =>
         OnWindows ? ["/c", "exit", code.ToString()] : ["-c", $"exit {code}"];
 
-    /// <summary>Runs long enough to be killed by a timeout measured in milliseconds.</summary>
+    /// <summary>
+    /// Runs long enough to be killed by a timeout measured in milliseconds.
+    ///
+    /// ping to the loopback address is cmd's sleep — Windows has no other builtin that blocks for a
+    /// given number of seconds. Nothing is sent anywhere and nothing listens; DevSkim's DS162092
+    /// matches the literal and reads it as debug code left behind, which is why it is suppressed
+    /// here and not by excluding the rule.
+    /// </summary>
     private static string[] Hang => OnWindows
-        ? ["/c", "ping", "-n", "30", "127.0.0.1"]
+        ? ["/c", "ping", "-n", "30", "127.0.0.1"] // DevSkim: ignore DS162092
         : ["-c", "sleep 30"];
 
     private CliRunner NewRunner() => new(new ActivityLog(_logPath));
