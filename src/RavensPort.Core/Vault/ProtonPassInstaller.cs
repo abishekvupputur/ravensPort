@@ -33,10 +33,17 @@ public sealed class ProtonPassInstaller
     /// SHA-256 of the pinned release asset for this platform, as published by Proton alongside it
     /// and independently recomputed from the downloaded bytes before being written here. Bumping
     /// <see cref="PinnedVersion"/> without bumping these is a deliberate hard failure.
+    ///
+    /// DevSkim reads a 64-character hex literal as a credential (DS173237) and is wrong twice over
+    /// here: a digest of a public file is not a secret, and this one is only useful in the open,
+    /// since its whole job is to be compared against bytes an attacker also has. Moving it out of
+    /// source — the rule's advice — would mean the pin could change without a release, which is the
+    /// property the class comment above exists to deny. Suppressed per line rather than by
+    /// excluding the rule, so a real key committed anywhere else still trips it.
     /// </summary>
     public static string PinnedSha256 => OperatingSystem.IsWindows()
         // pass-cli-windows-x86_64.zip
-        ? "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77"
+        ? "8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77" // DevSkim: ignore DS173237
         // pass-cli-linux-x86_64
         : "9d50cb8604e3c7aee0bdd29fcecf4696ed3259134a6c17e4b8adadfde17d7bb6"; // DevSkim: ignore DS173237
 
