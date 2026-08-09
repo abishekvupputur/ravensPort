@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -28,7 +28,8 @@ namespace RavensPort.Core.Tests;
 /// </summary>
 public class ApiKeyCredentialForwardingTests : IAsyncLifetime
 {
-    private const string RouteProxyKey = "api-key-fwd-test-key-0123456789";
+    // Fixtures, not credentials.
+    private const string RouteProxyKey = "api-key-fwd-test-key-0123456789"; // gitleaks:allow
     private const string StaticKey = "STATIC-API-KEY";
     private const string OAuthToken = "OAUTH-ACCESS-TOKEN";
 

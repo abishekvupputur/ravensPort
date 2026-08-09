@@ -1,0 +1,126 @@
+name: Secret scan
+
+# Generic secret detection, replacing the one thing trivy.yml did that nothing else picked up.
+#
+# GitHub's own secret scanning is enabled on this repository and push protection with it, which is
+# better than any CI check can be: it refuses the push rather than reporting the leak once it is in
+# the history. What it does not do on this plan is non-provider patterns -- the entropy and
+# structure based rules that catch a credential with no vendor to recognise it. Those are a Secret
+# Protection feature; the repository API accepts a request to enable them and silently leaves them
+# off. That is the hole this fills, and it is the same hole Trivy's secret scanner was filling.
+#
+# So the division is: GitHub catches a real AWS, Stripe or GitHub token before it lands, and this
+# catches the homegrown key, the pasted connection string, and the high-entropy blob that no
+# provider will ever claim. Neither replaces the other.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Sunday 07:30, after installer-scan at 06:30 and offset for the reason dependency-scan.yml
+    # gives: simultaneous failures do not say which one moved.
+    #
+    # Weekly earns its place here for a reason the other scanners do not share. This one's ruleset
+    # is pinned and the tree does not change between runs, so a scheduled pass over the working
+    # tree finds exactly what the last pull request found. What it is really for is the ruleset
+    # bump: when the version below moves, the schedule is what re-reads the whole tree with the
+    # new rules rather than only the next file someone happens to touch.
+    - cron: "30 7 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # upload-sarif. Findings belong in the Security tab, where they have history and can be
+      # dismissed with a reason, rather than only in a log that ages out.
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Doubly important in this job: a token written into .git/config is a live credential
+          # sitting in the working tree that a secret scanner is about to read.
+          persist-credentials: false
+
+      # Not gitleaks/gitleaks-action, which is the same trade osv-scanner.yml explains: a pinned
+      # binary is less to trust than an action, in a job holding security-events: write. The action
+      # additionally requires a licence key for organisation use, which is a second reason not to
+      # build a gate on it.
+      #
+      # Pinned by version and by SHA-256, same as osv-scanner.yml. Bumping the version without
+      # bumping the digest is a deliberate hard failure.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # `dir`, not `git`. This scans the working tree as it stands, which is the state a merge
+      # would publish. A history scan answers a different and largely settled question -- it was
+      # run once by hand over all 268 commits when this workflow was added, and the only hits were
+      # the same four test fixtures suppressed in the tree today -- and repeating it on every pull
+      # request would need a full-depth checkout to say nothing new.
+      #
+      # --redact matters because of where the output goes. Without it the matched secret is written
+      # into the SARIF and into the job log, and this repository is public: a scanner that
+      # republishes the credential it just found is worse than no scanner. Findings still carry the
+      # rule, the file and the line, which is what anyone fixing one actually needs.
+      #
+      # Exits non-zero on findings, so the SARIF has to be uploaded before the gate can read it;
+      # `|| true` keeps this step from being what fails the build.
+      - name: Run gitleaks
+        run: |
+          gitleaks dir . \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --redact \
+            --no-banner || true
+
+      # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
+      # is what tells code scanning that a previously reported finding is gone, and skipping the
+      # upload leaves the old alert open forever.
+      - name: Upload gitleaks SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: gitleaks.sarif
+          # Its own bucket, so a CodeQL, OSV-Scanner, DevSkim, zizmor or BinSkim run never looks
+          # like it resolved a secret finding or the other way round.
+          category: "gitleaks"
+
+      # The gate. Every finding fails it, with no severity threshold, because gitleaks does not
+      # grade its findings and a committed credential is not less leaked for being boring.
+      #
+      # The tree is clean as of this commit. Four test fixtures matched the generic-api-key rule --
+      # constants like "funnel-test-key-0123456789" that a test host hands to itself -- and each
+      # carries a `// gitleaks:allow` on the line, with the reason beside it. Note *on the line*:
+      # gitleaks ignores the comment if it sits on the line above, which reads as working and is
+      # not, so a suppression added later has to go at the end of the offending line.
+      - name: Fail on findings
+        if: always()
+        run: |
+          count=$(jq '.runs[0].results | length' gitleaks.sarif)
+          if [ "$count" -gt 0 ]; then
+            jq -r '.runs[0].results[]
+                   | "\(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' \
+              gitleaks.sarif
+            echo "::error::gitleaks found $count secret(s)."
+            exit 1
+          fi
+          echo 'gitleaks: no findings.'
