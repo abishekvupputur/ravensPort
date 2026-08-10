@@ -18,12 +18,14 @@ public sealed record AuthorizationOutcome(bool Success, string? Error, string? E
 /// delegate to GoogleOAuthService (Google's own official client library) and every other provider
 /// (GitHub, Nextcloud, Custom) goes through the generic OidcClient path here, branching only on
 /// whether the credential has an Authority (OIDC discovery) or manual
-/// AuthorizationEndpoint/TokenEndpoint.
+/// AuthorizationEndpoint/TokenEndpoint. A device code credential is interactive too but never
+/// touches a redirect URI, so it has its own path both ways.
 /// </summary>
 public sealed class OAuth2Service(
     GoogleOAuthService googleOAuthService,
     GoogleServiceAccountService googleServiceAccountService,
     ClientCredentialsService clientCredentialsService,
+    DeviceCodeService deviceCodeService,
     ActivityLog activityLog)
 {
     // Guards against the background refresh loop and a manual "Refresh Now" UI action
@@ -44,7 +46,15 @@ public sealed class OAuth2Service(
             _ => null,
         };
 
-    public async Task<AuthorizationOutcome> StartAuthorizationAsync(CredentialRecord credential, CancellationToken ct = default)
+    /// <param name="devicePrompt">
+    /// Where to report the code a device flow needs the user to enter. Ignored by every other
+    /// kind. Optional so that callers with nowhere to show it — the refresh loop, a test — do not
+    /// have to pretend to have a UI.
+    /// </param>
+    public async Task<AuthorizationOutcome> StartAuthorizationAsync(
+        CredentialRecord credential,
+        IProgress<DeviceCodePrompt>? devicePrompt = null,
+        CancellationToken ct = default)
     {
         // "Connect" on an app login opens nothing; it fetches a token now so a mistyped secret or
         // an ungranted delegation is reported while the user is still looking at the form,
@@ -52,6 +62,13 @@ public sealed class OAuth2Service(
         if (AcquireSelfIssuedAsync(credential, ct) is { } acquire)
         {
             return await acquire;
+        }
+
+        // Checked before the Google branch: a Google device credential is still a device
+        // credential, and its provider being Google says nothing about which flow it uses.
+        if (credential.Kind == CredentialKind.DeviceCode)
+        {
+            return await deviceCodeService.AuthorizeAsync(credential, devicePrompt, ct);
         }
 
         if (IsGoogle(credential))
@@ -120,6 +137,14 @@ public sealed class OAuth2Service(
             if (credential.Token?.RefreshToken is null)
             {
                 return null;
+            }
+
+            // An ordinary refresh_token exchange, but on its own path: OidcClient wants an
+            // Authority or a full ProviderInformation, and a device credential legitimately has
+            // only a token endpoint.
+            if (credential.Kind == CredentialKind.DeviceCode)
+            {
+                return await deviceCodeService.RefreshAsync(credential, ct);
             }
 
             if (IsGoogle(credential))

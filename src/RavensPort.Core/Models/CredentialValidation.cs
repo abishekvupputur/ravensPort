@@ -101,6 +101,33 @@ public static class CredentialValidation
     }
 
     /// <summary>
+    /// Validates the fields a device code grant needs. Returns null when acceptable, or a message
+    /// suitable for the UI footer.
+    ///
+    /// No client secret is required. RFC 8628 exists precisely for clients that cannot keep one —
+    /// most providers issue device codes to public clients, and demanding a secret here would
+    /// block the ordinary case.
+    /// </summary>
+    public static string? ValidateDeviceCode(string? clientId, string? deviceEndpoint, string? tokenEndpoint)
+    {
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            return "Client ID is required.";
+        }
+
+        if (string.IsNullOrWhiteSpace(deviceEndpoint))
+        {
+            return "Device authorization endpoint is required — it is where the user code is issued. "
+                   + "This is not the same address as the browser authorization endpoint.";
+        }
+
+        return UrlValidation.ValidateEndpoint(deviceEndpoint, "Device authorization endpoint")
+               ?? (string.IsNullOrWhiteSpace(tokenEndpoint)
+                   ? "Token endpoint is required — it is polled until the code is approved."
+                   : UrlValidation.ValidateEndpoint(tokenEndpoint, "Token endpoint"));
+    }
+
+    /// <summary>
     /// Validates everything about a credential that does not depend on which provider it is:
     /// its name, the secret it holds, where that secret goes, and the optional test endpoint.
     /// </summary>
@@ -118,6 +145,8 @@ public static class CredentialValidation
                 credential.ServiceAccountJson, credential.Scopes, credential.ServiceAccountSubject),
             CredentialKind.ClientCredentials => ValidateClientCredentials(
                 credential.ClientId, !string.IsNullOrEmpty(credential.ClientSecret), credential.TokenEndpoint),
+            CredentialKind.DeviceCode => ValidateDeviceCode(
+                credential.ClientId, credential.DeviceAuthorizationEndpoint, credential.TokenEndpoint),
             _ => null,
         };
 
