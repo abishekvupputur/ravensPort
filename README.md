@@ -755,7 +755,7 @@ and `%LocalAppData%\RavensPort\`:
 | `%AppData%\...\logs\activity-YYYYMMDD.log` | Proxied requests and responses, connects, refreshes, route reloads, vault operations. Rotates every 2 days, auto-deletes after ~10 |
 | `%AppData%\...\logs\errors.log` | Unhandled exceptions and provider errors with stack traces |
 | `%LocalAppData%\...\pass-session\` | RavensPort's encrypted Proton Pass session, if you signed in from the app. Unreadable without the session key, which is never written down |
-| `%LocalAppData%\...\cli\pass-cli\` | A Proton Pass CLI downloaded by a version before 4.4.0. Still used if it is there; nothing writes here any more |
+| `%LocalAppData%\...\cli\pass-cli\` | A Proton Pass CLI downloaded by a version before 4.3.1. Still used if it is there; nothing writes here any more |
 
 The Settings tab can open either log, open the folder, or prune old ones.
 

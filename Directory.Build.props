@@ -6,7 +6,7 @@
       this is what puts the same number in the exe's file properties. Bump it in the same commit
       that gets tagged, or the download name and the binary disagree.
     -->
-    <Version>4.3.0</Version>
+    <Version>4.3.1</Version>
 
     <!--
       Writes packages.lock.json next to each project, recording the exact resolved version and

@@ -139,7 +139,7 @@ RavensPort stores its configuration in a password manager. For Proton Pass, it r
 ### Proton Pass CLI and the GPL
 
 RavensPort neither downloads nor redistributes pass-cli. Versions up to 4.3.0 could fetch a
-pinned release on request; that was removed in 4.4.0, and the app now installs no software
+pinned release on request; that was removed in 4.3.1, and the app now installs no software
 at all. It locates whichever `pass-cli` you installed and runs it.
 
 Corresponding source for whatever version you have is at
