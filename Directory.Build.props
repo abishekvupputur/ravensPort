@@ -39,20 +39,36 @@
     -->
 
     <!--
-      One target framework for every project, because they have to move together: the App
-      references Core, and the test project references Core, so a Windows API version raised in one
-      place has to be raised in all three or the references stop resolving.
+      Two target frameworks, named here rather than spelled out in each project, because they have
+      to move together: the App references UI and Core, UI references Core, and the test project
+      references Core, so a version raised in one place has to be raised everywhere or the
+      references stop resolving.
 
       The 10.0.19041.0 part is what makes the WinRT projection available, which is needed for
       exactly one thing: Windows.Security.Credentials.KeyCredentialManager, the only API on Windows
       that can hold a secret behind a Hello gesture rather than merely asking for one. See
-      HelloKeyProtector. The cost is a floor of Windows 10 2004 (May 2020); the app is Windows-only
-      and self-contained already, so this narrows the audience less than it looks.
-    -->
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+      HelloKeyProtector. The cost is a floor of Windows 10 2004 (May 2020), which the Windows build
+      pays and the portable one does not.
 
-    <!-- Runs on anything from Windows 10 1809 up; only the Hello path needs 2004, and it checks. -->
-    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+      Which projects take which:
+
+        RavensPort.UI    portable only — view models and the interfaces they reach the desktop
+                         through, with no UI framework referenced at all
+        RavensPort.Core  both — the Windows build adds Hello, Credential Manager and Authenticode
+        RavensPort.App   both — the Windows build adds the WinForms tray icon
+        Core.Tests       both, matching Core
+
+      The portable target is what makes a Linux build possible; see .claude/LINUX-PORT-PLAN.md.
+    -->
+    <PortableTargetFramework>net8.0</PortableTargetFramework>
+    <WindowsTargetFramework>net8.0-windows10.0.19041.0</WindowsTargetFramework>
+
+    <!--
+      Runs on anything from Windows 10 1809 up; only the Hello path needs 2004, and it checks.
+      Conditional because it means nothing to the portable target, where declaring a Windows
+      version floor would be a category error rather than a harmless extra.
+    -->
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.StartsWith('net8.0-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
 
     <!--
       Lets a non-Windows machine *restore* these projects. It changes nothing on Windows, where the
@@ -62,11 +78,12 @@
       Needed because not every job that touches this repository is one we write. GitHub's Automatic
       Dependency Submission — the managed workflow that populates the dependency graph once
       Dependabot is enabled — runs `dotnet restore` on ubuntu against every csproj it finds, and it
-      is not editable. Every project here targets net8.0-windows10.0.19041.0, so it failed on all
-      three and submitted no graph at all, which quietly takes Dependabot alerts down with it.
+      is not editable. Every project here targeted net8.0-windows10.0.19041.0 at the time, so it
+      failed on all of them and submitted no graph at all, which quietly takes Dependabot alerts
+      down with it.
 
-      This app is still Windows-only and still cannot run anywhere else. This only means the
-      dependency tree can be read off it elsewhere.
+      Still needed now that there is a portable target, because the Windows target is still in the
+      list and a restore has to resolve both.
     -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>

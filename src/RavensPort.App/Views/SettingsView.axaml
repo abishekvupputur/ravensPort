@@ -1,0 +1,350 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:vault="using:RavensPort.Core.Vault"
+             x:Class="RavensPort.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             Background="{StaticResource BgBrush}">
+    <Grid RowDefinitions="*,Auto">
+
+        <!-- No SmoothScroll behaviour attached, unlike the WPF original. That existed to give WPF's
+             ScrollViewer the smooth wheel scrolling it does not have; Avalonia's already does. -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+
+            <!-- First card on the tab: everything else here is stored in the vault this one names. -->
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Password manager" Classes="section"/>
+                    <TextBlock Text="{Binding PasswordManagerSummary}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding PasswordManagerDetail}" Classes="hint" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding VaultSyncSummary}" Classes="hint" Margin="0,0,0,8"/>
+
+                    <!-- 1Password only. Sits above the buttons because when the connection has gone
+                         this is the tab the user is on, watching saves fail, and the repair they
+                         would try first — restart 1Password — is the one that does not work. -->
+                    <TextBlock Text="{Binding DesktopAppRequirement}" Classes="hint" Margin="0,0,0,8"
+                               IsVisible="{Binding HasDesktopAppRequirement}"/>
+
+                    <!-- Single use: said plainly, above the controls it disables. The alternative —
+                         a row of greyed buttons and no explanation — reads as a broken tab. -->
+                    <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush0}"
+                            BorderThickness="1" Padding="11,9" CornerRadius="6" Margin="0,0,0,10"
+                            IsVisible="{Binding IsSingleUse}">
+                        <TextBlock Classes="hint" TextWrapping="Wrap">
+                            <Run Classes="emphasis" Text="Single use."/><Run Text=" RavensPort is running without a password manager, so there is no vault to sync with, rewrite, re-read or check — those controls are greyed out below. Everything else works exactly as it does normally. Disconnect stays available and purges this configuration from memory; closing RavensPort does the same."/>
+                        </TextBlock>
+                    </Border>
+
+                    <WrapPanel IsVisible="{Binding IsConnected}">
+                        <!-- Disabled rather than hidden in single use: the tab keeps its shape, and
+                             the greyed control beside the note above says which mode this is. -->
+                        <Button Content="Sync now" Margin="0,0,8,6" Command="{Binding SyncNowCommand}"
+                                IsEnabled="{Binding IsVaultConnected}"/>
+                        <Button Content="Rewrite all items to vault" Margin="0,0,8,6" Classes="ghost"
+                                IsEnabled="{Binding IsVaultConnected}"
+                                Command="{Binding RewriteAllItemsCommand}"/>
+                        <Button Content="Re-initialise from vault" Margin="0,0,8,6" Classes="ghost"
+                                IsEnabled="{Binding IsVaultConnected}"
+                                Command="{Binding ReinitialiseCommand}"
+                                IsVisible="{Binding !IsConfirmingReinitialise}"/>
+
+                        <!-- Never disabled by the mode. In single use this is the only thing that
+                             purges the configuration on demand, which is the whole bargain. -->
+                        <Button Content="Disconnect" Margin="0,0,8,6" Classes="ghost"
+                                Command="{Binding DisconnectCommand}"
+                                IsVisible="{Binding !IsConfirmingDisconnect}"/>
+
+                        <!-- Proton Pass only: the one backend whose session RavensPort owns, and so
+                             the only one it can end. 1Password's session belongs to the desktop app
+                             or to a service-account token, neither of which is this app's to revoke. -->
+                        <Button Content="Sign out of Proton Pass" Margin="0,0,0,6" Classes="ghost"
+                                IsVisible="{Binding CanSignOutOfProtonPass}"
+                                Command="{Binding SignOutOfProtonPassCommand}"/>
+                    </WrapPanel>
+
+                    <!-- Why the greyed buttons are greyed. The commands disable themselves through
+                         CanExecute, so without this the user sees dead controls and no reason —
+                         which reads as a broken tab rather than a deliberate wait. -->
+                    <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush0}"
+                            BorderThickness="1" Padding="11,9" CornerRadius="6" Margin="0,0,0,8"
+                            IsVisible="{Binding IsWaitingForVaultLoad}">
+                        <TextBlock Classes="hint" TextWrapping="Wrap">
+                            <Run Classes="emphasis" Text="Still reading your vault."/><Run Text=" Rewriting, re-initialising and the integrity check stay unavailable until it has finished. They compare the vault against the configuration in memory, and until that is fully loaded the comparison would call real items orphaned and real records missing. Everything else on this tab works now."/>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Classes="hint" Margin="0,0,0,8"
+                               IsVisible="{Binding IsVaultConnected}"
+                               Text="Rewrite all items to vault makes the vault match what is in memory — the way back from items edited or deleted by hand. It replaces every item, so it is not the cheap option: to restore only what is missing, use the integrity check below."/>
+
+                    <!-- Re-initialise is a real interruption, so it is asked rather than done. -->
+                    <StackPanel IsVisible="{Binding IsConfirmingReinitialise}">
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   Text="This throws away the configuration held in memory and loads it again from the vault. Every route and MCP funnel is rebuilt, so requests in flight fail and clients reconnect; anything not yet saved to the vault is lost. Credentials come back from the vault with their tokens."/>
+                        <WrapPanel>
+                            <Button Content="Reload everything from the vault" Margin="0,0,8,6"
+                                    Command="{Binding ReinitialiseCommand}"/>
+                            <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost"
+                                    Command="{Binding CancelReinitialiseCommand}"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <!-- Always asked: disconnecting takes down every route the proxy is serving. -->
+                    <StackPanel IsVisible="{Binding IsConfirmingDisconnect}">
+                        <TextBlock Classes="hint" Margin="0,0,0,4"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   IsVisible="{Binding !IsSingleUse}"
+                                   Text="Disconnecting empties the configuration held in memory. Every route and MCP funnel stops answering, so clients mid-request get an error, and the proxy serves nothing until a password manager is connected again. Nothing in the vault is deleted — connect the same vault to get it all back, or a different one to work with a separate set of credentials, routes and funnels."/>
+
+                        <!-- Different consequence, so a different warning. There is no vault behind
+                             a single-use session, so this is not "let go of a copy" — it is the
+                             only copy, and it does not come back. -->
+                        <TextBlock Classes="hint" Margin="0,0,0,4"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   IsVisible="{Binding IsSingleUse}"
+                                   Text="This is a single-use session, so there is no vault holding a copy. Disconnecting purges every credential, route, funnel and key you set up here, and none of it can be recovered. Every route and MCP funnel stops answering immediately."/>
+                        <TextBlock Text="{Binding DisconnectWarning}" Classes="hint" Margin="0,0,0,8"
+                                   Foreground="{StaticResource ErrorBrush}"/>
+                        <WrapPanel>
+                            <Button Content="Disconnect" Margin="0,0,8,6" Command="{Binding DisconnectCommand}"/>
+                            <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost"
+                                    Command="{Binding CancelDisconnectCommand}"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <!-- Stronger than Disconnect, so asked separately. Disconnect can be undone by
+                         choosing the manager again; this cannot. -->
+                    <StackPanel IsVisible="{Binding IsConfirmingSignOut}">
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   Text="Signing out ends RavensPort's Proton Pass session with Proton, deletes it from this PC, and forgets your session key. Everything Disconnect does happens too: the proxy serves nothing until you connect again. Nothing in the vault is deleted — but coming back means signing in through your browser and saving a new session key."/>
+                        <WrapPanel>
+                            <Button Content="Sign out of Proton Pass" Margin="0,0,8,6"
+                                    Command="{Binding SignOutOfProtonPassCommand}"/>
+                            <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost"
+                                    Command="{Binding CancelSignOutCommand}"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <!-- IsVaultConnected, not IsConnected: this whole section compares memory
+                         against a vault, and in single use the two are the same object. -->
+                    <Expander Header="Vault integrity" Margin="0,8,0,0"
+                              IsVisible="{Binding IsVaultConnected}">
+                        <StackPanel Margin="0,6,0,0">
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
+                                       Text="Compares the vault against the configuration: items nothing refers to any more, and records whose item is gone. Nothing is changed until you choose it."/>
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
+                                       Foreground="{StaticResource ErrorBrush}"
+                                       IsVisible="{Binding IsWaitingForVaultLoad}"
+                                       Text="Unavailable until the vault has finished loading — until then this would compare against a store that is empty or half-replaced, and report live items as orphaned."/>
+
+                            <!-- IsEnabled covers "a check is already running"; CanExecute on the
+                                 command covers "the vault is still loading". Both, because they are
+                                 different waits with different explanations. -->
+                            <Button Content="Check the vault" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                    IsEnabled="{Binding !IsCheckingIntegrity}"
+                                    Command="{Binding CheckIntegrityCommand}"/>
+
+                            <TextBlock Text="{Binding IntegritySummary}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       IsVisible="{Binding HasIntegrityResult}"/>
+
+                            <StackPanel IsVisible="{Binding HasOrphans}">
+                                <TextBlock Text="Items with nothing pointing at them" Classes="section" FontSize="12"/>
+                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                           Text="Left behind by a delete that failed or a save that died part way. Deleting them removes the item from your password manager."/>
+                                <ItemsControl ItemsSource="{Binding Orphans}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vault:VaultOrphanItem">
+                                            <DockPanel Margin="0,0,0,6">
+                                                <!-- $parent[UserControl] where WPF said RelativeSource
+                                                     AncestorType — the row's own context is the item,
+                                                     and the command lives on the tab. -->
+                                                <Button Content="Delete" DockPanel.Dock="Right" VerticalAlignment="Top"
+                                                        Margin="8,0,0,0" Classes="ghost"
+                                                        Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).DeleteOrphanCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Reason}" Classes="hint"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="Delete all of them" HorizontalAlignment="Left" Margin="0,2,0,10"
+                                        Classes="ghost" Command="{Binding DeleteAllOrphansCommand}"/>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding HasOtherItems}">
+                                <TextBlock Text="Everything else in this vault" Classes="section" FontSize="12"/>
+                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                           Text="Yours, not RavensPort's — never read, written, or deleted by it. Listed so the check accounts for the whole vault, and because a RavensPort item that has been renamed can only be spotted here. Delete is one at a time and never in bulk."/>
+                                <ItemsControl ItemsSource="{Binding OtherItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vault:VaultItemEntry">
+                                            <DockPanel Margin="0,0,0,6">
+                                                <Button Content="Delete" DockPanel.Dock="Right" VerticalAlignment="Top"
+                                                        Margin="8,0,0,0" Classes="ghost"
+                                                        Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).DeleteOtherItemCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                                <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding HasMissingItems}">
+                                <TextBlock Text="Records whose vault item is missing" Classes="section" FontSize="12"/>
+                                <TextBlock Classes="hint" Margin="0,0,0,6"
+                                           Text="Two ways out. Writing them to the vault from memory keeps them and touches nothing else — do that while RavensPort is running, because the secret is only in memory. Removing takes the record out of the configuration instead."/>
+                                <Button Content="Write missing items to vault" HorizontalAlignment="Left"
+                                        Margin="0,0,0,8" Command="{Binding WriteMissingItemsCommand}"/>
+                                <ItemsControl ItemsSource="{Binding MissingItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vault:VaultMissingItem">
+                                            <DockPanel Margin="0,0,0,6">
+                                                <Button Content="Remove from config" DockPanel.Dock="Right"
+                                                        VerticalAlignment="Top" Margin="8,0,0,0" Classes="ghost"
+                                                        Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).DropMissingRecordCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Consequence}" Classes="hint"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </Expander>
+
+                    <!-- Both entries here are about keeping a password manager reachable without a
+                         prompt, which is not a problem single use has. -->
+                    <Expander Header="Running unattended" Margin="0,8,0,0"
+                              IsVisible="{Binding IsVaultConnected}">
+                        <TextBlock Text="{Binding UnattendedTokenSteps}" Classes="hint" Margin="0,6,0,0"/>
+                    </Expander>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Listen port" Classes="section"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <!-- No UpdateSourceTrigger: writing on every keystroke is Avalonia's default. -->
+                        <TextBox Width="100" Text="{Binding ListenPort}"/>
+                        <Button Content="Save" Margin="8,0,0,0" Width="70" Command="{Binding SavePortCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="Changing the port requires restarting RavensPort." Classes="hint"/>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Proxy keys" Classes="section"/>
+                    <TextBlock Classes="hint" Margin="0,0,0,8"
+                               Text="Every proxied request must present the key of the endpoint it is calling, as the 'X-Proxy-Key' header or a 'proxy_key' query parameter. Without it the proxy would attach your OAuth tokens for any program on this machine that knows the port."/>
+                    <TextBlock Classes="hint" Margin="0,0,0,8"
+                               Text="There is no single key for the whole proxy. Each route and each MCP funnel has its own, with its own expiry — a key issued for one endpoint does not open any other, so a client that leaks it exposes only what that endpoint reaches."/>
+                    <TextBlock Text="{Binding KeyLocationSummary}" Classes="hint"/>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Client Certificate (mTLS)" Classes="section"/>
+                    <CheckBox Content="Require mTLS for all routes and funnels" IsChecked="{Binding MtlsEnabled}" Margin="0,0,0,8"/>
+                    <TextBlock Text="Restart required for mTLS changes to take effect."
+                               Classes="hint" Foreground="{StaticResource ErrorBrush}" Margin="0,0,0,8"
+                               IsVisible="{Binding IsMtlsRestartRequired}"/>
+                    <TextBlock Classes="hint" Margin="0,0,0,8"
+                               Text="When enabled, Kestrel will require a valid client certificate on all connections. Clients without it will be rejected. Changing this requires a restart."/>
+
+                    <!-- The expiry date, in the section the buttons that act on it are in.
+                         Certificates are minted with a 90-day life and nothing renews them, so this
+                         line is the only warning there is: past the date every handshake fails, and
+                         a failed handshake reaches the client as a closed connection with no status
+                         code to read. -->
+                    <TextBlock Text="{Binding CertificateExpirySummary}" Classes="hint" Margin="0,0,0,8"
+                               Classes.urgent="{Binding IsCertificateExpiryUrgent}"
+                               IsVisible="{Binding HasCertificate}"/>
+
+                    <StackPanel IsVisible="{Binding IsConfirmingGenerateCertificate}">
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   Text="Generating a new certificate will permanently invalidate the old one. You will need to export and reinstall the new certificate on all your clients, and completely restart RavensPort."/>
+                        <TextBlock Text="Certificate password" Classes="hint" Margin="0,0,0,4"/>
+                        <!-- Masked, and bound: Avalonia's TextBox takes a PasswordChar, so unlike
+                             WPF's PasswordBox — whose Password was a plain CLR property and needed
+                             a code-behind handler each way — the value can live on the view model
+                             and be cleared from there once the certificate is written.
+
+                             Width, not MaxWidth: left-aligned in a StackPanel the box sizes to its
+                             content, so an empty one is a few pixels wide and looks broken. -->
+                        <TextBox Text="{Binding NewCertificatePassword}" PasswordChar="●"
+                                 Width="320" HorizontalAlignment="Left" FontSize="13" Padding="8,6" Margin="0,0,0,4"/>
+                        <TextBlock Classes="hint" Margin="0,0,0,8"
+                                   Text="Every client loading the exported file will need this. Write it down before confirming — it is never shown again, and the only way out of a forgotten one is generating another certificate and reinstalling it everywhere."/>
+                        <WrapPanel>
+                            <Button Content="Confirm Generate" Margin="0,0,8,6" Command="{Binding GenerateMtlsCertificateCommand}"/>
+                            <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost" Command="{Binding CancelGenerateCertificateCommand}"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <WrapPanel IsVisible="{Binding !IsConfirmingGenerateCertificate}">
+                        <Button Content="Generate new certificate" Margin="0,0,8,6" Command="{Binding GenerateMtlsCertificateCommand}"/>
+                        <Button Content="Export certificate" Margin="0,0,8,6" Classes="ghost" Command="{Binding ExportMtlsCertificateCommand}"/>
+                    </WrapPanel>
+
+                    <TextBox IsReadOnly="True" FontFamily="Consolas" Margin="0,8,0,0" Padding="8"
+                             TextWrapping="Wrap"
+                             Text="cURL: curl -k --cert &quot;cert.pfx:PASSWORD&quot; --cert-type P12 https://...&#x0a;Node.js / MCP: https.request({ pfx: fs.readFileSync('cert.pfx'), passphrase: 'PASSWORD', rejectUnauthorized: false }, ...)"/>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel>
+                    <TextBlock Text="Recent activity" Classes="section"/>
+                    <TextBlock Text="Last 20 lines — proxied requests, token refreshes, route reloads. Updates every 2s."
+                               Classes="hint" Margin="0,0,0,8"/>
+
+                    <Border Background="#151515" BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1"
+                            CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="220">
+                            <TextBox Text="{Binding RecentActivity, Mode=OneWay}" IsReadOnly="True"
+                                     FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                     Background="Transparent" BorderThickness="0" Padding="0"
+                                     TextWrapping="NoWrap"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <WrapPanel>
+                        <Button Content="Open activity log" Margin="0,0,8,6" Classes="ghost"
+                                Command="{Binding OpenActivityLogCommand}"/>
+                        <Button Content="Open error log" Margin="0,0,8,6" Classes="ghost"
+                                Command="{Binding OpenErrorLogCommand}"/>
+                        <Button Content="Open log folder" Margin="0,0,8,6" Classes="ghost"
+                                Command="{Binding OpenLogFolderCommand}"/>
+                        <Button Content="Prune old logs" Margin="0,0,0,6" Classes="ghost"
+                                Command="{Binding PruneLogsCommand}"/>
+                    </WrapPanel>
+
+                    <TextBlock Text="Logs rotate automatically every 2 days; files older than ~10 days are deleted. Prune removes all rotated logs and the error log, keeping the current one."
+                               Classes="hint" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+        </Border>
+    </Grid>
+</UserControl>

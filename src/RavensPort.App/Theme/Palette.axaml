@@ -1,0 +1,38 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        The colours, and only the colours. Carried across from the WPF theme unchanged — neutrals
+        match AIUsage (C:\Tools\AIUsage) so both apps read as one system, and the accent is
+        RavensPort's own: the gold from the tray raven (#EB990A).
+
+        The control styling that used to sit alongside these does not come with them. WPF said how a
+        control looks with a ControlTemplate and a set of Triggers; Avalonia says it with selectors
+        and pseudo-classes, so that half is a rewrite rather than a move and lands with the views.
+        The palette is the half that transfers as-is, and every window needs it, so it comes first.
+    -->
+    <SolidColorBrush x:Key="BgBrush" Color="#1A1A1A"/>
+    <SolidColorBrush x:Key="PanelBrush" Color="#222222"/>
+    <SolidColorBrush x:Key="PanelAltBrush" Color="#252525"/>
+    <SolidColorBrush x:Key="HoverBrush" Color="#2E2E2E"/>
+    <SolidColorBrush x:Key="HoverStrongBrush" Color="#333333"/>
+    <SolidColorBrush x:Key="BorderBrush0" Color="#3A3A3A"/>
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="#2E2E2E"/>
+    <SolidColorBrush x:Key="TextBrush" Color="#EBEBEB"/>
+    <SolidColorBrush x:Key="MutedTextBrush" Color="#888888"/>
+    <SolidColorBrush x:Key="DisabledTextBrush" Color="#555555"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#EB990A"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#D58508"/>
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#BA6F06"/>
+    <SolidColorBrush x:Key="AccentSelectedBgBrush" Color="#3A2D12"/>
+    <SolidColorBrush x:Key="SuccessBrush" Color="#3FB950"/>
+    <SolidColorBrush x:Key="ErrorBrush" Color="#E5534B"/>
+
+    <!-- For things the user should know but that are not failures: a known upstream defect, the
+         standing risk of a bearer credential. Distinct from ErrorBrush so a permanent advisory does
+         not read as something having just gone wrong. -->
+    <SolidColorBrush x:Key="WarningBrush" Color="#D29922"/>
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#3E3E3E"/>
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#4E4E4E"/>
+
+</ResourceDictionary>

@@ -20,7 +20,11 @@ jobs:
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "8.0.x"
+          # 10.0, not 8.0, even though everything targets net8.0. Avalonia 12's source
+          # generators are built against Roslyn 4.14; an older SDK does not fail cleanly —
+          # it emits CS9057, silently skips the generator, and then reports every x:Name
+          # in every view as undefined. The target framework is unaffected.
+          dotnet-version: "10.0.x"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -59,6 +63,7 @@ jobs:
           $publishArgs = @(
             'publish', 'src/RavensPort.App/RavensPort.App.csproj',
             '-p:PublishProfile=win-x64-selfcontained',
+            '-p:TargetFramework=net8.0-windows10.0.19041.0',
             '-c', 'Release'
           )
           & dotnet @publishArgs
@@ -83,3 +88,100 @@ jobs:
             -Version '0.0.0' `
             -SourceExe 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64/RavensPort.exe' `
             -CompressionMode none
+
+  # Linux is a supported build target now, so it gets checked on every PR rather than when someone
+  # remembers. Cheap, and it is the only thing that stops Windows-only code drifting back in: the
+  # portable target compiles without the WinRT signer, the Credential Manager store or the WinForms
+  # tray, and nothing else notices until this job fails.
+  #
+  # It ends by building the .deb, which is what makes it the mirror of the Windows job rather than a
+  # compile check: `dotnet build` never resolves a runtime pack or writes an apphost, so until
+  # something publishes, "it builds on Linux" and "it produces a program" are different claims.
+  build-and-test-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          # Same reason as the Windows job: Avalonia 12's generators need Roslyn 4.14.
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          cache-dependency-path: src/OnePasswordNative/go.sum
+
+      # Avalonia needs an X11 client library present to build against and to start; the runner
+      # image does not carry one by default.
+      #
+      # libsecret is here for the same reason it is in the .deb's Depends: SecretServiceStore
+      # P/Invokes it, and KeyringKeyStorageTests constructs the real store to prove the shipping
+      # app is wired to it. Without the library that test fails with a DllNotFoundException from
+      # a static initialiser, which reads as a broken test rather than a missing package.
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-6 libice6 libsm6 libfontconfig1 libsecret-1-0
+
+      - name: Restore
+        run: dotnet restore RavensPort.slnx --locked-mode
+
+      # The Go module's own tests, before anything links against it, exactly as the Windows job
+      # runs them. They are the same tests on both platforms; running them here is what stops a
+      # Windows-only assumption in the Go source reaching the .so unnoticed.
+      - name: Test Go shared library
+        run: |
+          cd src/OnePasswordNative
+          go test
+
+      # The same source as the Windows DLL, built as an ELF shared object. This is the step that
+      # proves onepassword-sdk-go cross-compiles at all; it needs cgo, and so a C compiler, which
+      # the runner has and a bare developer machine may not.
+      - name: Build Go shared library
+        run: |
+          cd src/OnePasswordNative
+          CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go
+
+      - name: Build
+        run: dotnet build src/RavensPort.App/RavensPort.App.csproj -c Release --no-restore
+
+      # DOTNET_USE_POLLING_FILE_WATCHER because the suite stands up more Kestrel hosts than the
+      # default fs.inotify.max_user_instances of 128 allows, and each one wants a config watcher.
+      # Without it, over a hundred tests fail on an environment limit unrelated to the code.
+      - name: Test
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: "1"
+        run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net8.0 -c Release --no-restore --verbosity normal
+
+      # The counterpart to "Validate installer script" on Windows, and it earns its ~90 seconds
+      # twice over. It is the only step that publishes self-contained linux-x64 — so the only one
+      # that resolves the runtime pack and produces an apphost, neither of which `dotnet build`
+      # above touches — and it is the only check on build-deb.sh, which is run by hand and would
+      # otherwise break silently between releases.
+      #
+      # Version 0.0.0 because this package exists to be thrown away. Nothing consumes it; the
+      # release still cuts Windows-only. See #23.
+      - name: Build the .deb
+        run: packaging/build-deb.sh 0.0.0
+
+      # A package that unpacks is not the same as a package that works. These four paths are what
+      # an install has to put on disk for the app to start and be launchable: the binary, the
+      # 1Password native beside it, the PATH wrapper, and the desktop entry. dpkg-deb --build is
+      # happy to produce a package missing any of them.
+      - name: Check what the package contains
+        run: |
+          deb=packaging/ravensport_0.0.0_amd64.deb
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          contents=$(dpkg-deb -c "$deb")
+          for path in ./opt/ravensport/RavensPort \
+                      ./opt/ravensport/libonepassword.so \
+                      ./usr/bin/ravensport \
+                      ./usr/share/applications/ravensport.desktop; do
+            echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
+          done

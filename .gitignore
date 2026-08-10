@@ -51,3 +51,10 @@ Thumbs.db
 # Go generated files
 onepassword.dll
 onepassword.h
+libonepassword.so
+libonepassword.h
+
+# Locally built artefacts for testing; releases come from CI.
+/dist/
+/packaging/deb/
+/packaging/*.deb
