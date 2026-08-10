@@ -51,6 +51,7 @@ public sealed class OnePasswordVaultProvider(
     [
         VaultFields.ApiKey, VaultFields.AccessToken, VaultFields.RefreshToken,
         VaultFields.TokenType, VaultFields.ExpiresAtUtc, VaultFields.ObtainedUtc,
+        VaultFields.ServiceAccountJson,
     ];
 
     private string? _exePath;

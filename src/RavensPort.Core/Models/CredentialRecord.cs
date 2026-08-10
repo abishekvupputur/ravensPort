@@ -8,8 +8,9 @@ public sealed class CredentialRecord
     public required string Name { get; set; }
 
     /// <summary>
-    /// OAuth2 grant or static API key. Everything below splits along this line: the OAuth fields
-    /// are meaningless for an API key, and <see cref="ApiKey"/> is meaningless for a grant.
+    /// Which sort of secret this is. Everything below splits along this line: the browser-flow
+    /// fields are meaningless for an API key, <see cref="ApiKey"/> is meaningless for a grant,
+    /// and <see cref="ServiceAccountJson"/> belongs to exactly one kind.
     /// </summary>
     public CredentialKind Kind { get; set; } = CredentialKind.OAuth2;
 
@@ -30,7 +31,24 @@ public sealed class CredentialRecord
     public string? TokenEndpoint { get; set; }
     public bool RequiresIdToken { get; set; }
     public bool UsesPkce { get; set; } = true;
+
+    /// <summary>
+    /// Extra "a=1&amp;b=2" parameters for the provider. For an interactive grant these ride on the
+    /// front-channel authorization request; for <see cref="CredentialKind.ClientCredentials"/>
+    /// there is no front channel, so they are added to the token request instead — which is where
+    /// the <c>audience</c> or <c>resource</c> that Auth0 and Entra ID insist on has to go.
+    /// </summary>
     public string? ExtraAuthParams { get; set; }
+
+    /// <summary>
+    /// Whether the client credentials go in the POST body rather than an HTTP Basic header.
+    ///
+    /// RFC 6749 has clients support Basic and servers optionally accept the body, and real
+    /// providers land on both sides of that: sending the wrong one gets a bare
+    /// <c>invalid_client</c> with nothing to say which half of the pair was at fault. It is one
+    /// checkbox rather than a debugging session.
+    /// </summary>
+    public bool SendClientCredentialsInBody { get; set; }
 
     public TokenSet? Token { get; set; }
 
@@ -40,6 +58,27 @@ public sealed class CredentialRecord
     /// blank box as "keep the current key", exactly as it does for a client secret.
     /// </summary>
     public string? ApiKey { get; set; }
+
+    /// <summary>
+    /// The whole downloaded service account key file, for
+    /// <see cref="CredentialKind.GoogleServiceAccount"/>.
+    ///
+    /// Stored verbatim rather than split into email/key/token-uri fields: it is what Google hands
+    /// out, it is what the user has on disk, and re-deriving the file from parsed pieces would be
+    /// a second representation to keep honest. It contains a private key, so it is a secret in
+    /// every sense — held back from the topology note, written to its own vault item, and never
+    /// redisplayed after saving.
+    /// </summary>
+    public string? ServiceAccountJson { get; set; }
+
+    /// <summary>
+    /// Optional user to impersonate via domain-wide delegation — the "subject" of the signed JWT.
+    ///
+    /// Without it the token belongs to the service account itself, which is right for most Google
+    /// Cloud APIs; Workspace APIs (Gmail, Calendar, Drive) mostly act on a person's data and need
+    /// the account to borrow that person's identity. Not a secret: it is an email address.
+    /// </summary>
+    public string? ServiceAccountSubject { get; set; }
 
     // ---- Default placement ------------------------------------------------------------------
     //
@@ -73,19 +112,42 @@ public sealed class CredentialRecord
         new(DefaultPlacement, DefaultParameterName, DefaultValuePrefix);
 
     /// <summary>
-    /// True when the credential currently holds something usable — a stored API key, or an
-    /// OAuth token. Says nothing about whether the upstream will accept it; that is what
-    /// <see cref="TestEndpoint"/> is for.
+    /// True when the credential currently holds something usable — a stored API key, a service
+    /// account key, a client secret to mint with, or an OAuth token. Says nothing about whether
+    /// the upstream will accept it; that is what <see cref="TestEndpoint"/> is for.
     /// </summary>
     [JsonIgnore]
-    public bool HasSecret => Kind == CredentialKind.ApiKey
-        ? !string.IsNullOrEmpty(ApiKey)
-        : Token is not null;
+    public bool HasSecret => Kind switch
+    {
+        CredentialKind.ApiKey => !string.IsNullOrEmpty(ApiKey),
+        // For the two app logins the stored secret, not the token, is the thing that lasts: the
+        // token is a derivative the app can re-mint at any moment, so a credential with a key and
+        // no token yet is configured, not empty.
+        CredentialKind.GoogleServiceAccount => !string.IsNullOrWhiteSpace(ServiceAccountJson),
+        CredentialKind.ClientCredentials => !string.IsNullOrEmpty(ClientSecret),
+        _ => Token is not null,
+    };
+
+    /// <summary>
+    /// True for the kinds that can obtain a token entirely on their own — no browser, no user,
+    /// no refresh token. The distinction matters in three places: such a credential needs no
+    /// "Connect" click before a route can use it, it is refreshed by re-minting rather than by
+    /// presenting a refresh token, and a null token on one means "not fetched yet" rather than
+    /// "not authorized".
+    /// </summary>
+    [JsonIgnore]
+    public bool IsSelfIssuing =>
+        Kind is CredentialKind.ClientCredentials or CredentialKind.GoogleServiceAccount;
+
+    /// <summary>True for the one kind that needs a browser and a person in front of it.</summary>
+    [JsonIgnore]
+    public bool IsInteractiveOAuth => Kind == CredentialKind.OAuth2;
 
     /// <summary>The placement defaults a kind starts with, offered by the editor.</summary>
     public static CredentialInjection DefaultInjectionFor(CredentialKind kind) => kind == CredentialKind.ApiKey
         // Bearer is an OAuth convention; an API key almost always wants a bare value in a
-        // bespoke header, which is what nearly every key-based API documents.
+        // bespoke header, which is what nearly every key-based API documents. Both app-login
+        // kinds produce ordinary OAuth bearer tokens, so they keep the OAuth default.
         ? new CredentialInjection(CredentialPlacement.Header, "X-Api-Key", "")
         : CredentialInjection.BearerHeader;
 }

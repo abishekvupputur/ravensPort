@@ -88,6 +88,58 @@ public class VaultRoundTripTests
     }
 
     [Fact]
+    public async Task AServiceAccountKeyFileRoundTripsWithItsSubject()
+    {
+        // The key file is the whole identity of this credential and the vault is its only copy;
+        // losing it on a reload would leave a credential that looks configured and can mint
+        // nothing. The subject travels the other way — through the note, not the item.
+        const string KeyFile =
+            """{"type":"service_account","client_email":"robot@x.iam.gserviceaccount.com","private_key":"PEM"}""";
+
+        var store = new ConfigStore();
+        store.Credentials.Add(new CredentialRecord
+        {
+            Name = "workspace",
+            Kind = CredentialKind.GoogleServiceAccount,
+            ServiceAccountJson = KeyFile,
+            ServiceAccountSubject = "person@example.com",
+            Scopes = ["https://www.googleapis.com/auth/gmail.readonly"],
+        });
+
+        var vault = InMemoryVault.Empty();
+        await vault.SaveAsync(store);
+
+        var credential = Assert.Single((await vault.LoadAsync()).Credentials);
+        Assert.Equal(CredentialKind.GoogleServiceAccount, credential.Kind);
+        Assert.Equal(KeyFile, credential.ServiceAccountJson);
+        Assert.Equal("person@example.com", credential.ServiceAccountSubject);
+    }
+
+    [Fact]
+    public async Task ATokenWithNoExpiryComesBackWithoutOne()
+    {
+        // "No expiry advertised" and "expires now" are different states with opposite meanings,
+        // and the vault stores an absent field for the first. Substituting a timestamp on read
+        // would turn a GitHub token that never ages out into one that expired on every launch.
+        var store = new ConfigStore();
+        store.Credentials.Add(new CredentialRecord
+        {
+            Name = "github",
+            ClientId = "id",
+            ClientSecret = "secret",
+            Token = new TokenSet("gho_x", null, null, "Bearer", DateTimeOffset.UtcNow),
+        });
+
+        var vault = InMemoryVault.Empty();
+        await vault.SaveAsync(store);
+
+        var token = Assert.Single((await vault.LoadAsync()).Credentials).Token;
+        Assert.NotNull(token);
+        Assert.Null(token!.ExpiresAtUtc);
+        Assert.False(token.IsExpiringWithin(TimeSpan.FromDays(365)));
+    }
+
+    [Fact]
     public async Task DeletingARecordDeletesItsItem()
     {
         var store = MaximalStore();
@@ -339,4 +391,15 @@ public class VaultRoundTripTests
     private static void AssertCloseEnough(DateTimeOffset expected, DateTimeOffset actual) =>
         Assert.True((expected - actual).Duration() < TimeSpan.FromSeconds(1),
             $"expected {expected:O} but got {actual:O}");
+
+    /// <summary>
+    /// Same check for an optional timestamp. "Absent" has to round-trip as absent: a token whose
+    /// provider advertised no expiry must not come back holding one, or a credential that never
+    /// expires would be treated as long expired on the next launch.
+    /// </summary>
+    private static void AssertCloseEnough(DateTimeOffset? expected, DateTimeOffset? actual)
+    {
+        Assert.Equal(expected is null, actual is null);
+        if (expected is { } want && actual is { } got) AssertCloseEnough(want, got);
+    }
 }

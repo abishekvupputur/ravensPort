@@ -23,8 +23,12 @@ public sealed partial class CredentialsViewModel : ObservableObject
     public ObservableCollection<CredentialItemViewModel> Credentials { get; } = [];
     public IReadOnlyList<OAuthProviderPreset> Presets { get; } = OAuthProviderPreset.All;
 
-    /// <summary>OAuth2 or API key — the first choice the form asks for, since it decides the rest.</summary>
-    public IReadOnlyList<CredentialKind> Kinds { get; } = Enum.GetValues<CredentialKind>();
+    /// <summary>
+    /// Which sort of credential — the first choice the form asks for, since it decides the rest.
+    /// Bound as descriptions rather than raw enum values so the list reads as English instead of
+    /// showing "GoogleServiceAccount".
+    /// </summary>
+    public IReadOnlyList<CredentialKindInfo> Kinds { get; } = CredentialKindInfo.All;
 
     public IReadOnlyList<CredentialPlacement> Placements { get; } = Enum.GetValues<CredentialPlacement>();
 
@@ -39,6 +43,10 @@ public sealed partial class CredentialsViewModel : ObservableObject
     [ObservableProperty] private string _newAuthorizationEndpoint = "";
     [ObservableProperty] private string _newTokenEndpoint = "";
     [ObservableProperty] private bool _newUsesPkce = true;
+    [ObservableProperty] private string _newServiceAccountJson = "";
+    [ObservableProperty] private string _newServiceAccountSubject = "";
+    [ObservableProperty] private string _newExtraParams = "";
+    [ObservableProperty] private bool _newSendClientCredentialsInBody;
     [ObservableProperty] private string _redirectUriInfo = "";
     [ObservableProperty] private string _redirectUri = "";
     [ObservableProperty] private bool _isEditing;
@@ -56,9 +64,34 @@ public sealed partial class CredentialsViewModel : ObservableObject
     public bool HasCredentials => Credentials.Count > 0;
     public bool HasNoCredentials => Credentials.Count == 0;
 
-    /// <summary>Drives which half of the form is shown; WPF has no negating visibility converter built in.</summary>
+    // Which parts of the form apply. Written out one flag per block rather than derived in XAML,
+    // because WPF has no negating visibility converter and no boolean operators in a binding.
+
     public bool IsApiKeyKind => SelectedKind == CredentialKind.ApiKey;
     public bool IsOAuthKind => SelectedKind == CredentialKind.OAuth2;
+    public bool IsClientCredentialsKind => SelectedKind == CredentialKind.ClientCredentials;
+    public bool IsServiceAccountKind => SelectedKind == CredentialKind.GoogleServiceAccount;
+
+    /// <summary>The two kinds that identify themselves with a client id and secret.</summary>
+    public bool UsesClientPair => IsOAuthKind || IsClientCredentialsKind;
+
+    /// <summary>Everything except a static API key asks a provider for scopes.</summary>
+    public bool UsesScopes => SelectedKind != CredentialKind.ApiKey;
+
+    /// <summary>The token endpoint is the only endpoint an app login has; a browser flow has two.</summary>
+    public bool UsesTokenEndpoint => UsesClientPair;
+
+    /// <summary>One sentence explaining the selected kind, shown under the picker.</summary>
+    public string KindBlurb => CredentialKindInfo.For(SelectedKind).Blurb;
+
+    /// <summary>What the button that obtains a token should say — no browser opens for an app login.</summary>
+    public string SaveHintText => SelectedKind switch
+    {
+        CredentialKind.OAuth2 => "After saving, click Connect to authorize in your browser.",
+        CredentialKind.ApiKey => "Ready to attach to a route as soon as it is saved.",
+        _ => "No browser flow: the first request through a route mints a token by itself. "
+             + "Click Get token to check the settings now instead of on the first real request.",
+    };
 
     /// <summary>The name box means something different per placement.</summary>
     public string DefaultParameterNameLabel => NewDefaultPlacement switch
@@ -78,19 +111,33 @@ public sealed partial class CredentialsViewModel : ObservableObject
     /// </summary>
     public bool IsUntestablePlacement => NewDefaultPlacement == CredentialPlacement.Body;
 
-    partial void OnSelectedKindChanged(CredentialKind value)
+    partial void OnSelectedKindChanged(CredentialKind oldValue, CredentialKind newValue)
     {
         // Bearer-in-a-header is an OAuth convention; a key-based API almost always wants a bare
-        // value in a bespoke header. Only moved when the fields are still at the other kind's
-        // defaults, so a value the user typed is left alone.
-        var previous = CredentialRecord.DefaultInjectionFor(value == CredentialKind.ApiKey ? CredentialKind.OAuth2 : CredentialKind.ApiKey);
-        var replacement = CredentialRecord.DefaultInjectionFor(value);
+        // value in a bespoke header. Only moved when the fields are still at the kind we are
+        // leaving behind, so a value the user typed is left alone.
+        var previous = CredentialRecord.DefaultInjectionFor(oldValue);
+        var replacement = CredentialRecord.DefaultInjectionFor(newValue);
 
         if (NewDefaultParameterName == previous.Name) NewDefaultParameterName = replacement.Name;
         if (NewDefaultValuePrefix == previous.ValuePrefix) NewDefaultValuePrefix = replacement.ValuePrefix;
 
+        // A service account's scopes are always full Google URLs, and nothing else in the form
+        // hints at that. Offered only into an empty box, so it cannot overwrite anything.
+        if (newValue == CredentialKind.GoogleServiceAccount && string.IsNullOrWhiteSpace(NewScopes))
+        {
+            NewScopes = "https://www.googleapis.com/auth/cloud-platform";
+        }
+
         OnPropertyChanged(nameof(IsApiKeyKind));
         OnPropertyChanged(nameof(IsOAuthKind));
+        OnPropertyChanged(nameof(IsClientCredentialsKind));
+        OnPropertyChanged(nameof(IsServiceAccountKind));
+        OnPropertyChanged(nameof(UsesClientPair));
+        OnPropertyChanged(nameof(UsesScopes));
+        OnPropertyChanged(nameof(UsesTokenEndpoint));
+        OnPropertyChanged(nameof(KindBlurb));
+        OnPropertyChanged(nameof(SaveHintText));
     }
 
     partial void OnNewDefaultPlacementChanged(CredentialPlacement oldValue, CredentialPlacement newValue)
@@ -195,10 +242,17 @@ public sealed partial class CredentialsViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveCredentialAsync()
     {
-        if (SelectedKind == CredentialKind.ApiKey)
+        switch (SelectedKind)
         {
-            await SaveApiKeyCredentialAsync();
-            return;
+            case CredentialKind.ApiKey:
+                await SaveApiKeyCredentialAsync();
+                return;
+            case CredentialKind.GoogleServiceAccount:
+                await SaveServiceAccountCredentialAsync();
+                return;
+            case CredentialKind.ClientCredentials:
+                await SaveClientCredentialsCredentialAsync();
+                return;
         }
 
         if (string.IsNullOrWhiteSpace(NewName) || string.IsNullOrWhiteSpace(NewClientId))
@@ -207,7 +261,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
             return;
         }
 
-        var scopes = NewScopes.Split([',', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var scopes = ParseScopes();
         var authority = string.IsNullOrWhiteSpace(NewAuthority) ? null : NewAuthority.Trim();
         var authorizationEndpoint = string.IsNullOrWhiteSpace(NewAuthorizationEndpoint) ? null : NewAuthorizationEndpoint.Trim();
         var tokenEndpoint = string.IsNullOrWhiteSpace(NewTokenEndpoint) ? null : NewTokenEndpoint.Trim();
@@ -237,6 +291,9 @@ public sealed partial class CredentialsViewModel : ObservableObject
             await _configStoreCache.MutateAsync(_ =>
             {
                 record.Name = NewName.Trim();
+                // Set explicitly: the kind picker stays live during an edit, so a credential can
+                // be changed from one sort to another and the record has to follow.
+                record.Kind = CredentialKind.OAuth2;
                 record.ClientId = NewClientId.Trim();
                 if (!string.IsNullOrWhiteSpace(NewClientSecret))
                 {
@@ -353,7 +410,189 @@ public sealed partial class CredentialsViewModel : ObservableObject
             : $"Added '{created.Name}'. Click Test to check the key against {created.TestEndpoint}.";
     }
 
-    /// <summary>Checks the two fields both kinds share.</summary>
+    /// <summary>
+    /// The Google service account branch of Save.
+    ///
+    /// There is no client id, no endpoint and no browser here — the downloaded key file is the
+    /// whole identity — so it shares only the name, the scopes, and the placement fields with the
+    /// other kinds.
+    /// </summary>
+    private async Task SaveServiceAccountCredentialAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewName))
+        {
+            StatusMessage = "Name is required.";
+            return;
+        }
+
+        // On an edit, a blank box means "keep the current key file" — it holds a private key and
+        // is never redisplayed, exactly as for a client secret.
+        var keepExistingKey = IsEditing && string.IsNullOrWhiteSpace(NewServiceAccountJson);
+        var scopes = ParseScopes();
+
+        var json = keepExistingKey ? _editingItem?.Record.ServiceAccountJson : NewServiceAccountJson.Trim();
+
+        if (CredentialValidation.ValidateServiceAccount(json, scopes, NewServiceAccountSubject) is { } keyError)
+        {
+            StatusMessage = keyError;
+            return;
+        }
+
+        if (ValidatePlacementAndTestEndpoint() is { } placementError)
+        {
+            StatusMessage = placementError;
+            return;
+        }
+
+        var subject = string.IsNullOrWhiteSpace(NewServiceAccountSubject) ? null : NewServiceAccountSubject.Trim();
+
+        if (_editingItem is { } editing)
+        {
+            var record = editing.Record;
+
+            await _configStoreCache.MutateAsync(_ =>
+            {
+                record.Name = NewName.Trim();
+                record.Kind = CredentialKind.GoogleServiceAccount;
+                if (!keepExistingKey) record.ServiceAccountJson = NewServiceAccountJson.Trim();
+                record.ServiceAccountSubject = subject;
+                record.Scopes = scopes;
+                ClearPreviousFailure(record);
+                ApplyPlacementAndTestEndpoint(record);
+            });
+
+            editing.Refresh();
+            StatusMessage = $"Saved changes to '{record.Name}'.";
+            CancelEdit();
+            return;
+        }
+
+        var created = new CredentialRecord
+        {
+            Name = NewName.Trim(),
+            Kind = CredentialKind.GoogleServiceAccount,
+            ServiceAccountJson = NewServiceAccountJson.Trim(),
+            ServiceAccountSubject = subject,
+            Scopes = scopes,
+        };
+        ApplyPlacementAndTestEndpoint(created);
+
+        await _configStoreCache.MutateAsync(store => store.Credentials.Add(created));
+        Credentials.Add(new CredentialItemViewModel(created).Refresh());
+
+        NewName = "";
+        NewServiceAccountJson = "";
+        NewServiceAccountSubject = "";
+        StatusMessage = $"Added '{created.Name}'. It mints its own tokens — click Get token to check the key now.";
+    }
+
+    /// <summary>
+    /// The client credentials branch of Save.
+    ///
+    /// Shares the client id/secret pair with the interactive OAuth path but none of the rest:
+    /// nothing opens a browser, so there is no redirect URI, no authorization endpoint, no PKCE
+    /// and no id_token to validate.
+    /// </summary>
+    private async Task SaveClientCredentialsCredentialAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewName))
+        {
+            StatusMessage = "Name is required.";
+            return;
+        }
+
+        var keepExistingSecret = IsEditing && string.IsNullOrWhiteSpace(NewClientSecret);
+        var hasSecret = keepExistingSecret
+            ? !string.IsNullOrEmpty(_editingItem?.Record.ClientSecret)
+            : !string.IsNullOrWhiteSpace(NewClientSecret);
+
+        var tokenEndpoint = string.IsNullOrWhiteSpace(NewTokenEndpoint) ? null : NewTokenEndpoint.Trim();
+
+        var validationError = CredentialValidation.ValidateClientCredentials(NewClientId, hasSecret, tokenEndpoint)
+                              ?? ValidatePlacementAndTestEndpoint();
+        if (validationError is not null)
+        {
+            StatusMessage = validationError;
+            return;
+        }
+
+        var scopes = ParseScopes();
+        var extraParams = string.IsNullOrWhiteSpace(NewExtraParams) ? null : NewExtraParams.Trim();
+
+        if (_editingItem is { } editing)
+        {
+            var record = editing.Record;
+
+            await _configStoreCache.MutateAsync(_ =>
+            {
+                record.Name = NewName.Trim();
+                record.Kind = CredentialKind.ClientCredentials;
+                record.ClientId = NewClientId.Trim();
+                if (!keepExistingSecret) record.ClientSecret = NewClientSecret.Trim();
+                record.Scopes = scopes;
+                record.TokenEndpoint = tokenEndpoint;
+                record.ExtraAuthParams = extraParams;
+                record.SendClientCredentialsInBody = NewSendClientCredentialsInBody;
+
+                // Cleared rather than left behind. These belong to the browser flow, and a stale
+                // authorization endpoint or Google flag on a credential that no longer uses one
+                // would be read back into the editor and shown as though it still applied.
+                record.Authority = null;
+                record.AuthorizationEndpoint = null;
+                record.IsGoogleProvider = false;
+                record.RequiresIdToken = false;
+
+                ClearPreviousFailure(record);
+                ApplyPlacementAndTestEndpoint(record);
+            });
+
+            editing.Refresh();
+            StatusMessage = $"Saved changes to '{record.Name}'.";
+            CancelEdit();
+            return;
+        }
+
+        var created = new CredentialRecord
+        {
+            Name = NewName.Trim(),
+            Kind = CredentialKind.ClientCredentials,
+            ClientId = NewClientId.Trim(),
+            ClientSecret = NewClientSecret.Trim(),
+            Scopes = scopes,
+            TokenEndpoint = tokenEndpoint,
+            ExtraAuthParams = extraParams,
+            SendClientCredentialsInBody = NewSendClientCredentialsInBody,
+        };
+        ApplyPlacementAndTestEndpoint(created);
+
+        await _configStoreCache.MutateAsync(store => store.Credentials.Add(created));
+        Credentials.Add(new CredentialItemViewModel(created).Refresh());
+
+        NewName = "";
+        NewClientId = "";
+        NewClientSecret = "";
+        StatusMessage = $"Added '{created.Name}'. It mints its own tokens — click Get token to check the settings now.";
+    }
+
+    /// <summary>
+    /// Forgets that a previous token request was refused.
+    ///
+    /// Editing an app login is the user saying "this is what was wrong" — and a refused mint is
+    /// what stops the proxy retrying on the next request. Leaving the flag set would keep a
+    /// corrected credential blocked until the background loop's backoff next came round, which
+    /// can be an hour.
+    /// </summary>
+    private void ClearPreviousFailure(CredentialRecord record)
+    {
+        record.NeedsReconnect = false;
+        _tokenRefreshService.ResetBackoff(record);
+    }
+
+    /// <summary>Splits the scopes box the same way for every kind that has one.</summary>
+    private List<string> ParseScopes() =>
+        NewScopes.Split([',', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    /// <summary>Checks the two fields every kind shares.</summary>
     private string? ValidatePlacementAndTestEndpoint() =>
         RouteValidation.ValidateCredentialInjection(NewDefaultPlacement, NewDefaultParameterName, NewDefaultValuePrefix)
         ?? CredentialValidation.ValidateTestEndpoint(NewTestEndpoint);
@@ -413,25 +652,48 @@ public sealed partial class CredentialsViewModel : ObservableObject
         // Best-effort preset match so provider-specific hints (redirect URI, help text) still
         // make sense while editing — SelectedPreset itself isn't persisted, only the resolved
         // fields below are, and those are set explicitly right after so they win either way.
-        SelectedPreset = item.Record.IsGoogleProvider ? OAuthProviderPreset.Google : OAuthProviderPreset.Custom;
+        SelectedPreset = MatchPreset(item.Record);
 
         NewName = item.Record.Name;
         NewClientId = item.Record.ClientId;
         NewClientSecret = "";
         NewApiKey = "";
+        NewServiceAccountJson = "";
+        NewServiceAccountSubject = item.Record.ServiceAccountSubject ?? "";
         NewScopes = string.Join(", ", item.Record.Scopes);
         NewAuthority = item.Record.Authority ?? "";
         NewAuthorizationEndpoint = item.Record.AuthorizationEndpoint ?? "";
         NewTokenEndpoint = item.Record.TokenEndpoint ?? "";
         NewUsesPkce = item.Record.UsesPkce;
+        NewExtraParams = item.Record.ExtraAuthParams ?? "";
+        NewSendClientCredentialsInBody = item.Record.SendClientCredentialsInBody;
         NewDefaultPlacement = item.Record.DefaultPlacement;
         NewDefaultParameterName = item.Record.DefaultParameterName;
         NewDefaultValuePrefix = item.Record.DefaultValuePrefix;
         NewTestEndpoint = item.Record.TestEndpoint ?? "";
 
-        StatusMessage = item.Record.Kind == CredentialKind.ApiKey
-            ? "Leave API key blank to keep the current one."
-            : "Leave Client secret blank to keep the current one.";
+        StatusMessage = item.Record.Kind switch
+        {
+            CredentialKind.ApiKey => "Leave API key blank to keep the current one.",
+            CredentialKind.GoogleServiceAccount => "Leave the key file blank to keep the current one.",
+            _ => "Leave Client secret blank to keep the current one.",
+        };
+    }
+
+    /// <summary>
+    /// Which preset's hints to show while editing. Matched on the token endpoint rather than
+    /// stored, because a preset is a prefill template and is deliberately not persisted — without
+    /// this, editing a GitHub credential showed Custom's generic help and Custom's redirect
+    /// advice, which is not what GitHub needs.
+    /// </summary>
+    private static OAuthProviderPreset MatchPreset(CredentialRecord record)
+    {
+        if (record.IsGoogleProvider) return OAuthProviderPreset.Google;
+
+        return OAuthProviderPreset.All.FirstOrDefault(preset =>
+            preset.TokenEndpointHint is { } hint &&
+            string.Equals(hint, record.TokenEndpoint, StringComparison.OrdinalIgnoreCase))
+            ?? OAuthProviderPreset.Custom;
     }
 
     [RelayCommand]
@@ -445,6 +707,10 @@ public sealed partial class CredentialsViewModel : ObservableObject
         NewClientId = "";
         NewClientSecret = "";
         NewApiKey = "";
+        NewServiceAccountJson = "";
+        NewServiceAccountSubject = "";
+        NewExtraParams = "";
+        NewSendClientCredentialsInBody = false;
         NewTestEndpoint = "";
 
         var defaults = CredentialRecord.DefaultInjectionFor(SelectedKind);
@@ -468,8 +734,18 @@ public sealed partial class CredentialsViewModel : ObservableObject
     private async Task ConnectAsync(CredentialItemViewModel? item)
     {
         if (item is null) return;
-        StatusMessage = $"Opening browser to authorize '{item.Name}'…";
-        _activityLog.Log($"CONNECT '{item.Name}' starting OAuth flow");
+
+        // Same command for both, because both end in a stored token — but only one of them opens
+        // a browser, and telling someone to watch for a consent screen that never appears is how
+        // a working credential gets reported as broken.
+        var interactive = item.Record.IsInteractiveOAuth;
+
+        StatusMessage = interactive
+            ? $"Opening browser to authorize '{item.Name}'…"
+            : $"Requesting a token for '{item.Name}'…";
+        _activityLog.Log(interactive
+            ? $"CONNECT '{item.Name}' starting OAuth flow"
+            : $"CONNECT '{item.Name}' requesting a token (no browser — app login)");
 
         // A deliberate reconnect means the user believes the problem is fixed; don't make them
         // sit out the automatic-retry backoff that earlier failures accumulated.
@@ -486,7 +762,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
             if (outcome.Success)
             {
                 await _configStoreCache.SaveAsync();
-                StatusMessage = $"'{item.Name}' connected.";
+                StatusMessage = interactive ? $"'{item.Name}' connected." : $"'{item.Name}' got a token.";
                 _activityLog.Log($"CONNECT '{item.Name}' OK — token stored");
             }
             else
@@ -537,7 +813,9 @@ public sealed partial class CredentialsViewModel : ObservableObject
             }
             else
             {
-                StatusMessage = $"Could not refresh '{item.Name}' — reconnect may be required.";
+                StatusMessage = item.Record.IsSelfIssuing
+                    ? $"Could not get a token for '{item.Name}' — check its stored secret and settings."
+                    : $"Could not refresh '{item.Name}' — reconnect may be required.";
             }
         }
         catch (Exception ex)

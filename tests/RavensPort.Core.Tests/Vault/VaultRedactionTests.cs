@@ -20,13 +20,17 @@ public class VaultRedactionTests
     private const string RouteKey = "SENTINEL-ROUTE-KEY";
     private const string FunnelKey = "SENTINEL-FUNNEL-KEY";
 
+    /// <summary>Stands in for the private key inside a Google service account key file.</summary>
+    private const string ServiceAccountKey =
+        """{"type":"service_account","client_email":"robot@x.iam.gserviceaccount.com","private_key":"SENTINEL-PRIVATE-KEY"}""";
+
     [Fact]
     public void TheConfigNoteContainsNoSecret()
     {
         var note = VaultMapper.BuildConfigNote(StoreStuffedWithSentinels(), new VaultIndex(), revision: 1);
         var text = note.Field(VaultFields.NoteContent)!;
 
-        foreach (var secret in new[] { ClientSecret, ApiKey, AccessToken, RefreshToken, RouteKey, FunnelKey })
+        foreach (var secret in new[] { ClientSecret, ApiKey, AccessToken, RefreshToken, RouteKey, FunnelKey, ServiceAccountKey })
         {
             Assert.DoesNotContain(secret, text, StringComparison.Ordinal);
         }
@@ -44,6 +48,10 @@ public class VaultRedactionTests
         Assert.Contains("https://accounts.google.com", text, StringComparison.Ordinal);
         Assert.Contains("drive.readonly", text, StringComparison.Ordinal);
         Assert.Contains("coding-agent", text, StringComparison.Ordinal);
+
+        // The impersonated user is configuration, not a secret. Redacting it would lose which
+        // person a Workspace credential acts as, and there would be nowhere else to find it.
+        Assert.Contains("person@example.com", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -70,7 +78,7 @@ public class VaultRedactionTests
 
         var everyValue = items.SelectMany(i => i.Spec.Fields).ToList();
 
-        foreach (var secret in new[] { ClientSecret, ApiKey, AccessToken, RefreshToken, RouteKey, FunnelKey })
+        foreach (var secret in new[] { ClientSecret, ApiKey, AccessToken, RefreshToken, RouteKey, FunnelKey, ServiceAccountKey })
         {
             var field = Assert.Single(everyValue, f => f.Value == secret);
             Assert.True(field.Concealed, $"'{field.Name}' carries a secret but is not concealed");
@@ -96,10 +104,21 @@ public class VaultRedactionTests
             ApiKey = ApiKey,
         };
 
+        var serviceAccount = new CredentialRecord
+        {
+            Name = "Workspace",
+            Kind = CredentialKind.GoogleServiceAccount,
+            ServiceAccountJson = ServiceAccountKey,
+            // Not a secret, and deliberately kept in the note: it is an email address, and the
+            // note is the one home for configuration.
+            ServiceAccountSubject = "person@example.com",
+            Scopes = ["https://www.googleapis.com/auth/gmail.readonly"],
+        };
+
         var upstream = new UpstreamRecord { Name = "google", BaseUrl = "https://www.googleapis.com" };
 
         var store = new ConfigStore();
-        store.Credentials.AddRange([oauth, apiKeyCredential]);
+        store.Credentials.AddRange([oauth, apiKeyCredential, serviceAccount]);
         store.Upstreams.Add(upstream);
         store.Routes.Add(new RouteMapping
         {

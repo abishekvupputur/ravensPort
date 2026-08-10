@@ -70,6 +70,8 @@ public static class ProxyStartupExtensions
         services.AddSingleton<VaultIntegrityService>();
 
         services.AddSingleton<GoogleOAuthService>();
+        services.AddSingleton<GoogleServiceAccountService>();
+        services.AddSingleton<ClientCredentialsService>();
         services.AddSingleton<OAuth2Service>();
         services.AddSingleton<AccessTokenProvider>();
         services.AddSingleton<CredentialTestService>();

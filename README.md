@@ -53,15 +53,20 @@ reach on its own.
 ## Features
 
 - **MCP Funnel** — per-agent endpoints pooling multiple MCP servers with per-tool filtering
-- **Multi-provider OAuth2** — Google (via `Google.Apis.Auth`), Nextcloud, or any custom OAuth2
-  provider (via `IdentityModel.OidcClient`; plain OAuth2, no OIDC discovery required)
+- **Multi-provider OAuth2** — Google (via `Google.Apis.Auth`), GitHub, Nextcloud, or any custom
+  OAuth2 provider (via `IdentityModel.OidcClient`; plain OAuth2, no OIDC discovery required)
+- **App logins — no browser, no user** — the OAuth2 **client credentials** grant, and **Google
+  service accounts** (with optional domain-wide delegation). Both mint their own tokens from a
+  stored secret and re-mint them when they age out, so a route works from the moment it is saved
+  and keeps working with nobody at the keyboard
 - **Static API keys** — for the many services that never offered OAuth; attach to routes exactly
   like a token, with an optional **Test** button that checks the key against a real endpoint
 - **Flexible credential placement** — `Authorization: Bearer <token>` by default, or any header,
   query parameter, or request-body field, with a custom value prefix
 - **Any number of credentials per route** — none, one, or several at once, in any mix of headers,
   query parameters, and body fields; the same credential may appear in more than one place
-- **Automatic token refresh** — 10 minutes ahead of expiry, in the background
+- **Automatic token refresh** — 10 minutes ahead of expiry, in the background; app logins re-mint
+  from their stored secret instead of presenting a refresh token
 - **Any credential backs any route** — not a fixed 1:1 mapping
 - **Stored in your password manager** — 1Password or Proton Pass holds every secret; nothing is written to this PC
 - **1Password without the desktop app** — sign in with a service account token instead, so nothing
@@ -119,7 +124,7 @@ restart).
 Four things, each built on the last:
 
 ```
-Credential  →  an OAuth2 grant you have connected, or a static API key you pasted in
+Credential  →  an OAuth2 grant, an app login that signs in as itself, or a static API key
 Upstream    →  a base URL to forward to
 Route       →  a local path prefix that forwards to an upstream, attaching any number of credentials
 Funnel      →  a local MCP endpoint pooling several MCP servers, filtered per agent
@@ -136,15 +141,24 @@ Pick a **Credential type** first — it decides the rest of the form.
 
 | Type | For | Needs |
 |---|---|---|
-| **OAuth2** | Google, Nextcloud, any OAuth2 provider | client ID/secret, scopes, a browser consent flow |
+| **OAuth2 (user login)** | Google, GitHub, Nextcloud, any OAuth2 provider | client ID/secret, scopes, a browser consent flow |
 | **API key** | services that never offered OAuth | the key, and where it goes |
+| **OAuth2 client credentials** | machine-to-machine APIs — the app *is* the user | client ID/secret, token endpoint, scopes |
+| **Google service account** | Google Cloud and Workspace APIs, unattended | the downloaded JSON key file, scopes |
 
-Both kinds attach to routes identically, and both share two fields:
+Every kind attaches to routes identically, and all of them share two fields:
 
 - **Default placement** — where the secret goes by default. Used by the Test button, and it
   prefills the entry when you attach this credential to a route (a route can still override it).
-  OAuth2 defaults to `Authorization: Bearer <token>`; API key defaults to `X-Api-Key: <key>`.
+  Every kind but API key defaults to `Authorization: Bearer <token>`; API key defaults to
+  `X-Api-Key: <key>`.
 - **Test endpoint** (optional) — see [Testing a credential](#testing-a-credential).
+
+The last two are **app logins**: nothing opens a browser and nobody consents. They mint their own
+tokens from the stored secret, so a route can use one the moment it is saved, and re-mint when the
+token ages out — there is no refresh token and nothing to reconnect. The row's **Get token**
+button fetches one immediately, which is worth doing once so a mistyped secret is reported while
+you are still looking at the form rather than as a 401 on the first real request.
 
 ### API key
 
@@ -173,6 +187,55 @@ Every Google authorization forces the consent screen (`prompt=consent`) so a ref
 issued every time — otherwise the credential silently cannot auto-refresh later.
 
 [![OAuth Login Success](media/oAuthLoginSuccess.png)](media/oAuthLoginSuccess.png)
+
+### GitHub
+
+1. **GitHub Settings → Developer settings → OAuth Apps → New OAuth App.**
+2. Set **Authorization callback URL** to `http://127.0.0.1:51005/callback/` — GitHub matches it
+   exactly, so it has to be that, character for character.
+3. Pick the **GitHub** preset. Paste Client ID/Secret and set scopes using GitHub's own names
+   (`repo`, `read:org`, `gist`) — they are not URLs.
+
+An OAuth App token has no expiry and no refresh token; GitHub simply never ages it out, and the
+credential shows **Connected · no expiry**. A GitHub App acting on behalf of a user, with expiring
+tokens enabled, returns both and refreshes like any other provider.
+
+### Google service account
+
+For Google APIs with nobody at the keyboard. The downloaded key file signs for its own access
+tokens, so there is no consent screen and no refresh token.
+
+1. **Google Cloud Console → IAM & Admin → Service Accounts** → your account → **Keys → Add key →
+   Create new key → JSON**.
+2. **Credentials tab** → type **Google service account** → paste the whole file, unedited.
+3. Set scopes as full URLs (`https://www.googleapis.com/auth/drive.readonly`). Scopes are
+   **required**: Google issues a token for a scopeless request without complaint and every API
+   then rejects it, which looks like a permissions problem rather than a configuration one.
+4. **Impersonated user** — leave blank for Google Cloud APIs, where the token should belong to the
+   service account itself. Set it to a person's address for Workspace APIs (Gmail, Calendar,
+   Drive), which act on that person's data. Grant the same scopes to the service account first
+   under **Admin console → Security → API controls → Domain-wide delegation**.
+
+The key file is a secret in every sense — it holds a private key — so it lives in your password
+manager like everything else and is never redisplayed. On edit, a blank box means "keep the
+current key file".
+
+### OAuth2 client credentials
+
+For APIs where the calling application is the principal — no user, no browser.
+
+1. Register a confidential client with your provider and note its **token endpoint**. There is no
+   authorization endpoint and no redirect URI here; nothing opens a browser.
+2. **Credentials tab** → type **OAuth2 client credentials** → paste Client ID/Secret, the token
+   endpoint, and any scopes.
+3. **Extra token request parameters** (optional) — written as `a=1&b=2`. This is where the
+   parameter that decides what the token is actually *for* goes: `audience=https://your-api/` for
+   Auth0, `resource=…` for Entra ID. Values are percent-decoded once, so paste them exactly as the
+   provider documents them.
+4. **Send client credentials in request body** — off by default, which sends them as an HTTP Basic
+   header (the OAuth2 default). Providers disagree about which they accept, and one that wants the
+   other answers a bare `invalid_client` that says nothing about which half was wrong. If that is
+   what you are seeing for an ID and secret you know are right, try the opposite setting.
 
 ### Nextcloud or custom OAuth2
 
@@ -533,10 +596,12 @@ is not something to start on the day it stops working.
 **Autostart** — Settings tab → **Start with Windows**. Writes an `HKCU\...\Run` entry pointing at
 the current exe. Never set automatically.
 
-**Credentials** — Connect, Refresh, Disconnect (clears the local token without revoking the grant
-at the provider), Test, Edit, Delete. A colored dot and expiry time refresh every 15 seconds.
-Connect/Refresh/Disconnect appear only for OAuth2 credentials — an API key has nothing to
-authorize and nothing to refresh. Test appears only once a test endpoint is set.
+**Credentials** — Connect (or **Get token**, for an app login, which opens no browser), Refresh,
+Disconnect (clears the local token without revoking the grant at the provider), Test, Edit,
+Delete. A colored dot and expiry time refresh every 15 seconds. The token buttons are hidden for
+an API key, which has nothing to authorize and nothing to refresh; Disconnect is hidden for an app
+login, which would simply mint another token on the next request. Test appears only once a test
+endpoint is set.
 
 [![Credentials tab](media/credentialsScreen.png)](media/credentialsScreen.png)
 
@@ -673,7 +738,7 @@ which is what keeps your own entries out of reach of its housekeeping.
 | Item | Holds |
 |---|---|
 | `RavensPort Config` | Routes, upstreams, MCP sources and funnels, settings — the topology, with **no secrets in it** |
-| `RavensPort credential — <name> [<id>]` | One per credential: client id and secret, API key, access and refresh tokens |
+| `RavensPort credential — <name> [<id>]` | One per credential: client id and secret, API key, service account key file, access and refresh tokens |
 | `RavensPort route key — <prefix> [<id>]` | One per route: its proxy key |
 | `RavensPort funnel key — /mcp/<slug> [<id>]` | One per funnel: its proxy key |
 
@@ -889,6 +954,21 @@ now stops the retries until you press **I've unlocked it — save now**.
 in the wrong header is as broken as a wrong one, and Test reports both as `401`. Also check for a
 stray line break — a key with one is refused before it reaches the wire, and the activity log
 says `NOT ATTACHED` for that entry.
+
+**A client credentials grant answers `invalid_client` for an ID and secret you know are right.**
+Providers disagree about where the pair belongs, and the one that wants the other place says only
+this. Toggle **Send client credentials in request body** and try again — the activity log records
+which placement each attempt used.
+
+**A service account gets a token, but every API call returns 403.** Almost always the scopes.
+Google issues a token for a scopeless or wrongly-scoped assertion without objecting, and the
+refusal only arrives at the API. If you set an **Impersonated user**, the same scopes must also be
+granted to the service account's client ID under **Admin console → Security → API controls →
+Domain-wide delegation** — without that, Google answers `unauthorized_client`, which the activity
+log records verbatim.
+
+**A GitHub credential shows "Connected · no expiry".** That is correct, not a missing value. An
+OAuth App token has no `expires_in` and no refresh token, and GitHub does not age it out.
 
 ---
 

@@ -114,12 +114,24 @@ public static class VaultMapper
         if (!string.IsNullOrWhiteSpace(credential.Authority)) fields.Add(new(VaultFields.Website, credential.Authority));
         if (!string.IsNullOrEmpty(credential.ApiKey)) fields.Add(new(VaultFields.ApiKey, credential.ApiKey));
 
+        if (!string.IsNullOrWhiteSpace(credential.ServiceAccountJson))
+        {
+            fields.Add(new(VaultFields.ServiceAccountJson, credential.ServiceAccountJson));
+        }
+
         if (credential.Token is { } token)
         {
             fields.Add(new(VaultFields.AccessToken, token.AccessToken));
             fields.Add(new(VaultFields.TokenType, token.TokenType));
-            fields.Add(new(VaultFields.ExpiresAtUtc, VaultItemNaming.FormatTimestamp(token.ExpiresAtUtc)));
             fields.Add(new(VaultFields.ObtainedUtc, VaultItemNaming.FormatTimestamp(token.ObtainedUtc)));
+
+            // Written only when there is one. A provider that advertises no lifetime leaves the
+            // field absent, and an absent field reads back as "no expiry" — writing a placeholder
+            // instead would turn a token that never expires into one that expired long ago.
+            if (token.ExpiresAtUtc is { } expiresAt)
+            {
+                fields.Add(new(VaultFields.ExpiresAtUtc, VaultItemNaming.FormatTimestamp(expiresAt)));
+            }
 
             if (token.RefreshToken is { Length: > 0 } refreshToken)
             {
@@ -139,9 +151,13 @@ public static class VaultMapper
             fields)
         {
             ItemId = index.Find(VaultItemRole.Credential, credential.Id),
-            Caption = credential.Kind == CredentialKind.ApiKey
-                ? $"API key for '{credential.Name}'"
-                : $"OAuth credential for '{credential.Name}'",
+            Caption = credential.Kind switch
+            {
+                CredentialKind.ApiKey => $"API key for '{credential.Name}'",
+                CredentialKind.GoogleServiceAccount => $"Google service account key for '{credential.Name}'",
+                CredentialKind.ClientCredentials => $"OAuth client credentials for '{credential.Name}'",
+                _ => $"OAuth credential for '{credential.Name}'",
+            },
         });
     }
 
@@ -254,6 +270,7 @@ public static class VaultMapper
     {
         credential.ClientSecret = item.Field(VaultFields.Password) ?? "";
         credential.ApiKey = item.Field(VaultFields.ApiKey);
+        credential.ServiceAccountJson = item.Field(VaultFields.ServiceAccountJson);
 
         var accessToken = item.Field(VaultFields.AccessToken);
 
@@ -269,7 +286,9 @@ public static class VaultMapper
         credential.Token = new TokenSet(
             accessToken,
             item.Field(VaultFields.RefreshToken),
-            VaultItemNaming.ParseTimestamp(item.Field(VaultFields.ExpiresAtUtc)) ?? DateTimeOffset.UtcNow,
+            // No fallback: an absent expiry means the provider advertised none, and substituting
+            // "now" would present a token that never expires as one that just did.
+            VaultItemNaming.ParseTimestamp(item.Field(VaultFields.ExpiresAtUtc)),
             item.Field(VaultFields.TokenType) ?? "Bearer",
             VaultItemNaming.ParseTimestamp(item.Field(VaultFields.ObtainedUtc)) ?? DateTimeOffset.UtcNow);
     }

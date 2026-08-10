@@ -26,6 +26,26 @@ public sealed record OAuthProviderPreset(
         HelpText: "Register the OAuth client as a 'Desktop app' type in Google Cloud Console — " +
                    "only Desktop-type clients allow the arbitrary-port loopback redirect this app uses.");
 
+    /// <summary>
+    /// GitHub. Deliberately not an Authority: GitHub publishes no OIDC discovery document for
+    /// its OAuth endpoints, so discovery would 404 and the endpoints have to be given directly.
+    ///
+    /// An OAuth App token has no expiry and no refresh token — the app records that as "no
+    /// expiry advertised" rather than inventing one. A GitHub App acting on behalf of a user
+    /// with expiring tokens turned on returns both, and refreshes like any other provider.
+    /// </summary>
+    public static readonly OAuthProviderPreset GitHub = new(
+        Name: "GitHub",
+        Authority: null,
+        AuthorizationEndpointHint: "https://github.com/login/oauth/authorize",
+        TokenEndpointHint: "https://github.com/login/oauth/access_token",
+        RequiresIdToken: false,
+        UsesPkce: true,
+        DefaultScopes: ["read:user"],
+        HelpText: "Register an OAuth App under GitHub Settings → Developer settings, and paste the "
+                   + "redirect URI above into its 'Authorization callback URL' — GitHub matches it "
+                   + "exactly. Scopes are GitHub's own names ('repo', 'read:org', 'gist'), not URLs.");
+
     public static readonly OAuthProviderPreset Nextcloud = new(
         Name: "Nextcloud",
         Authority: null,
@@ -47,5 +67,5 @@ public sealed record OAuthProviderPreset(
         DefaultScopes: [],
         HelpText: "Enter the authorization and token endpoints (or an Authority for OIDC discovery) for any OAuth2 app.");
 
-    public static readonly IReadOnlyList<OAuthProviderPreset> All = [Google, Nextcloud, Custom];
+    public static readonly IReadOnlyList<OAuthProviderPreset> All = [Google, GitHub, Nextcloud, Custom];
 }
