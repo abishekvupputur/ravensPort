@@ -24,7 +24,6 @@ namespace RavensPort.Core.Vault;
 public sealed partial class ProtonPassAuthenticator(
     ICliRunner cliRunner,
     ProtonPassSession session,
-    ProtonPassInstaller installer,
     HelloKeyProtector helloKeyProtector,
     VaultGateService gate,
     ActivityLog activityLog)
@@ -121,17 +120,24 @@ public sealed partial class ProtonPassAuthenticator(
         + "would be no way to reopen the session after a restart. Set up Windows Hello in Windows "
         + "Settings → Accounts → Sign-in options, then try again.";
 
+    /// <summary>What to say when the machine has no pass-cli. RavensPort installs nothing.</summary>
+    public const string CliMissing =
+        "The Proton Pass CLI is not installed on this PC. Install it with "
+        + "\"winget install Proton.PassCLI\", then choose Check again.";
+
     /// <summary>
-    /// Finds pass-cli, downloading the pinned release if the machine has none. Returns its path.
+    /// Finds the pass-cli the user installed. Throws if there is none.
+    ///
+    /// RavensPort used to fetch and unpack the pinned release itself; that is gone, along with the
+    /// setup page's download buttons. The CLI is the user's to install and to keep at whatever
+    /// version they maintain, which is also the only reading of it that leaves no doubt about who
+    /// put a binary on their machine.
     /// </summary>
-    public async Task<string> EnsureInstalledAsync(
-        IProgress<string>? progress = null, CancellationToken ct = default)
+    public static string RequireInstalledCli()
     {
-        // An existing install always wins — the user's own pass-cli, at whatever version they
-        // maintain, is not something the app should quietly route around.
         if (VaultProbe.FindProtonPass() is { } existing && File.Exists(existing)) return existing;
 
-        return await installer.InstallAsync(progress, ct).ConfigureAwait(false);
+        throw new VaultCliException(CliMissing);
     }
 
     /// <summary>
@@ -154,7 +160,7 @@ public sealed partial class ProtonPassAuthenticator(
                 + "and protects it with Windows Hello before any session exists to open.");
         }
 
-        var exePath = await EnsureInstalledAsync(progress, ct).ConfigureAwait(false);
+        var exePath = RequireInstalledCli();
 
         progress?.Report("Starting sign-in…");
 

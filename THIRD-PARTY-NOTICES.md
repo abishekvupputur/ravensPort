@@ -12,8 +12,8 @@ BSD-3-Clause) or redistributable under Microsoft's own terms, and none of it imp
 source-disclosure obligations on RavensPort. RavensPort's own source therefore remains under
 the MIT License.
 
-One component is **not** bundled and **is** copyleft — the Proton Pass CLI, which
-RavensPort can download at your request. See [Optional external
+One component is **not** bundled and **is** copyleft — the Proton Pass CLI, which you install
+yourself and RavensPort merely runs. See [Optional external
 tools](#optional-external-tools-not-bundled) below.
 
 ## Runtime dependencies (bundled in the published executable)
@@ -134,26 +134,19 @@ RavensPort stores its configuration in a password manager. For Proton Pass, it r
 
 | Component | License | How it is obtained |
 |---|---|---|
-| Proton Pass CLI (`pass-cli`) | **GPL-3.0-or-later** | Installed by you, or downloaded from Proton's official release on your explicit request |
+| Proton Pass CLI (`pass-cli`) | **GPL-3.0-or-later** | Installed by you, with `winget install Proton.PassCLI` or from Proton |
 
 ### Proton Pass CLI and the GPL
 
-If you use the "Download it for me" button, RavensPort fetches this exact release:
+RavensPort neither downloads nor redistributes pass-cli. Versions up to 4.3.0 could fetch a
+pinned release on request; that was removed in 4.4.0, and the app now installs no software
+at all. It locates whichever `pass-cli` you installed and runs it.
 
-- Version: **2.2.4**
-- File: `pass-cli-windows-x86_64.zip`
-- SHA-256: `8077bbfed54842305dbdef2744bddaa368fd36b349ce9e2c406a598c82e38d77`
-- From: <https://github.com/protonpass/pass-cli/releases/tag/2.2.4>
-
-Corresponding source for that exact version is the tag above, at
+Corresponding source for whatever version you have is at
 <https://github.com/protonpass/pass-cli>. RavensPort does **not** modify pass-cli, link
 against it, or incorporate any part of it — it is executed as an independent program over
 a process boundary, which is aggregation rather than a combined work. RavensPort itself
 therefore remains under the MIT License.
-
-The archive contains `pass-cli.exe` and `libcrypto-3-x64.dll`; both are extracted
-unmodified, and the download is rejected outright if its SHA-256 does not match the value
-above.
 
 ## Trademarks
 

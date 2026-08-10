@@ -77,8 +77,9 @@ verified against the workflow and commit that produced it.
 
 BEFORE YOU INSTALL
 RavensPort requires 1Password or Proton Pass, with the matching command-line tool installed and
-signed in — it is where your configuration is kept, and the proxy does not start without it. Setup
-inside the app walks through installing the CLI and choosing a vault. Windows 10 or 11, 64-bit.
+signed in — it is where your configuration is kept, and the proxy does not start without it.
+RavensPort does not install either one; setup inside the app checks what is present and walks
+through connecting a vault. Windows 10 or 11, 64-bit.
 ```
 
 ## Product features

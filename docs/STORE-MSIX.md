@@ -138,20 +138,33 @@ so the app runs outside AppContainer with the user's own rights. Everything that
 a problem keeps working unchanged:
 
 - Kestrel and `HttpListener` bind to `127.0.0.1` - loopback is only blocked for AppContainer apps.
-- `pass-cli` still downloads and runs as a child process.
+- `pass-cli` still runs as a child process.
 - The Go `onepassword.dll` still P/Invokes.
 - The `RavensPort_SingleInstance` mutex still works.
 
 One real difference: **the MSIX container redirects `%APPDATA%` and `%LOCALAPPDATA%` writes** into
 `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalCache\`. A user moving from the Inno installer to
-the Store build therefore starts with fresh local state - settings, activity log, and the downloaded
-`pass-cli`, which is fetched again once. Nothing irreplaceable lives there, because the
-configuration itself is in the user's password manager, but it belongs in the release notes.
+the Store build therefore starts with fresh local state - settings and activity log. Nothing
+irreplaceable lives there, because the configuration itself is in the user's password manager, but
+it belongs in the release notes.
 
-Worth knowing before review: `ProtonPassInstaller` downloads pass-cli from GitHub on the user's
-say-so, pinned by SHA-256. That is user-initiated installation of an optional dependency rather than
-remote code that changes app behaviour, and it passed the earlier reviews, but MSIX review looks at
-this more closely.
+## Software distribution: nothing, deliberately
+
+Certification failed the 4.3.0 MSIX on two policies, both against the setup page's Proton Pass card:
+
+| Policy | What it said | What was there |
+|---|---|---|
+| 10.1.5 Software Distribution | "The product promotes acquiring software outside the Store" | An **Open download page** button, which opened the pass-cli site |
+| 10.2.10.1 Security | "An App or its metadata cannot initiate downloads of other apps or executables" | A **Download it for me** button, which fetched a pinned `pass-cli` release |
+
+Both features were removed outright, from the one and only Windows build - there is no Store variant
+and no build flag. `ProtonPassInstaller` is gone, `VaultLockGuidance.DownloadUrl` is gone, and the
+setup page now shows the `winget install Proton.PassCLI` line as read-only text and nothing else.
+That line was not flagged. Anyone running a local OAuth proxy can install a CLI themselves, so the
+feature was worth less than the policy surface it carried.
+
+What remains: `pass-cli` is located by `VaultProbe` wherever the user installed it, and run as a
+child process. A copy left by 4.3.0 or earlier is still found, last, so upgrades keep working.
 
 ## What a reviewer sees
 

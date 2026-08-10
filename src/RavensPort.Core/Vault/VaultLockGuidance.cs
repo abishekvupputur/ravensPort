@@ -30,12 +30,10 @@ public static class VaultLockGuidance
         _ => "",
     };
 
-    public static string DownloadUrl(VaultBackendKind kind) => kind switch
-    {
-        VaultBackendKind.OnePassword => "https://developer.1password.com/docs/cli/get-started/",
-        VaultBackendKind.ProtonPass => "https://protonpass.github.io/pass-cli/",
-        _ => "",
-    };
+    // There is deliberately no download URL here, and no in-app installer anywhere. Getting a
+    // password manager onto this PC is the user's own business: the winget line above is the whole
+    // of the help RavensPort offers, and it neither fetches software nor sends anyone to a page to
+    // fetch it. See ManagerCardViewModel.ShowInstall for what the setup page shows instead.
 
     /// <summary>How to get from "installed" to "signed in".</summary>
     public static string SignInSteps(VaultBackendKind kind) => kind switch

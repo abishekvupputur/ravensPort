@@ -306,29 +306,16 @@
                                     </StackPanel>
 
                                     <StackPanel Visibility="{Binding ShowInstall, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <!-- The command and nothing else. RavensPort does not
+                                             install other software and does not send anyone to a
+                                             page to get it: putting an executable on this PC is
+                                             the user's own decision, taken in their own terminal. -->
                                         <TextBlock Text="Install it, then choose Check again."
                                                    Style="{StaticResource HintTextStyle}" Margin="0,0,0,6"/>
                                         <TextBox Text="{Binding InstallCommand, Mode=OneWay}" IsReadOnly="True"
+                                                 Visibility="{Binding HasInstallCommand, Converter={StaticResource BoolToVisibilityConverter}}"
                                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
                                                  Margin="0,0,0,8"/>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Content="Open download page"
-                                                    Style="{StaticResource GhostButtonStyle}"
-                                                    Command="{Binding DataContext.OpenDownloadPageCommand,
-                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                    CommandParameter="{Binding}"/>
-
-                                            <!-- Proton Pass only. pass-cli is open source, so the
-                                                 app may fetch it; 1Password's licence does not
-                                                 allow RavensPort to distribute op. -->
-                                            <Button Content="Download it for me" Margin="8,0,0,0"
-                                                    Visibility="{Binding ShowInAppInstall, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                    IsEnabled="{Binding DataContext.IsBusy,
-                                                                RelativeSource={RelativeSource AncestorType=UserControl},
-                                                                Converter={StaticResource InverseBoolConverter}}"
-                                                    Command="{Binding DataContext.InstallProtonCliCommand,
-                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                        </StackPanel>
                                     </StackPanel>
 
                                     <!-- After a connect that did not work. The box is here as well as

@@ -75,7 +75,7 @@ Only these touch local storage:
 | `%AppData%\RavensPort\logs\errors.log` | Unhandled exceptions and provider errors, with stack traces | On error |
 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | A single value pointing at the executable | Only if you enable **Start with Windows** |
 | `%LocalAppData%\RavensPort\pass-session\` | RavensPort's own Proton Pass session, encrypted | Only if you sign in to Proton Pass from inside RavensPort |
-| `%LocalAppData%\RavensPort\cli\pass-cli\` | A copy of the Proton Pass CLI | Only if you use **Download it for me** on the setup page |
+| `%LocalAppData%\RavensPort\cli\pass-cli\` | A copy of the Proton Pass CLI | Only if a version before 4.4.0 downloaded it for you. RavensPort no longer installs software of any kind; delete this folder if you do not want it |
 
 Activity logs rotate every 2 days and older files are deleted automatically after roughly 10 days.
 Nothing else about your configuration is persisted locally — a change made while the vault is

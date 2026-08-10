@@ -79,7 +79,8 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
 
     public string InstallCommand { get; } = VaultLockGuidance.InstallCommand(status.Kind);
 
-    public string DownloadUrl { get; } = VaultLockGuidance.DownloadUrl(status.Kind);
+    /// <summary>Keeps an empty box off the 1Password card, which has no one-line install command.</summary>
+    public bool HasInstallCommand => InstallCommand.Length > 0;
 
     public string SignInSteps { get; } = VaultLockGuidance.SignInSteps(status.Kind);
 
@@ -167,17 +168,17 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
     };
 
     /// <summary>
-    /// Whether RavensPort can install the CLI and drive the sign-in itself, rather than only
-    /// telling the user how.
+    /// Whether RavensPort can drive the sign-in itself, rather than only telling the user how.
     ///
-    /// True for Proton Pass alone. pass-cli signs in through a URL it prints, which the app can
-    /// show; and it is open source, so the app may fetch it. 1Password's CLI has neither property —
-    /// it authenticates with a Secret Key and account password at a terminal, and its licence does
-    /// not permit redistribution — so its card keeps the written instructions.
+    /// True for Proton Pass alone: pass-cli signs in through a URL it prints, which the app can
+    /// show. 1Password's CLI authenticates with a Secret Key and account password at a terminal,
+    /// so its card keeps the written instructions.
+    ///
+    /// Installing is not part of this and never happens in-app any more, for either manager. The
+    /// CLI is the user's to install; the card shows the winget command and stops there.
     /// </summary>
     public bool SupportsInAppSignIn => Kind == VaultBackendKind.ProtonPass;
 
-    public bool ShowInAppInstall => ShowInstall && SupportsInAppSignIn;
     public bool ShowInAppSignIn => ShowSignIn && SupportsInAppSignIn;
     
     public bool IsOnePassword => Kind == VaultBackendKind.OnePassword;
