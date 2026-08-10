@@ -55,6 +55,9 @@ reach on its own.
 - **MCP Funnel** — per-agent endpoints pooling multiple MCP servers with per-tool filtering
 - **Multi-provider OAuth2** — Google (via `Google.Apis.Auth`), GitHub, Nextcloud, or any custom
   OAuth2 provider (via `IdentityModel.OidcClient`; plain OAuth2, no OIDC discovery required)
+- **Device code sign-in** — the RFC 8628 grant: the provider issues a short code, you enter it on
+  any device, and nothing has to come back to a redirect URI on this machine. For providers that
+  will not register a loopback callback, and for machines with no browser to open
 - **App logins — no browser, no user** — the OAuth2 **client credentials** grant, and **Google
   service accounts** (with optional domain-wide delegation). Both mint their own tokens from a
   stored secret and re-mint them when they age out, so a route works from the moment it is saved
@@ -142,6 +145,7 @@ Pick a **Credential type** first — it decides the rest of the form.
 | Type | For | Needs |
 |---|---|---|
 | **OAuth2 (user login)** | Google, GitHub, Nextcloud, any OAuth2 provider | client ID/secret, scopes, a browser consent flow |
+| **OAuth2 device code** | the same providers, without registering a redirect URI | client ID, device + token endpoints, scopes, a code you type |
 | **API key** | services that never offered OAuth | the key, and where it goes |
 | **OAuth2 client credentials** | machine-to-machine APIs — the app *is* the user | client ID/secret, token endpoint, scopes |
 | **Google service account** | Google Cloud and Workspace APIs, unattended | the downloaded JSON key file, scopes |
@@ -199,6 +203,32 @@ issued every time — otherwise the credential silently cannot auto-refresh late
 An OAuth App token has no expiry and no refresh token; GitHub simply never ages it out, and the
 credential shows **Connected · no expiry**. A GitHub App acting on behalf of a user, with expiring
 tokens enabled, returns both and refreshes like any other provider.
+
+### Device code
+
+The same user login as the browser flow, arranged so nothing has to come back to this machine.
+The provider issues a short code, you enter it wherever you like, and RavensPort polls until you
+have. Worth choosing when a provider will not accept a loopback callback URL, when you would
+rather approve on a phone, or when the redirect keeps landing somewhere unhelpful.
+
+1. Enable it at the provider. **GitHub**: tick **Enable Device Flow** in the OAuth App's settings
+   — it is off by default and GitHub refuses the request without it. **Google**: the client must
+   be registered as **TVs and Limited Input devices**; a Desktop-app client is refused here.
+2. **Credentials tab** → type **OAuth2 device code** → pick a preset, which fills in both
+   endpoints → paste the Client ID → set scopes.
+3. **Client secret is optional.** RFC 8628 exists for clients that cannot hold one, and most
+   providers issue device codes to public clients. Leave it blank unless yours insists.
+4. **Connect.** The code appears in the status bar, is copied to your clipboard, and the
+   verification page opens in your browser — pre-filled with the code where the provider supports
+   it. Enter it anywhere; approving on a different device works exactly as well.
+
+The **device authorization endpoint** is not the browser authorization endpoint. That one is a
+page for a browser; this one is called by the app and answers JSON, and providers publish them at
+different addresses. An OIDC provider lists it as `device_authorization_endpoint` in its discovery
+document.
+
+Once approved it is an ordinary grant with a refresh token, renewed in the background like any
+other — the device flow is only how it was first approved.
 
 ### Google service account
 
@@ -969,6 +999,15 @@ log records verbatim.
 
 **A GitHub credential shows "Connected · no expiry".** That is correct, not a missing value. An
 OAuth App token has no `expires_in` and no refresh token, and GitHub does not age it out.
+
+**A device code request is refused with `unauthorized_client`.** The flow is not switched on for
+that client. GitHub needs **Enable Device Flow** ticked in the OAuth App's settings; Google issues
+device codes only to a client registered as **TVs and Limited Input devices**. Neither is the
+default, and the client ID is otherwise perfectly valid — which is why the error names the client.
+
+**The device code was never approved and the flow gave up.** Codes expire, usually in 10-15
+minutes; the status bar shows the deadline while it waits. Press Connect again for a fresh one.
+Polling stops on its own at that point — it does not keep hitting the provider.
 
 ---
 

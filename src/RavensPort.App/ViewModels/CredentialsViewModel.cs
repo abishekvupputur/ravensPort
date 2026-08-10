@@ -42,6 +42,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     [ObservableProperty] private string _newAuthority = "";
     [ObservableProperty] private string _newAuthorizationEndpoint = "";
     [ObservableProperty] private string _newTokenEndpoint = "";
+    [ObservableProperty] private string _newDeviceAuthorizationEndpoint = "";
     [ObservableProperty] private bool _newUsesPkce = true;
     [ObservableProperty] private string _newServiceAccountJson = "";
     [ObservableProperty] private string _newServiceAccountSubject = "";
@@ -71,15 +72,39 @@ public sealed partial class CredentialsViewModel : ObservableObject
     public bool IsOAuthKind => SelectedKind == CredentialKind.OAuth2;
     public bool IsClientCredentialsKind => SelectedKind == CredentialKind.ClientCredentials;
     public bool IsServiceAccountKind => SelectedKind == CredentialKind.GoogleServiceAccount;
+    public bool IsDeviceCodeKind => SelectedKind == CredentialKind.DeviceCode;
 
-    /// <summary>The two kinds that identify themselves with a client id and secret.</summary>
-    public bool UsesClientPair => IsOAuthKind || IsClientCredentialsKind;
+    /// <summary>The kinds that identify themselves with a client id and secret.</summary>
+    public bool UsesClientPair => IsOAuthKind || IsClientCredentialsKind || IsDeviceCodeKind;
 
     /// <summary>Everything except a static API key asks a provider for scopes.</summary>
     public bool UsesScopes => SelectedKind != CredentialKind.ApiKey;
 
-    /// <summary>The token endpoint is the only endpoint an app login has; a browser flow has two.</summary>
+    /// <summary>Every flow that exchanges anything has a token endpoint; only the browser flow has two.</summary>
     public bool UsesTokenEndpoint => UsesClientPair;
+
+    /// <summary>Provider presets prefill endpoints, which only the provider-shaped kinds have.</summary>
+    public bool UsesPreset => IsOAuthKind || IsDeviceCodeKind;
+
+    /// <summary>
+    /// A device flow client is usually public — RFC 8628 exists for clients that cannot hold a
+    /// secret — so the box has to say the field is optional, or an empty one reads as unfinished.
+    /// </summary>
+    public string ClientSecretLabel => IsDeviceCodeKind ? "Client secret (optional)" : "Client secret";
+
+    /// <summary>The preset's advice for the flow being configured; the two differ per provider.</summary>
+    public string? PresetHelpText => SelectedPreset.HelpTextFor(SelectedKind);
+
+    /// <summary>
+    /// The two flows with no front channel to carry provider-specific parameters, which therefore
+    /// put them on the request that starts the flow instead.
+    /// </summary>
+    public bool UsesExtraParams => IsClientCredentialsKind || IsDeviceCodeKind;
+
+    /// <summary>Named for the request they actually ride on, which is not the same one.</summary>
+    public string ExtraParamsLabel => IsDeviceCodeKind
+        ? "Extra device request parameters (optional)"
+        : "Extra token request parameters (optional)";
 
     /// <summary>One sentence explaining the selected kind, shown under the picker.</summary>
     public string KindBlurb => CredentialKindInfo.For(SelectedKind).Blurb;
@@ -88,6 +113,8 @@ public sealed partial class CredentialsViewModel : ObservableObject
     public string SaveHintText => SelectedKind switch
     {
         CredentialKind.OAuth2 => "After saving, click Connect to authorize in your browser.",
+        CredentialKind.DeviceCode => "After saving, click Connect. The provider issues a short code, which "
+                                     + "is copied to your clipboard and shown below — enter it on any device.",
         CredentialKind.ApiKey => "Ready to attach to a route as soon as it is saved.",
         _ => "No browser flow: the first request through a route mints a token by itself. "
              + "Click Get token to check the settings now instead of on the first real request.",
@@ -133,11 +160,23 @@ public sealed partial class CredentialsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsOAuthKind));
         OnPropertyChanged(nameof(IsClientCredentialsKind));
         OnPropertyChanged(nameof(IsServiceAccountKind));
+        OnPropertyChanged(nameof(IsDeviceCodeKind));
         OnPropertyChanged(nameof(UsesClientPair));
         OnPropertyChanged(nameof(UsesScopes));
         OnPropertyChanged(nameof(UsesTokenEndpoint));
+        OnPropertyChanged(nameof(UsesPreset));
+        OnPropertyChanged(nameof(UsesExtraParams));
+        OnPropertyChanged(nameof(ExtraParamsLabel));
+        OnPropertyChanged(nameof(ClientSecretLabel));
+        OnPropertyChanged(nameof(PresetHelpText));
         OnPropertyChanged(nameof(KindBlurb));
         OnPropertyChanged(nameof(SaveHintText));
+
+        // Only for the kinds a preset describes. The same provider publishes different addresses
+        // for the browser flow and the device flow, so the endpoints filled in for the one being
+        // left behind are wrong for the one being entered — but re-running this for, say, a
+        // service account would overwrite its scopes with an OAuth preset's.
+        if (UsesPreset) ApplyPresetDefaults(SelectedPreset);
     }
 
     partial void OnNewDefaultPlacementChanged(CredentialPlacement oldValue, CredentialPlacement newValue)
@@ -217,15 +256,24 @@ public sealed partial class CredentialsViewModel : ObservableObject
         ApplyPresetDefaults(value);
         OnPropertyChanged(nameof(IsPkceOptionApplicable));
         OnPropertyChanged(nameof(IsPkceAlwaysOn));
+        OnPropertyChanged(nameof(PresetHelpText));
     }
 
     private void ApplyPresetDefaults(OAuthProviderPreset preset)
     {
         NewAuthority = preset.Authority ?? "";
         NewAuthorizationEndpoint = preset.AuthorizationEndpointHint ?? "";
-        NewTokenEndpoint = preset.TokenEndpointHint ?? "";
+        NewDeviceAuthorizationEndpoint = preset.DeviceAuthorizationEndpointHint ?? "";
         NewScopes = string.Join(", ", preset.DefaultScopes);
         NewUsesPkce = preset.UsesPkce;
+
+        // Google is the exception: it discovers its browser-flow token endpoint from the
+        // Authority, so the preset carries no hint — but the device flow has no discovery to lean
+        // on and needs the address spelled out.
+        NewTokenEndpoint = preset.TokenEndpointHint
+                           ?? (IsDeviceCodeKind && ReferenceEquals(preset, OAuthProviderPreset.Google)
+                               ? "https://oauth2.googleapis.com/token"
+                               : "");
 
         if (preset.Name == "Google")
         {
@@ -252,6 +300,9 @@ public sealed partial class CredentialsViewModel : ObservableObject
                 return;
             case CredentialKind.ClientCredentials:
                 await SaveClientCredentialsCredentialAsync();
+                return;
+            case CredentialKind.DeviceCode:
+                await SaveDeviceCodeCredentialAsync();
                 return;
         }
 
@@ -575,6 +626,93 @@ public sealed partial class CredentialsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The device code branch of Save.
+    ///
+    /// Shares the client pair and scopes with the browser flow, but has no redirect URI, no
+    /// authorization endpoint and no PKCE — nothing comes back to this machine. What it does have
+    /// that nothing else does is the device authorization endpoint.
+    /// </summary>
+    private async Task SaveDeviceCodeCredentialAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewName))
+        {
+            StatusMessage = "Name is required.";
+            return;
+        }
+
+        var deviceEndpoint = string.IsNullOrWhiteSpace(NewDeviceAuthorizationEndpoint)
+            ? null
+            : NewDeviceAuthorizationEndpoint.Trim();
+        var tokenEndpoint = string.IsNullOrWhiteSpace(NewTokenEndpoint) ? null : NewTokenEndpoint.Trim();
+
+        var validationError = CredentialValidation.ValidateDeviceCode(NewClientId, deviceEndpoint, tokenEndpoint)
+                              ?? ValidatePlacementAndTestEndpoint();
+        if (validationError is not null)
+        {
+            StatusMessage = validationError;
+            return;
+        }
+
+        var scopes = ParseScopes();
+        var extraParams = string.IsNullOrWhiteSpace(NewExtraParams) ? null : NewExtraParams.Trim();
+        var keepExistingSecret = IsEditing && string.IsNullOrWhiteSpace(NewClientSecret);
+
+        if (_editingItem is { } editing)
+        {
+            var record = editing.Record;
+
+            await _configStoreCache.MutateAsync(_ =>
+            {
+                record.Name = NewName.Trim();
+                record.Kind = CredentialKind.DeviceCode;
+                record.ClientId = NewClientId.Trim();
+                if (!keepExistingSecret) record.ClientSecret = NewClientSecret.Trim();
+                record.Scopes = scopes;
+                record.DeviceAuthorizationEndpoint = deviceEndpoint;
+                record.TokenEndpoint = tokenEndpoint;
+                record.ExtraAuthParams = extraParams;
+
+                // Cleared for the same reason as on a client credentials save: these describe a
+                // browser round trip this credential does not make, and leaving them behind would
+                // read back into the editor as though they still applied.
+                record.Authority = null;
+                record.AuthorizationEndpoint = null;
+                record.IsGoogleProvider = false;
+                record.RequiresIdToken = false;
+
+                ClearPreviousFailure(record);
+                ApplyPlacementAndTestEndpoint(record);
+            });
+
+            editing.Refresh();
+            StatusMessage = $"Saved changes to '{record.Name}'.";
+            CancelEdit();
+            return;
+        }
+
+        var created = new CredentialRecord
+        {
+            Name = NewName.Trim(),
+            Kind = CredentialKind.DeviceCode,
+            ClientId = NewClientId.Trim(),
+            ClientSecret = NewClientSecret.Trim(),
+            Scopes = scopes,
+            DeviceAuthorizationEndpoint = deviceEndpoint,
+            TokenEndpoint = tokenEndpoint,
+            ExtraAuthParams = extraParams,
+        };
+        ApplyPlacementAndTestEndpoint(created);
+
+        await _configStoreCache.MutateAsync(store => store.Credentials.Add(created));
+        Credentials.Add(new CredentialItemViewModel(created).Refresh());
+
+        NewName = "";
+        NewClientId = "";
+        NewClientSecret = "";
+        StatusMessage = $"Added '{created.Name}'. Click Connect to get a code to enter.";
+    }
+
+    /// <summary>
     /// Forgets that a previous token request was refused.
     ///
     /// Editing an app login is the user saying "this is what was wrong" — and a refused mint is
@@ -664,6 +802,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
         NewAuthority = item.Record.Authority ?? "";
         NewAuthorizationEndpoint = item.Record.AuthorizationEndpoint ?? "";
         NewTokenEndpoint = item.Record.TokenEndpoint ?? "";
+        NewDeviceAuthorizationEndpoint = item.Record.DeviceAuthorizationEndpoint ?? "";
         NewUsesPkce = item.Record.UsesPkce;
         NewExtraParams = item.Record.ExtraAuthParams ?? "";
         NewSendClientCredentialsInBody = item.Record.SendClientCredentialsInBody;
@@ -689,6 +828,16 @@ public sealed partial class CredentialsViewModel : ObservableObject
     private static OAuthProviderPreset MatchPreset(CredentialRecord record)
     {
         if (record.IsGoogleProvider) return OAuthProviderPreset.Google;
+
+        // The device authorization endpoint is checked first and separately: a device credential
+        // has no browser-flow token endpoint to match on, and its own token endpoint may be
+        // shared with a provider whose preset is otherwise the wrong one.
+        if (record.DeviceAuthorizationEndpoint is { Length: > 0 } deviceEndpoint)
+        {
+            return OAuthProviderPreset.All.FirstOrDefault(preset =>
+                string.Equals(preset.DeviceAuthorizationEndpointHint, deviceEndpoint, StringComparison.OrdinalIgnoreCase))
+                ?? OAuthProviderPreset.Custom;
+        }
 
         return OAuthProviderPreset.All.FirstOrDefault(preset =>
             preset.TokenEndpointHint is { } hint &&
@@ -740,9 +889,12 @@ public sealed partial class CredentialsViewModel : ObservableObject
         // a working credential gets reported as broken.
         var interactive = item.Record.IsInteractiveOAuth;
 
-        StatusMessage = interactive
-            ? $"Opening browser to authorize '{item.Name}'…"
-            : $"Requesting a token for '{item.Name}'…";
+        StatusMessage = item.Record.Kind switch
+        {
+            CredentialKind.DeviceCode => $"Asking the provider for a code for '{item.Name}'…",
+            CredentialKind.OAuth2 => $"Opening browser to authorize '{item.Name}'…",
+            _ => $"Requesting a token for '{item.Name}'…",
+        };
         _activityLog.Log(interactive
             ? $"CONNECT '{item.Name}' starting OAuth flow"
             : $"CONNECT '{item.Name}' requesting a token (no browser — app login)");
@@ -758,7 +910,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
             // Holding the store's write lock for that would stall the refresh loop and every
             // other save. Safe because the only field written is Token, and a single reference
             // assignment cannot be observed half-applied by a concurrent serialization.
-            var outcome = await _oAuth2Service.StartAuthorizationAsync(item.Record);
+            var outcome = await _oAuth2Service.StartAuthorizationAsync(item.Record, DeviceCodeProgress(item));
             if (outcome.Success)
             {
                 await _configStoreCache.SaveAsync();
@@ -780,6 +932,36 @@ public sealed partial class CredentialsViewModel : ObservableObject
         }
         item.Refresh();
     }
+
+    /// <summary>
+    /// Puts a device flow's code where the user can act on it, the moment the provider issues it
+    /// rather than when the flow finishes — the flow only finishes <em>because</em> they acted on
+    /// it, so reporting it at the end would be reporting it too late.
+    ///
+    /// <see cref="Progress{T}"/> captures the dispatcher's synchronization context here on the UI
+    /// thread, so the callback lands back on it: the poll loop reporting from a thread-pool thread
+    /// must not touch the clipboard or a bound property directly.
+    /// </summary>
+    private IProgress<DeviceCodePrompt> DeviceCodeProgress(CredentialItemViewModel item) =>
+        new Progress<DeviceCodePrompt>(prompt =>
+        {
+            StatusMessage = $"Enter code {prompt.UserCode} at {prompt.VerificationUri} "
+                            + $"(expires {prompt.ExpiresAtUtc.ToLocalTime():t}). Copied to your clipboard. "
+                            + $"Waiting for '{item.Name}' to be approved…";
+
+            // Typing a hyphenated code by hand is the one manual step this flow has, and the
+            // clipboard removes it for the common case of approving on this same machine.
+            // Best-effort: another process can hold the clipboard open, and losing a convenience
+            // must not fail a sign-in that is otherwise proceeding.
+            try
+            {
+                System.Windows.Clipboard.SetText(prompt.UserCode);
+            }
+            catch (Exception ex)
+            {
+                _activityLog.LogError($"Could not copy the device code for '{item.Name}' to the clipboard", ex);
+            }
+        });
 
     [RelayCommand]
     private async Task DisconnectAsync(CredentialItemViewModel? item)

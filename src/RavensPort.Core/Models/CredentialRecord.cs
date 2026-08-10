@@ -29,6 +29,14 @@ public sealed class CredentialRecord
     public string? Authority { get; set; }
     public string? AuthorizationEndpoint { get; set; }
     public string? TokenEndpoint { get; set; }
+
+    /// <summary>
+    /// Where a <see cref="CredentialKind.DeviceCode"/> grant asks for its user code (RFC 8628
+    /// §3.1). Separate from <see cref="AuthorizationEndpoint"/>, which is the page a browser is
+    /// sent to — this one is called by the app and answers JSON, and providers publish them at
+    /// different addresses.
+    /// </summary>
+    public string? DeviceAuthorizationEndpoint { get; set; }
     public bool RequiresIdToken { get; set; }
     public bool UsesPkce { get; set; } = true;
 
@@ -139,9 +147,13 @@ public sealed class CredentialRecord
     public bool IsSelfIssuing =>
         Kind is CredentialKind.ClientCredentials or CredentialKind.GoogleServiceAccount;
 
-    /// <summary>True for the one kind that needs a browser and a person in front of it.</summary>
+    /// <summary>
+    /// True for the kinds that need a person: a real grant belonging to a human, obtained by them
+    /// approving it and renewed afterwards with a refresh token. The two differ only in how the
+    /// approval gets back here — a redirect to this machine, or a code typed on any device.
+    /// </summary>
     [JsonIgnore]
-    public bool IsInteractiveOAuth => Kind == CredentialKind.OAuth2;
+    public bool IsInteractiveOAuth => Kind is CredentialKind.OAuth2 or CredentialKind.DeviceCode;
 
     /// <summary>The placement defaults a kind starts with, offered by the editor.</summary>
     public static CredentialInjection DefaultInjectionFor(CredentialKind kind) => kind == CredentialKind.ApiKey

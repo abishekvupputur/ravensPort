@@ -5,6 +5,17 @@ namespace RavensPort.Core.Models;
 /// created, it owns a full copy of the provider config and keeps working even if the
 /// preset it came from changes later.
 /// </summary>
+/// <param name="DeviceAuthorizationEndpointHint">
+/// Where the device code grant asks for a user code, when the provider offers one at all. Null
+/// means "this provider has no device flow, or does not publish a fixed address for it" — the
+/// editor then leaves the field to be filled in by hand rather than guessing.
+/// </param>
+/// <param name="DeviceCodeHelpText">
+/// Replaces <paramref name="HelpText"/> when the device flow is selected. The two flows are
+/// enabled and registered differently at the same provider often enough that one paragraph
+/// cannot serve both: GitHub wants a checkbox ticked, Google wants a different client type
+/// entirely, and neither has anything to do with the redirect URI advice.
+/// </param>
 public sealed record OAuthProviderPreset(
     string Name,
     string? Authority,
@@ -13,7 +24,9 @@ public sealed record OAuthProviderPreset(
     bool RequiresIdToken,
     bool UsesPkce,
     IReadOnlyList<string> DefaultScopes,
-    string? HelpText)
+    string? HelpText,
+    string? DeviceAuthorizationEndpointHint = null,
+    string? DeviceCodeHelpText = null)
 {
     public static readonly OAuthProviderPreset Google = new(
         Name: "Google",
@@ -24,7 +37,11 @@ public sealed record OAuthProviderPreset(
         UsesPkce: true,
         DefaultScopes: ["openid", "email", "profile"],
         HelpText: "Register the OAuth client as a 'Desktop app' type in Google Cloud Console — " +
-                   "only Desktop-type clients allow the arbitrary-port loopback redirect this app uses.");
+                   "only Desktop-type clients allow the arbitrary-port loopback redirect this app uses.",
+        DeviceAuthorizationEndpointHint: "https://oauth2.googleapis.com/device/code",
+        DeviceCodeHelpText: "Google issues device codes only to a client registered as 'TVs and Limited "
+                   + "Input devices' — a Desktop-app client is refused here. That client type also "
+                   + "supports a narrower set of scopes than the browser flow does.");
 
     /// <summary>
     /// GitHub. Deliberately not an Authority: GitHub publishes no OIDC discovery document for
@@ -44,7 +61,11 @@ public sealed record OAuthProviderPreset(
         DefaultScopes: ["read:user"],
         HelpText: "Register an OAuth App under GitHub Settings → Developer settings, and paste the "
                    + "redirect URI above into its 'Authorization callback URL' — GitHub matches it "
-                   + "exactly. Scopes are GitHub's own names ('repo', 'read:org', 'gist'), not URLs.");
+                   + "exactly. Scopes are GitHub's own names ('repo', 'read:org', 'gist'), not URLs.",
+        DeviceAuthorizationEndpointHint: "https://github.com/login/device/code",
+        DeviceCodeHelpText: "Tick 'Enable Device Flow' in the OAuth App's settings — it is off by "
+                   + "default, and without it GitHub refuses the request. No callback URL is "
+                   + "involved. Scopes are GitHub's own names ('repo', 'read:org'), not URLs.");
 
     public static readonly OAuthProviderPreset Nextcloud = new(
         Name: "Nextcloud",
@@ -65,7 +86,16 @@ public sealed record OAuthProviderPreset(
         RequiresIdToken: false,
         UsesPkce: true,
         DefaultScopes: [],
-        HelpText: "Enter the authorization and token endpoints (or an Authority for OIDC discovery) for any OAuth2 app.");
+        HelpText: "Enter the authorization and token endpoints (or an Authority for OIDC discovery) for any OAuth2 app.",
+        DeviceCodeHelpText: "Enter the device authorization and token endpoints for any provider "
+                   + "implementing RFC 8628. An OIDC provider publishes the first as "
+                   + "'device_authorization_endpoint' in its discovery document.");
 
     public static readonly IReadOnlyList<OAuthProviderPreset> All = [Google, GitHub, Nextcloud, Custom];
+
+    /// <summary>The help paragraph that applies to the flow being configured.</summary>
+    public string? HelpTextFor(CredentialKind kind) => kind == CredentialKind.DeviceCode
+        ? DeviceCodeHelpText ?? "This provider does not publish a device authorization endpoint. "
+                                + "Enter one by hand if it has one."
+        : HelpText;
 }

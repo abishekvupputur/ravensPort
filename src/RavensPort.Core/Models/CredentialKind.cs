@@ -36,6 +36,15 @@ public enum CredentialKind
     /// again nothing to refresh: the key mints a new token whenever one is needed.
     /// </summary>
     GoogleServiceAccount,
+
+    /// <summary>
+    /// The device authorization grant (RFC 8628): the provider issues a short code, the user
+    /// enters it on any device they like, and this app polls until they have. Still a user login
+    /// and still yields a refresh token — the difference is that nothing has to come back to a
+    /// redirect URI on this machine, which is what makes it work for a provider that refuses to
+    /// register a loopback callback.
+    /// </summary>
+    DeviceCode,
 }
 
 /// <summary>
@@ -49,6 +58,8 @@ public sealed record CredentialKindInfo(CredentialKind Kind, string Label, strin
     [
         new(CredentialKind.OAuth2, "OAuth2 (user login)",
             "A grant you authorize in your browser, refreshed automatically before it expires."),
+        new(CredentialKind.DeviceCode, "OAuth2 device code",
+            "The provider shows a short code; you enter it on any device. No redirect URI to register."),
         new(CredentialKind.ApiKey, "API key",
             "A static key you paste in. No authorization flow, no expiry, nothing to refresh."),
         new(CredentialKind.ClientCredentials, "OAuth2 client credentials (app login)",
@@ -66,6 +77,7 @@ public sealed record CredentialKindInfo(CredentialKind Kind, string Label, strin
         CredentialKind.ApiKey => "API key",
         CredentialKind.ClientCredentials => "Client creds",
         CredentialKind.GoogleServiceAccount => "Service acct",
+        CredentialKind.DeviceCode => "Device code",
         _ => "OAuth2",
     };
 }

@@ -303,6 +303,7 @@ public class ClientCredentialsTests : IAsyncLifetime
         new GoogleOAuthService(_activityLog),
         new GoogleServiceAccountService(_activityLog),
         _service,
+        new DeviceCodeService(_activityLog),
         _activityLog);
 
     [Fact]

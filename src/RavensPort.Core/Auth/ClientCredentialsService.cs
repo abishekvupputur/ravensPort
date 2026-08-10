@@ -1,4 +1,3 @@
-using System.Text.Json;
 using IdentityModel.Client;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
@@ -76,7 +75,7 @@ public sealed class ClientCredentialsService : IDisposable
             {
                 credential.NeedsReconnect = true;
 
-                var (error, description) = DescribeFailure(response);
+                var (error, description) = TokenErrorReader.Read(response);
 
                 // 'invalid_client' is by far the most common answer here and says nothing about
                 // which half is wrong. The one thing this app can usefully add is the choice it
@@ -126,32 +125,6 @@ public sealed class ClientCredentialsService : IDisposable
             return new AuthorizationOutcome(false, "client_credentials_error", ex.Message);
         }
     }
-
-    /// <summary>
-    /// What went wrong, preferring the provider's own OAuth error over the HTTP one.
-    ///
-    /// RFC 6749 §5.2 lets a server answer either 400 or 401 for a rejected client, and real ones
-    /// use both. The library only treats 400 as a protocol error; a 401 is classified as a
-    /// transport failure and <c>Error</c> becomes the bare reason phrase — so a response saying
-    /// exactly which of "invalid_client" or "invalid_scope" it was reached the user as
-    /// "Unauthorized". The body is parsed either way, so it is read directly here.
-    /// </summary>
-    private static (string? Error, string? Description) DescribeFailure(TokenResponse response)
-    {
-        if (response.Json is { ValueKind: JsonValueKind.Object } json &&
-            ReadString(json, "error") is { } error)
-        {
-            return (error, ReadString(json, "error_description"));
-        }
-
-        return (response.Error, response.ErrorDescription);
-    }
-
-    private static string? ReadString(JsonElement json, string name) =>
-        json.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-        && value.GetString() is { Length: > 0 } text
-            ? text
-            : null;
 
     public void Dispose() => _httpClient.Dispose();
 }

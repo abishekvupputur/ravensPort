@@ -366,6 +366,7 @@ public class DeferredSyncTests : IDisposable
         new GoogleOAuthService(NewLog()),
         new GoogleServiceAccountService(NewLog()),
         new ClientCredentialsService(NewLog()),
+        new DeviceCodeService(NewLog()),
         NewLog());
 
     // ---- Disconnecting --------------------------------------------------------------------------
