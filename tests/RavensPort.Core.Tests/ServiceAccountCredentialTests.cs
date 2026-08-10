@@ -14,16 +14,21 @@ namespace RavensPort.Core.Tests;
 public class ServiceAccountCredentialTests
 {
     /// <summary>
-    /// Shaped exactly like a real downloaded key, private key included. The value is not a usable
-    /// RSA key and does not need to be: nothing here signs anything, and a real one in a source
-    /// file is a secret in a repository.
+    /// Shaped like a real downloaded key, with one deliberate exception: the private key is a
+    /// plain placeholder rather than a PEM block.
+    ///
+    /// Nothing here signs anything — the parser only asks whether <c>private_key</c> is a non-empty
+    /// string — so a realistic PEM buys the tests nothing and costs something real. A committed PEM
+    /// header is indistinguishable from a leaked one to the repository's secret scanner, which
+    /// fails the build over it, and to a human skimming a diff, who has no way to tell a fixture
+    /// from an accident. Please leave it unrealistic.
     /// </summary>
     private const string KeyFile = """
         {
           "type": "service_account",
           "project_id": "example-project",
           "private_key_id": "abc123",
-          "private_key": "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n",
+          "private_key": "placeholder-not-a-real-key",
           "client_email": "robot@example-project.iam.gserviceaccount.com",
           "client_id": "10987654321",
           "token_uri": "https://oauth2.googleapis.com/token"
@@ -44,7 +49,7 @@ public class ServiceAccountCredentialTests
         Assert.Equal("robot@example-project.iam.gserviceaccount.com", key!.ClientEmail);
         Assert.Equal("abc123", key.PrivateKeyId);
         Assert.Equal("https://oauth2.googleapis.com/token", key.TokenUri);
-        Assert.Contains("BEGIN PRIVATE KEY", key.PrivateKey);
+        Assert.Equal("placeholder-not-a-real-key", key.PrivateKey);
     }
 
     [Fact]
@@ -56,7 +61,7 @@ public class ServiceAccountCredentialTests
             """
             {
               "type": "service_account",
-              "private_key": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n",
+              "private_key": "placeholder-not-a-real-key",
               "client_email": "robot@example.iam.gserviceaccount.com"
             }
             """, out var error);
