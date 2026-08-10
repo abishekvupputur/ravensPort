@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using RavensPort.Core.Diagnostics;
@@ -7,8 +6,7 @@ using RavensPort.Core.Vault;
 namespace RavensPort.Core.Tests.Vault;
 
 /// <summary>
-/// The in-app Proton Pass sign-in: the sandboxed session, the URL the user is shown, and the
-/// checksum that stands between a download and an executable.
+/// The in-app Proton Pass sign-in: the sandboxed session and the URL the user is shown.
 ///
 /// The invariant these exist to hold is that the session key never becomes visible. It travels in
 /// the child's environment and nowhere else — never an argument, which any process in the session
@@ -258,60 +256,23 @@ public class ProtonPassSignInTests : IDisposable
         Assert.Empty(runner.Invocations);
     }
 
-    // ---- The download ------------------------------------------------------------------------
+    // ---- Nothing is installed for the user ---------------------------------------------------
 
+    /// <summary>
+    /// RavensPort used to fetch and unpack pass-cli itself, and the setup page offered to open
+    /// Proton's download page. Both are gone: the app installs no software and links to none, so
+    /// the only thing left to get right is telling the user what to run. The winget command has to
+    /// survive here, and a URL must not creep back in.
+    /// </summary>
     [Fact]
-    public async Task Installer_ExtractsNothing_WhenTheChecksumDoesNotMatch()
+    public void AMissingCli_IsReportedWithTheCommandThatInstallsIt()
     {
-        // The bytes are a perfectly valid zip. They are simply not the release this build was
-        // pinned to, and the only safe thing to do with them is nothing.
-        var installer = NewInstaller(_ => Task.FromResult(ZipOf(("pass-cli.exe", "not it"))));
-
-        var ex = await Assert.ThrowsAsync<VaultCliException>(() => installer.InstallAsync());
-
-        Assert.Contains("checksum", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.False(Directory.Exists(installer.VersionDirectory));
-        Assert.False(installer.IsInstalled);
-    }
-
-    [Fact]
-    public async Task Installer_LeavesNoStagingDirectoryBehind_AfterARejectedDownload()
-    {
-        var installer = NewInstaller(_ => Task.FromResult(ZipOf(("pass-cli.exe", "not it"))));
-
-        await Assert.ThrowsAsync<VaultCliException>(() => installer.InstallAsync());
-
-        // Not even a half-unpacked ".incoming-" sibling: a directory that looks like an install
-        // but is not one is how "it says it's installed and it doesn't work" starts.
-        Assert.False(Directory.Exists(installer.InstallRoot)
-                     && Directory.GetDirectories(installer.InstallRoot).Length > 0);
-    }
-
-    [Fact]
-    public async Task Installer_ReportsAFailedDownloadAsSomethingTheUserCanActOn()
-    {
-        var installer = NewInstaller(_ => Task.FromException<byte[]>(new HttpRequestException("no such host")));
-
-        var ex = await Assert.ThrowsAsync<VaultCliException>(() => installer.InstallAsync());
-
-        Assert.Contains("could not be downloaded", ex.Message);
-        Assert.Contains(ProtonPassInstaller.SourceUrl, ex.Message);
-    }
-
-    [Fact]
-    public void Installer_PinsAVersionAndAChecksumTogether()
-    {
-        // A pin that drifted apart — a bumped version against last version's hash — would fail on
-        // every machine at once, at the point of download. Cheaper to catch here.
-        Assert.Equal(64, ProtonPassInstaller.PinnedSha256.Length);
-        Assert.All(ProtonPassInstaller.PinnedSha256, c => Assert.True(Uri.IsHexDigit(c) && !char.IsUpper(c)));
-        Assert.Contains(ProtonPassInstaller.PinnedVersion, ProtonPassInstaller.DownloadUrl);
+        Assert.Contains("winget install Proton.PassCLI", ProtonPassAuthenticator.CliMissing);
+        Assert.DoesNotContain(
+            "http", ProtonPassAuthenticator.CliMissing, StringComparison.OrdinalIgnoreCase);
     }
 
     // ---- Helpers -----------------------------------------------------------------------------
-
-    private ProtonPassInstaller NewInstaller(Func<CancellationToken, Task<byte[]>> download) =>
-        new(Log(), download, Path.Combine(_root, "cli"));
 
     /// <summary>
     /// An authenticator wired to fakes. Both providers are pointed at paths that do not exist, so
@@ -327,13 +288,7 @@ public class ProtonPassSignInTests : IDisposable
             new ProtonPassVaultProvider(runner, log, missing, session),
             log);
 
-        return new ProtonPassAuthenticator(
-            runner,
-            session,
-            NewInstaller(_ => Task.FromResult(Array.Empty<byte>())),
-            new HelloKeyProtector(log),
-            gate,
-            log);
+        return new ProtonPassAuthenticator(runner, session, new HelloKeyProtector(log), gate, log);
     }
 
     private ProtonPassVaultProvider NewProvider(ICliRunner runner, ProtonPassSession session)
@@ -343,22 +298,6 @@ public class ProtonPassSignInTests : IDisposable
         if (!File.Exists(stub)) File.WriteAllText(stub, "");
 
         return new ProtonPassVaultProvider(runner, Log(), stub, session);
-    }
-
-    private static byte[] ZipOf(params (string Name, string Content)[] entries)
-    {
-        using var buffer = new MemoryStream();
-
-        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            foreach (var (name, content) in entries)
-            {
-                using var writer = new StreamWriter(zip.CreateEntry(name).Open());
-                writer.Write(content);
-            }
-        }
-
-        return buffer.ToArray();
     }
 
     public void Dispose()

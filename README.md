@@ -558,10 +558,13 @@ that sign-in. Neither contains any of the above. See [Logs](#logs).)
 | Manager | Client | Install |
 | --- | --- | --- |
 | 1Password | [Native SDK (embedded)](https://github.com/1Password/onepassword-sdk-go), or `op.exe` when a service account token is used and the CLI is installed | `winget install AgileBits.1Password` (desktop app required for that mode) — or a **service account token**, which needs nothing installed |
-| Proton Pass | `pass-cli` | `winget install Proton.PassCLI`, or let RavensPort fetch it — the setup page offers **Download it for me** |
+| Proton Pass | `pass-cli` | `winget install Proton.PassCLI` |
 
-Open RavensPort and it walks you through the rest: install, sign in, and set up a vault. It only
-ever touches items it created, so the vault stays safe to keep other things in.
+RavensPort installs neither of them, and does not link to anywhere that would. It looks for the CLI,
+shows the command above if it is missing, and runs what you installed.
+
+Open RavensPort and it walks you through the rest: sign in and set up a vault. It only ever touches
+items it created, so the vault stays safe to keep other things in.
 
 [![Setup Page](media/setupPage.png)](media/setupPage.png)
 
@@ -752,7 +755,7 @@ and `%LocalAppData%\RavensPort\`:
 | `%AppData%\...\logs\activity-YYYYMMDD.log` | Proxied requests and responses, connects, refreshes, route reloads, vault operations. Rotates every 2 days, auto-deletes after ~10 |
 | `%AppData%\...\logs\errors.log` | Unhandled exceptions and provider errors with stack traces |
 | `%LocalAppData%\...\pass-session\` | RavensPort's encrypted Proton Pass session, if you signed in from the app. Unreadable without the session key, which is never written down |
-| `%LocalAppData%\...\cli\pass-cli\` | The Proton Pass CLI, if you used **Download it for me** |
+| `%LocalAppData%\...\cli\pass-cli\` | A Proton Pass CLI downloaded by a version before 4.4.0. Still used if it is there; nothing writes here any more |
 
 The Settings tab can open either log, open the folder, or prune old ones.
 

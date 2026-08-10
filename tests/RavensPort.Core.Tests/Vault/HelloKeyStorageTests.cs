@@ -250,7 +250,6 @@ public class HelloKeyStorageTests : IDisposable
         var authenticator = new ProtonPassAuthenticator(
             new ThrowingCliRunner(),
             session,
-            new ProtonPassInstaller(Log(), _ => Task.FromResult(Array.Empty<byte>()), Path.Combine(_root, "cli")),
             new HelloKeyProtector(Log()),
             new VaultGateService(
                 new OnePasswordVaultProvider(new ThrowingCliRunner(), Log(), Path.Combine(_root, "none.exe")),

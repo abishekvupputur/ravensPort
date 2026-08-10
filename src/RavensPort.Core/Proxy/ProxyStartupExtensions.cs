@@ -39,7 +39,6 @@ public static class ProxyStartupExtensions
             processRunner: sp.GetRequiredService<ICliRunner>()));
 
         services.AddSingleton<ProtonPassSession>();
-        services.AddSingleton<ProtonPassInstaller>();
         services.AddSingleton<HelloKeyProtector>();
 
         // Constructed by hand rather than by convention: the provider's exePathOverride parameter

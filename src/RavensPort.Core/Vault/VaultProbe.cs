@@ -45,11 +45,20 @@ public static partial class VaultProbe
             Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", "pass-cli.exe"),
             Path.Combine(Env("USERPROFILE"), ".cargo", "bin", "pass-cli.exe"),
 
-            // Last: the copy RavensPort downloaded for itself. Deliberately behind every real
-            // install, so a user who manages their own pass-cli keeps control of which one runs
-            // and does not silently get pinned to whatever version this build knows about.
-            ProtonPassInstaller.DefaultExePath,
+            // Last: a copy left behind by RavensPort 4.3.0 or earlier, which could fetch pass-cli
+            // itself. That feature is gone — the app installs no software now — but an existing
+            // copy still runs, and refusing to see it would break working setups on upgrade. Behind
+            // every real install, so a user who manages their own pass-cli keeps control of which
+            // one runs.
+            LegacyDownloadedProtonPass,
         ]);
+
+    /// <summary>
+    /// Where the removed in-app installer used to unpack pass-cli. Read-only history: nothing
+    /// writes here any more.
+    /// </summary>
+    private static string LegacyDownloadedProtonPass { get; } = Path.Combine(
+        Env("LOCALAPPDATA"), "RavensPort", "cli", "pass-cli", "2.2.4", "pass-cli.exe");
 
     /// <summary>
     /// Env override, then PATH, then the places installers actually use.

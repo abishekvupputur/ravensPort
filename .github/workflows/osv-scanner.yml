@@ -73,8 +73,7 @@ jobs:
       # Pinned by version *and* by hash. The version alone would be enough to make the run
       # reproducible; the hash is what makes it verifiable, because a release asset on GitHub can
       # be deleted and re-uploaded under the same tag by whoever holds the repository. Bumping the
-      # version without bumping the digest is a deliberate hard failure -- the same property
-      # ProtonPassInstaller.cs relies on for the pass-cli download, for the same reason.
+      # version without bumping the digest is a deliberate hard failure.
       #
       # Pinned, not latest, unlike the Trivy binary this replaces. Trivy was left floating because
       # a scanner's detection logic only moves forward and a stale one fails green. That argument

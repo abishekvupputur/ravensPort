@@ -557,12 +557,13 @@ public sealed partial class SetupViewModel(
         }
     }
 
-    [RelayCommand]
-    private void OpenDownloadPage(ManagerCardViewModel card) => OpenUrl(card.DownloadUrl);
-
-    // ---- Proton Pass: install, unlock, sign in, sign out ------------------------------------
+    // ---- Proton Pass: unlock, sign in, sign out ---------------------------------------------
     //
-    // All of this is Proton Pass only, and the asymmetry is not an oversight. 1Password's CLI has
+    // Installing is not in this list, and that is the point: RavensPort neither downloads the CLI
+    // nor opens a page to get it. The setup page shows the winget command and leaves the install to
+    // the user, who is the only one who should be putting executables on their own machine.
+    //
+    // The rest is Proton Pass only, and the asymmetry is not an oversight. 1Password's CLI has
     // no browser sign-in to drive — it wants a Secret Key and an account password typed at a
     // terminal — and its licence does not allow RavensPort to ship it. Offering a "Sign in" button
     // that could only ever open a text box asking for someone's 1Password master credentials would
@@ -676,32 +677,6 @@ public sealed partial class SetupViewModel(
         catch (Exception ex)
         {
             activityLog.LogError("Windows Hello unlock failed", ex);
-            StatusMessage = ex.Message;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    /// <summary>Downloads pass-cli when the machine has none.</summary>
-    [RelayCommand]
-    private async Task InstallProtonCliAsync()
-    {
-        if (IsBusy) return;
-
-        IsBusy = true;
-
-        try
-        {
-            var progress = new Progress<string>(message => StatusMessage = message);
-            await protonAuthenticator.EnsureInstalledAsync(progress);
-
-            await CheckAsync();
-        }
-        catch (Exception ex)
-        {
-            activityLog.LogError("Could not install the Proton Pass CLI", ex);
             StatusMessage = ex.Message;
         }
         finally
@@ -970,27 +945,6 @@ public sealed partial class SetupViewModel(
         };
     }
 
-    private void OpenUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return;
-
-        // UseShellExecute hands the string to Windows to resolve, and Windows will happily run a
-        // registered protocol handler, a UNC path, or an executable — a browser is only one of the
-        // things it might pick. Today every caller passes a compile-time constant, so this changes
-        // nothing; it is here so that stays true if a URL ever arrives from config or a vault item.
-        if (!UrlValidation.IsSafeToOpenInBrowser(url))
-        {
-            StatusMessage = "Could not open the browser: that link is not an http/https address.";
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Could not open the browser: {ex.Message}";
-        }
-    }
+    // Nothing here opens a browser any more. The one caller was the download-page button, and the
+    // Proton Pass sign-in URL is deliberately shown rather than launched — see SignInProtonAsync.
 }
