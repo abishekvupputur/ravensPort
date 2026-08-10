@@ -10,13 +10,21 @@ namespace RavensPort.Core.Auth;
 public sealed record AuthorizationOutcome(bool Success, string? Error, string? ErrorDescription);
 
 /// <summary>
-/// Single entry point ViewModels/TokenRefreshService call regardless of provider. Google
-/// credentials delegate to GoogleOAuthService (Google's own official client library);
-/// every other provider (Nextcloud, Custom) goes through the generic OidcClient path here,
-/// branching only on whether the credential has an Authority (OIDC discovery) or manual
+/// Single entry point ViewModels/TokenRefreshService call regardless of provider or kind.
+///
+/// Four paths meet here. The two app logins — client credentials and Google service accounts —
+/// need no browser and no user, so both "authorize" and "refresh" mean the same thing for them:
+/// mint a fresh token from the stored secret. Of the interactive ones, Google credentials
+/// delegate to GoogleOAuthService (Google's own official client library) and every other provider
+/// (GitHub, Nextcloud, Custom) goes through the generic OidcClient path here, branching only on
+/// whether the credential has an Authority (OIDC discovery) or manual
 /// AuthorizationEndpoint/TokenEndpoint.
 /// </summary>
-public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, ActivityLog activityLog)
+public sealed class OAuth2Service(
+    GoogleOAuthService googleOAuthService,
+    GoogleServiceAccountService googleServiceAccountService,
+    ClientCredentialsService clientCredentialsService,
+    ActivityLog activityLog)
 {
     // Guards against the background refresh loop and a manual "Refresh Now" UI action
     // racing a refresh for the same credential.
@@ -24,8 +32,28 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
 
     private static bool IsGoogle(CredentialRecord credential) => credential.IsGoogleProvider;
 
+    /// <summary>
+    /// Obtains a token for a credential that needs neither browser nor user. Null for the kinds
+    /// that do, so callers can tell "not handled here" from "handled and failed".
+    /// </summary>
+    private Task<AuthorizationOutcome>? AcquireSelfIssuedAsync(CredentialRecord credential, CancellationToken ct) =>
+        credential.Kind switch
+        {
+            CredentialKind.GoogleServiceAccount => googleServiceAccountService.AcquireAsync(credential, ct),
+            CredentialKind.ClientCredentials => clientCredentialsService.AcquireAsync(credential, ct),
+            _ => null,
+        };
+
     public async Task<AuthorizationOutcome> StartAuthorizationAsync(CredentialRecord credential, CancellationToken ct = default)
     {
+        // "Connect" on an app login opens nothing; it fetches a token now so a mistyped secret or
+        // an ungranted delegation is reported while the user is still looking at the form,
+        // instead of as a 401 on the first proxied request.
+        if (AcquireSelfIssuedAsync(credential, ct) is { } acquire)
+        {
+            return await acquire;
+        }
+
         if (IsGoogle(credential))
         {
             return await googleOAuthService.StartAuthorizationAsync(credential, ct);
@@ -40,7 +68,7 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
         if (!string.IsNullOrWhiteSpace(credential.ExtraAuthParams))
         {
             request.FrontChannelExtraParameters ??= new Parameters();
-            foreach (var pair in ParseExtraParams(credential.ExtraAuthParams))
+            foreach (var pair in ExtraParameters.Parse(credential.ExtraAuthParams))
             {
                 request.FrontChannelExtraParameters.Add(pair.Key, pair.Value);
             }
@@ -57,7 +85,10 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
         credential.Token = new TokenSet(
             result.AccessToken,
             result.RefreshToken,
-            result.AccessTokenExpiration,
+            // Read from the raw expires_in rather than from AccessTokenExpiration, which is
+            // computed as "now + expires_in" and so reports a token with no advertised lifetime —
+            // a GitHub OAuth App token, for one — as expiring the instant it was issued.
+            ExpiryFrom(result.TokenResponse?.ExpiresIn ?? 0),
             "Bearer",
             DateTimeOffset.UtcNow);
         credential.NeedsReconnect = false;
@@ -65,12 +96,27 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
         return new AuthorizationOutcome(true, null, null);
     }
 
+    /// <summary>
+    /// Turns an <c>expires_in</c> into an absolute expiry, or null when the provider sent none.
+    /// Zero is the library's stand-in for an absent value, and it is not a real lifetime.
+    /// </summary>
+    private static DateTimeOffset? ExpiryFrom(int expiresInSeconds) =>
+        expiresInSeconds > 0 ? DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds) : null;
+
     public async Task<TokenSet?> RefreshAsync(CredentialRecord credential, CancellationToken ct = default)
     {
         var refreshLock = _refreshLocks.GetOrAdd(credential.Id, _ => new SemaphoreSlim(1, 1));
         await refreshLock.WaitAsync(ct);
         try
         {
+            // Checked before the refresh-token guard: an app login has no refresh token by
+            // design, and requiring one would leave both new kinds permanently unrefreshable.
+            if (AcquireSelfIssuedAsync(credential, ct) is { } acquire)
+            {
+                var outcome = await acquire;
+                return outcome.Success ? credential.Token : null;
+            }
+
             if (credential.Token?.RefreshToken is null)
             {
                 return null;
@@ -103,7 +149,7 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
             var newToken = new TokenSet(
                 result.AccessToken,
                 newRefreshToken,
-                result.AccessTokenExpiration,
+                ExpiryFrom(result.ExpiresIn),
                 "Bearer",
                 DateTimeOffset.UtcNow);
 
@@ -130,6 +176,10 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
             // providers like Nextcloud that have none. We only ever want the access token —
             // the profile claims are never read — so skip that call entirely.
             LoadProfile = false,
+
+            // Asks the token endpoint for JSON. GitHub answers form-encoded without it, which
+            // arrives here as an unparseable token response — see JsonAcceptHandler.
+            BackchannelHandler = new JsonAcceptHandler(new HttpClientHandler()),
         };
 
         if (browser is not null)
@@ -165,25 +215,5 @@ public sealed class OAuth2Service(GoogleOAuthService googleOAuthService, Activit
         }
 
         return options;
-    }
-
-    /// <summary>
-    /// Parses the "a=1&amp;b=2" extra-parameters field. Values are percent-decoded, because a
-    /// user copying a parameter out of a provider's docs gets it in encoded form — leaving it
-    /// encoded meant it was encoded a second time on the wire and the provider saw a literal
-    /// "%2F" where a "/" was intended.
-    /// </summary>
-    private static IEnumerable<KeyValuePair<string, string>> ParseExtraParams(string raw)
-    {
-        foreach (var segment in raw.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var parts = segment.Split('=', 2);
-            if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[0]))
-            {
-                yield return new KeyValuePair<string, string>(
-                    Uri.UnescapeDataString(parts[0].Trim()),
-                    Uri.UnescapeDataString(parts[1].Trim()));
-            }
-        }
     }
 }

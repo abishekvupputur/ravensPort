@@ -362,7 +362,11 @@ public class DeferredSyncTests : IDisposable
         return gate;
     }
 
-    private OAuth2Service NewOAuth2Service() => new(new GoogleOAuthService(NewLog()), NewLog());
+    private OAuth2Service NewOAuth2Service() => new(
+        new GoogleOAuthService(NewLog()),
+        new GoogleServiceAccountService(NewLog()),
+        new ClientCredentialsService(NewLog()),
+        NewLog());
 
     // ---- Disconnecting --------------------------------------------------------------------------
 

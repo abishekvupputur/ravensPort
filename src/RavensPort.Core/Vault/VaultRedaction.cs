@@ -38,6 +38,9 @@ public static class VaultRedaction
             Remove(typeInfo,
                 nameof(CredentialRecord.ClientSecret),
                 nameof(CredentialRecord.ApiKey),
+                // The key file holds a private key. ServiceAccountSubject is deliberately not
+                // here: it is an email address, and the note is where non-secret config lives.
+                nameof(CredentialRecord.ServiceAccountJson),
                 nameof(CredentialRecord.Token));
         }
         else if (typeInfo.Type == typeof(ProxyKey))

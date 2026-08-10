@@ -80,10 +80,7 @@ public sealed class TokenRefreshService(
         // Snapshot the list so edits to Credentials during iteration (e.g. a delete from
         // the UI) can't throw a collection-modified error.
         var dueCredentials = configStoreCache.Current.Credentials
-            .Where(c => c.Token is not null
-                        && c.Token.RefreshToken is not null
-                        && c.Token.IsExpiringWithin(ExpiryWindow)
-                        && IsDueForAttempt(c.Id, now))
+            .Where(c => IsRenewable(c) && IsDue(c) && IsDueForAttempt(c.Id, now))
             .ToList();
 
         if (dueCredentials.Count == 0) return;
@@ -93,19 +90,29 @@ public sealed class TokenRefreshService(
         {
             try
             {
-                activityLog.Log($"REFRESH '{credential.Name}' expiring soon — refreshing token");
+                activityLog.Log(credential.Token is null
+                    ? $"REFRESH '{credential.Name}' has no token yet — obtaining one"
+                    : $"REFRESH '{credential.Name}' expiring soon — refreshing token");
                 var refreshed = await oAuth2Service.RefreshAsync(credential, ct);
 
                 if (refreshed is not null)
                 {
                     anyRefreshed = true;
                     _backoff.TryRemove(credential.Id, out _);
-                    activityLog.Log($"REFRESH '{credential.Name}' OK — new expiry {refreshed.ExpiresAtUtc.ToLocalTime():g}");
+                    activityLog.Log($"REFRESH '{credential.Name}' OK — {refreshed.DescribeExpiry()}");
                 }
                 else
                 {
                     var retryAt = RecordFailure(credential.Id, now);
-                    activityLog.Log($"REFRESH '{credential.Name}' FAILED — reconnect required "
+
+                    // An app login has nothing to reconnect: no browser flow exists for it, so
+                    // the fix is in its stored secret or its configuration, and saying
+                    // "reconnect" would send someone looking for a button that is not there.
+                    var remedy = credential.IsSelfIssuing
+                        ? "check its stored secret and settings"
+                        : "reconnect required";
+
+                    activityLog.Log($"REFRESH '{credential.Name}' FAILED — {remedy} "
                                     + $"(next automatic attempt {retryAt.ToLocalTime():g})");
                 }
             }
@@ -125,6 +132,32 @@ public sealed class TokenRefreshService(
 
         PruneBackoffForDeletedCredentials();
     }
+
+    /// <summary>
+    /// Whether this loop can renew the credential without a person present.
+    ///
+    /// For an interactive grant that means holding a refresh token. An app login holds none by
+    /// design — it re-mints from its own client secret or service account key — so testing for a
+    /// refresh token would have quietly excluded both new kinds from automatic renewal and left
+    /// every one of them to expire in the middle of whatever was using it.
+    /// </summary>
+    private static bool IsRenewable(CredentialRecord credential) =>
+        credential.IsSelfIssuing
+            ? credential.HasSecret
+            : credential.Token?.RefreshToken is not null;
+
+    /// <summary>
+    /// Whether there is anything to obtain right now.
+    ///
+    /// An app login with no token at all counts, which an interactive grant does not: it holds
+    /// everything it needs, so "no token yet" is work this loop can finish, not a user action it
+    /// is waiting on. That also gives a failing one a retry path — the backoff above spaces the
+    /// attempts out, where the per-request path would otherwise be the only one trying and would
+    /// try on every single request.
+    /// </summary>
+    private static bool IsDue(CredentialRecord credential) => credential.Token is { } token
+        ? token.IsExpiringWithin(ExpiryWindow)
+        : credential.IsSelfIssuing;
 
     private bool IsDueForAttempt(Guid credentialId, DateTimeOffset now) =>
         !_backoff.TryGetValue(credentialId, out var state) || now >= state.NextAttemptUtc;

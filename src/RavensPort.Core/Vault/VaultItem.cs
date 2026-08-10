@@ -40,8 +40,16 @@ public static class VaultFields
     public const string ExpiresAtUtc = "expires_at_utc";
     public const string ObtainedUtc = "obtained_utc";
 
+    /// <summary>
+    /// The whole Google service account key file. It contains a private key, so it belongs to the
+    /// item rather than the note. The impersonated subject deliberately does not live here: it is
+    /// an email address, not a secret, and the note is its one home.
+    /// </summary>
+    public const string ServiceAccountJson = "service_account_json";
+
     /// <summary>Fields that must never be readable at a glance in the manager's UI.</summary>
-    public static bool IsConcealed(string name) => name is Password or ApiKey or AccessToken or RefreshToken;
+    public static bool IsConcealed(string name) =>
+        name is Password or ApiKey or AccessToken or RefreshToken or ServiceAccountJson;
 
     /// <summary>Fields that map to a built-in slot rather than a custom field.</summary>
     public static bool IsBuiltIn(string name) => name is Username or Password or Website or NoteContent;

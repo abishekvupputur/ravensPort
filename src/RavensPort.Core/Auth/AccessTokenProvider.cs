@@ -37,7 +37,21 @@ public sealed class AccessTokenProvider(
             return string.IsNullOrEmpty(credential.ApiKey) ? null : credential.ApiKey;
         }
 
-        if (credential.Token is not { } token) return null;
+        if (credential.Token is not { } token)
+        {
+            // An app login has no "connect" step: the stored secret is enough to mint a token, so
+            // the first proxied request through a freshly saved credential mints one here rather
+            // than failing as unauthorized and waiting for someone to press a button.
+            //
+            // Not once a mint has already been refused, though. Nothing about a rejected client
+            // secret changes between two requests a millisecond apart, and retrying per request
+            // would turn one configuration mistake into a burst of failed token requests at
+            // whatever rate the caller happens to be sending. The background loop keeps retrying
+            // on a backoff, and that is the right place for it.
+            return credential.IsSelfIssuing && !credential.NeedsReconnect
+                ? await MintOnDemandAsync(credential, "not yet fetched", ct)
+                : null;
+        }
 
         if (!token.IsExpiringWithin(RefreshMargin))
         {
@@ -47,12 +61,42 @@ public sealed class AccessTokenProvider(
         // Nothing to refresh with, or a previous attempt already established the grant is
         // dead. Hand back what we have rather than hammering the provider on every request —
         // a 401 from upstream is the honest outcome at that point.
-        if (token.RefreshToken is null || credential.NeedsReconnect)
+        //
+        // An app login is exempt from the refresh-token half: it has none by design and renews
+        // from its own stored secret instead. It is not exempt from NeedsReconnect, which for
+        // these kinds means the last mint was refused and repeating it every request would only
+        // add rate limiting to a configuration problem.
+        if ((token.RefreshToken is null && !credential.IsSelfIssuing) || credential.NeedsReconnect)
         {
             return token.AccessToken;
         }
 
         return await RefreshOnDemandAsync(credential, ct);
+    }
+
+    /// <summary>
+    /// First fetch for an app login. Separate from <see cref="RefreshOnDemandAsync"/> only in what
+    /// it can fall back to: there is no previous token to hand over, so a failure here really is a
+    /// failure and the caller must be told there is no credential to attach.
+    /// </summary>
+    private async ValueTask<string?> MintOnDemandAsync(CredentialRecord credential, string reason, CancellationToken ct)
+    {
+        try
+        {
+            activityLog.Log($"TOKEN '{credential.Name}' {reason} — obtaining one before forwarding");
+            var minted = await oAuth2Service.RefreshAsync(credential, ct);
+            if (minted is null) return null;
+
+            // Persisted for the same reason a refresh is: the token outlives this request, and a
+            // restart that lost it would mint again on the next one for no benefit.
+            await configStoreCache.SaveAsync(ct);
+            return minted.AccessToken;
+        }
+        catch (Exception ex)
+        {
+            activityLog.LogError($"On-demand token request for '{credential.Name}' threw", ex);
+            return null;
+        }
     }
 
     private async ValueTask<string?> RefreshOnDemandAsync(CredentialRecord credential, CancellationToken ct)

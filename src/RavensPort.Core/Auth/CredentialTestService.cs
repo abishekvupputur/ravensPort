@@ -79,9 +79,15 @@ public sealed class CredentialTestService : IDisposable
         var secret = await _accessTokenProvider.GetAccessTokenAsync(credential.Id, ct);
         if (secret is null)
         {
-            return new CredentialTestResult(false, null, credential.Kind == CredentialKind.ApiKey
-                ? $"'{credential.Name}' has no API key stored."
-                : $"'{credential.Name}' is not connected — authorize it first.");
+            // An app login was just asked to mint a token and could not, which is a different
+            // problem from "nobody has authorized this yet" and has a different fix.
+            return new CredentialTestResult(false, null, credential.Kind switch
+            {
+                CredentialKind.ApiKey => $"'{credential.Name}' has no API key stored.",
+                _ when credential.IsSelfIssuing =>
+                    $"'{credential.Name}' could not obtain a token — see the activity log for what the provider said.",
+                _ => $"'{credential.Name}' is not connected — authorize it first.",
+            });
         }
 
         // The same check the editor applies, repeated here because a store written by hand (or

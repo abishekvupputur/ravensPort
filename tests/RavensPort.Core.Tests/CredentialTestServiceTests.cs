@@ -86,7 +86,11 @@ public class CredentialTestServiceTests : IAsyncLifetime
         _cache = new ConfigStoreCache(new InMemoryVault());
         await _cache.InitializeAsync();
 
-        var oAuth2Service = new OAuth2Service(new GoogleOAuthService(activityLog), activityLog);
+        var oAuth2Service = new OAuth2Service(
+            new GoogleOAuthService(activityLog),
+            new GoogleServiceAccountService(activityLog),
+            new ClientCredentialsService(activityLog),
+            activityLog);
         _service = new CredentialTestService(new AccessTokenProvider(_cache, oAuth2Service, activityLog), activityLog);
     }
 
