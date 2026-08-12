@@ -3,6 +3,12 @@
 Paste-ready text for the Partner Center **Store listing** page. Field limits are Partner Center's;
 the counts in brackets are what the text below actually uses.
 
+**This copy describes the Store build, not the EXE.** The MSIX has no Proton Pass and no mTLS —
+see [STORE-MSIX.md](STORE-MSIX.md) for why — so neither is named here. Policy 10.1.5 applies to a
+product *and its metadata*, which means the listing naming a CLI acquired outside the Store is the
+same finding as the app doing it. The EXE still has both; [../README.md](../README.md) is the page
+that describes it.
+
 ---
 
 ## Product name
@@ -55,7 +61,7 @@ machine cannot spend your grants, and a key leaked from one client cannot reach 
 
 YOUR SECRETS STAY IN YOUR PASSWORD MANAGER
 OAuth client secrets, access and refresh tokens, API keys, proxy keys, and your whole configuration
-are stored in a vault in 1Password or Proton Pass — a vault you nominate and control. There is no
+are stored in a vault in 1Password — a vault you nominate and control. There is no
 local cache and no fallback file. Nothing is written to this PC except redacted activity logs.
 Because the configuration lives in the vault, one install supports as many profiles as you have
 vaults.
@@ -76,10 +82,10 @@ release is built by GitHub Actions with a build provenance attestation, so a dow
 verified against the workflow and commit that produced it.
 
 BEFORE YOU INSTALL
-RavensPort requires 1Password or Proton Pass, with the matching command-line tool installed and
-signed in — it is where your configuration is kept, and the proxy does not start without it.
-RavensPort does not install either one; setup inside the app checks what is present and walks
-through connecting a vault. Windows 10 or 11, 64-bit.
+RavensPort requires 1Password, with its command-line tool installed and signed in — it is where
+your configuration is kept, and the proxy does not start without it. RavensPort does not install
+it; setup inside the app checks what is present and walks through connecting a vault. Windows 10
+or 11, 64-bit.
 ```
 
 ## Product features
@@ -92,7 +98,7 @@ OAuth2 handled for you — Google, Nextcloud, or any custom provider, with autom
 Static API keys for services that never offered OAuth, with a Test button against a real endpoint
 Credentials placed in any header, query parameter, or body field, with a custom value prefix
 Any number of credentials per route, in any mix, including the same credential in several places
-Every secret stored in your own 1Password or Proton Pass vault — nothing written to this PC
+Every secret stored in your own 1Password vault — nothing written to this PC
 A separate proxy key per route and per funnel, each with its own expiry
 Keeps working while your password manager is locked, then syncs when it unlocks
 Activity log with redaction and rotation, readable in the app
@@ -130,7 +136,7 @@ Version 3.0.1
 Version 3.0.0
 
 - Renamed to RavensPort.
-- Configuration and secrets now live in a 1Password or Proton Pass vault instead of an encrypted
+- Configuration and secrets now live in a 1Password vault instead of an encrypted
   file on this PC. There is no local cache and no fallback file.
 - One vault per profile: connect a different vault to get a separate set of credentials, routes,
   and funnels from the same install.
@@ -145,7 +151,7 @@ Credentials, upstreams, routes, MCP sources, and funnels need to be set up again
 ## System requirements
 
 - Windows 10 or Windows 11, 64-bit (x64)
-- 1Password (`op` 2.0 or newer) or Proton Pass (`pass-cli`), installed and signed in
+- 1Password (`op` 2.0 or newer), installed and signed in
 
 ## Supporting URLs
 

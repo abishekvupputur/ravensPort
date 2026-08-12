@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RavensPort.Core;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
@@ -29,6 +30,19 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private int _listenPort;
     [ObservableProperty] private bool _mtlsEnabled;
+
+    /// <summary>
+    /// Whether this build has mTLS at all, which is what the Settings tab's whole "Client
+    /// Certificate" card is bound to. False in the Microsoft Store package — certification failed
+    /// it under 10.2.10 and 10.2.10.1, naming "Settings &gt; Generate New Certificate" — and there
+    /// the certificate-minting code is not compiled in either. See <see cref="BuildProfile"/>.
+    ///
+    /// A get-only property over a const rather than a settable one: nothing about this can change
+    /// while the app runs, and a switch the user could reach would defeat the point of removing it.
+    /// Instance rather than static because WPF's {Binding} reads instance members off the
+    /// DataContext; a static would need {x:Static} at every use site.
+    /// </summary>
+    public bool IsMtlsAvailable => BuildProfile.MtlsEnabled;
     [ObservableProperty] private string _recentActivity = "";
     [ObservableProperty] private string _statusMessage = "Ready.";
 
@@ -939,6 +953,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = PersistMtlsAsync(value);
     }
 
+    // The switch that reaches this lives on a card the store build collapses, so nothing should get
+    // here at all — but MtlsEnabled is initialised from the vault, which the EXE may well have
+    // written with mTLS on, and a change notification arriving from that must not start writing a
+    // setting this build cannot honour. Two bodies rather than a guard clause, so neither build
+    // carries a branch the compiler then reports as unreachable. See BuildProfile.
+#if STORE_BUILD
+    private Task PersistMtlsAsync(bool value)
+    {
+        StatusMessage = "mTLS is not available in the Microsoft Store build of RavensPort.";
+        return Task.CompletedTask;
+    }
+#else
     private async Task PersistMtlsAsync(bool value)
     {
         var minted = false;
@@ -980,6 +1006,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             StatusMessage = $"Could not save mTLS setting: {ex.Message}";
         }
     }
+#endif
 
     [ObservableProperty] private bool _isConfirmingGenerateCertificate;
 
@@ -994,6 +1021,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task GenerateMtlsCertificateAsync()
     {
+        // The finding that produced this whole flag: "Location of Download: Settings > Generate New
+        // Certificate", 10.2.10.1. In the store build MtlsCertificateFactory has no
+        // GenerateClientCertificatePfx to call, so the body below is not compiled at all rather
+        // than merely guarded — this early return is what is left of the command. See BuildProfile.
+#if STORE_BUILD
+        await Task.CompletedTask;
+        IsConfirmingGenerateCertificate = false;
+        StatusMessage = "Client certificates are not available in the Microsoft Store build of RavensPort.";
+#else
         if (!IsConfirmingGenerateCertificate)
         {
             IsConfirmingGenerateCertificate = true;
@@ -1043,6 +1079,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             NewCertificatePassword = "";
         }
+#endif
     }
 
     [RelayCommand]
@@ -1056,6 +1093,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void ExportMtlsCertificate()
     {
+        // Goes with the generator rather than surviving it. A store build that could still write a
+        // PFX to disk would be handing the user a file to install on other machines, which is the
+        // half of 10.2.10 that is about certificate installation rather than about minting — and
+        // with no listener demanding one, there is nothing the exported file would open anyway.
+#if STORE_BUILD
+        StatusMessage = "Client certificates are not available in the Microsoft Store build of RavensPort.";
+#else
         var pfx = _configStoreCache.Current.Settings.MtlsClientCertificatePfx;
         if (string.IsNullOrWhiteSpace(pfx))
         {
@@ -1100,6 +1144,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             StatusMessage = $"Could not export certificate: {ex.Message}";
         }
+#endif
     }
 
     [RelayCommand]

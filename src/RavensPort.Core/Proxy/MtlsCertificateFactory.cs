@@ -98,10 +98,18 @@ public static class MtlsCertificateFactory
     /// </summary>
     private const X509KeyStorageFlags StorageFlags = X509KeyStorageFlags.DefaultKeySet;
 
+#if !STORE_BUILD
     /// <param name="password">
     /// What the exported PFX will ask for. Empty or null takes <see cref="DefaultPfxPassword"/>,
     /// so the callers that have nobody to ask do not each have to name it.
     /// </param>
+    /// <remarks>
+    /// Absent from the Microsoft Store build. Certification failed the package under 10.2.10 and
+    /// 10.2.10.1 for exactly this — "Location of Download: Settings &gt; Generate New Certificate" —
+    /// so the store build does not hide the button, it does not carry the code that mints the file.
+    /// <see cref="Load"/> stays in both builds: reading a certificate is not producing one, and the
+    /// vault is shared with the EXE, which may well have written one.
+    /// </remarks>
     public static string GenerateClientCertificatePfx(string? password = null)
     {
         using var rsa = RSA.Create(2048);
@@ -130,6 +138,7 @@ public static class MtlsCertificateFactory
         var pfxBytes = cert.Export(X509ContentType.Pfx, Resolve(password));
         return Convert.ToBase64String(pfxBytes);
     }
+#endif
 
     /// <summary>
     /// Empty means "the store predates the password box", not "no password" — see

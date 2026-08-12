@@ -163,12 +163,21 @@ jobs:
       # A third publish, because this one wants the opposite of the other two: loose files rather
       # than a single file, so MSIX can compress and block-dedupe the payload itself and a Store
       # update sends only the blocks that changed. See the win-x64-msix profile.
+      #
+      # StoreBuild=true is what removes Proton Pass (10.1.5) and mTLS with its certificate
+      # generation (10.2.10, 10.2.10.1) — the features certification rejected. It is passed here
+      # rather than set in the .pubxml on purpose: publish-profile properties do not cross a
+      # ProjectReference, so a profile-set flag would build RavensPort.App without those features
+      # and RavensPort.Core with them. build-msix.ps1 refuses to pack a payload that was not built
+      # with it, so this cannot be dropped silently. The two publishes above deliberately do not
+      # pass it: the installer and its EXE ship the whole app, unchanged.
       - name: Publish (payload for the Store package)
         shell: pwsh
         run: |
           $publishArgs = @(
             'publish', 'src/RavensPort.App/RavensPort.App.csproj',
             '-p:PublishProfile=win-x64-msix',
+            '-p:StoreBuild=true',
             '-c', 'Release'
           )
           & dotnet @publishArgs

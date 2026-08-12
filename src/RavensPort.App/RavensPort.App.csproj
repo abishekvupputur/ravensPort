@@ -41,4 +41,24 @@
     <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The MSIX profile exists for one artifact - the Microsoft Store package - and that package must
+    not carry Proton Pass or mTLS certificate generation, which certification rejected under 10.1.5,
+    10.2.10 and 10.2.10.1. StoreBuild=true is what removes them (see Directory.Build.props and
+    RavensPort.Core/BuildProfile.cs), so publishing this profile without it produces a package that
+    would fail certification exactly as before.
+
+    The flag cannot simply be set in win-x64-msix.pubxml: publish-profile properties do not cross a
+    ProjectReference, so it would reach RavensPort.App and not RavensPort.Core. It has to be a
+    command-line global property, which means it can be forgotten - hence this.
+
+    Fails at the start of the build rather than at the end of the publish, so a forgotten flag costs
+    seconds instead of the whole self-contained publish. packaging/build-msix.ps1 checks the built
+    exe as well; this catches the mistake earlier, that one catches a payload built some other way.
+  -->
+  <Target Name="RequireStoreBuildForMsixProfile" BeforeTargets="Build;Publish"
+          Condition="'$(PublishProfile)' == 'win-x64-msix' AND '$(StoreBuild)' != 'true'">
+    <Error Text="The win-x64-msix publish profile requires -p:StoreBuild=true, and it must be passed on the command line (a .pubxml property would not reach RavensPort.Core). Publish with: dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release . See docs/STORE-MSIX.md." />
+  </Target>
+
 </Project>

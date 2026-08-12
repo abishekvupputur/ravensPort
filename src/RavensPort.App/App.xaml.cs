@@ -385,6 +385,25 @@ public partial class App : Application
                 // decides both: the scheme Kestrel listens on, and the scheme the MCP funnel dials
                 // its own routes on. Anything that read the setting a second time could disagree.
                 var kestrelMtls = _webApp.Services.GetRequiredService<RavensPort.Core.Mcp.KestrelMtlsState>();
+#if STORE_BUILD
+                // The store build has no mTLS: no listener certificate, no Generate button, no
+                // MtlsCertificateFactory.GenerateClientCertificatePfx to call. See BuildProfile.
+                //
+                // The setting is still read, because the vault is shared. Someone running the EXE
+                // on one machine and the Store package on another has one store between them, and
+                // it may well say mTLS is on. Silently binding plain HTTP would be the one outcome
+                // worth avoiding here — the user believes the proxy demands a certificate — so the
+                // listener still comes up on http:// (there is no alternative that starts) and the
+                // log says plainly that this build ignored the setting.
+                if (configStoreCache.Current.Settings.MtlsEnabled)
+                {
+                    _webApp.Services.GetService<ActivityLog>()?.Log(
+                        "STARTUP mTLS is switched on in this vault, but the Microsoft Store build of "
+                        + "RavensPort does not support it — the proxy is listening on http://127.0.0.1 "
+                        + "and every caller still needs its endpoint's proxy key. Install RavensPort "
+                        + "from the releases page if you need client certificates.");
+                }
+#else
                 if (configStoreCache.Current.Settings.MtlsEnabled)
                 {
                     // A store can say "mTLS on" and hold no certificate — earlier builds let the
@@ -428,6 +447,7 @@ public partial class App : Application
                             + "and RavensPort restarted.");
                     }
                 }
+#endif
 
                 _webApp.Urls.Clear();
                 _webApp.Urls.Add($"{kestrelMtls.Scheme}://127.0.0.1:{port}");

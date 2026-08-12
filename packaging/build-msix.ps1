@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Packs the published app into the unsigned MSIX submitted to the Microsoft Store.
+    Packs the published app into the unsigned MSIX submitted to the Microsoft Store, and optionally
+    a signed copy of the same package for installing on this machine.
 
 .DESCRIPTION
     The counterpart to installer/build.ps1, and shared by the PR and release workflows for the same
@@ -8,13 +9,28 @@
     prove the layout, the assets and the manifest still come together without spending a minute
     compressing 240 MB nobody will install.
 
-    The output is intentionally NOT signed. Store policy 10.2.9 wants every PE signed by a CA in
-    the Microsoft Trusted Root Program; for MSIX, Microsoft does that itself at ingestion, free.
-    Signing here would instead break the upload, because the certificate subject would no longer
-    match the publisher Partner Center has on file. See packaging/AppxManifest.xml.
+    The package that goes to Partner Center is intentionally NOT signed. Store policy 10.2.9 wants
+    every PE signed by a CA in the Microsoft Trusted Root Program; for MSIX, Microsoft does that
+    itself at ingestion, free. Signing that copy would instead break the upload, because the
+    certificate subject would no longer match the publisher Partner Center has on file. See
+    packaging/AppxManifest.xml.
+
+    -Sign adds a second file. Windows will not install an unsigned MSIX at all, so the upload copy
+    cannot be the one you test with; the signed copy is byte-identical payload with an Authenticode
+    signature appended, from a self-signed certificate whose subject matches the manifest's
+    Publisher exactly (Windows checks that, and refuses the install if they differ). Two files out
+    of one pack rather than two packs: testing a package built separately from the one uploaded
+    tests the wrong thing.
 
 .OUTPUTS
-    The path of the .msix it produced, relative to the repository root.
+    The path of the unsigned .msix -- the one to upload -- relative to the repository root. The
+    signed copy and its certificate are reported on the console only, so a caller piping this
+    (release.yml does) still gets the single path it expects.
+
+.EXAMPLE
+    # The Store artifact, plus a copy to install and try on this machine.
+    ./packaging/build-msix.ps1 -Version 4.3.2 -Sign `
+      -PublishDir 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-msix'
 #>
 [CmdletBinding()]
 param(
@@ -50,7 +66,21 @@ param(
     [string] $OutputDir = 'packaging/obj',
 
     # Builds the layout and stops. Enough to catch a broken manifest or a missing payload.
-    [switch] $SkipPack
+    [switch] $SkipPack,
+
+    # Also emit a signed copy, for installing on this machine. Never uploaded: Partner Center
+    # rejects a package whose signature it did not apply.
+    [switch] $Sign,
+
+    # An existing code-signing certificate to sign with, by SHA1 thumbprint, looked up in
+    # Cert:\CurrentUser\My. Its subject must equal the manifest's Publisher exactly.
+    #
+    # Omit and -Sign makes one: a self-signed code-signing certificate with that exact subject,
+    # valid a year, left in Cert:\CurrentUser\My and reused on later runs. Nothing that certificate
+    # signs is trusted by anything except the machine you install its .cer on, which is the point --
+    # it exists to satisfy Windows' "this package must be signed" rule for a local test, not to
+    # vouch for anything.
+    [string] $SigningCertificateThumbprint
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,9 +104,36 @@ if (-not (Test-Path $payload -PathType Container)) {
     throw "Publish directory not found: $payload (publish must run first)"
 }
 $payload = (Resolve-Path $payload).Path
-if (-not (Test-Path (Join-Path $payload 'RavensPort.exe'))) {
+$exe = Join-Path $payload 'RavensPort.exe'
+if (-not (Test-Path $exe)) {
     throw "RavensPort.exe is not in $payload. Was this published with the win-x64-msix profile?"
 }
+
+# --- Store build check -------------------------------------------------------------------------
+# The single check standing between a mistake here and another certification failure.
+#
+# The store package must not carry Proton Pass (10.1.5) or mTLS and its certificate generation
+# (10.2.10, 10.2.10.1). Both are removed by building with -p:StoreBuild=true, which has to be a
+# command-line global property: put it in the .pubxml instead and it applies to RavensPort.App but
+# not to RavensPort.Core across the ProjectReference, which produces a package that looks right and
+# still has the removed code compiled in. That failure is invisible by inspection, so it is checked
+# rather than trusted.
+#
+# The marker is the PE product name, set in Directory.Build.props under the same condition.
+$product = (Get-Item $exe).VersionInfo.ProductName
+if ($product -notlike '*Store*') {
+    throw @"
+$exe was not built for the Store (ProductName '$product').
+
+Publish again with the flag as a command-line property, so it reaches RavensPort.Core too:
+
+  dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release
+
+Without it the package carries Proton Pass and mTLS certificate generation, which certification
+rejected under 10.1.5, 10.2.10 and 10.2.10.1. See docs/STORE-MSIX.md.
+"@
+}
+Write-Host "Build:       $product"
 
 # --- SDK tools -------------------------------------------------------------------------------
 # makeappx/makepri ship in the Windows SDK, which is on the GitHub windows runner images but never
@@ -107,6 +164,16 @@ if (-not $makeappx -and -not $SkipPack) {
     throw 'makeappx.exe was not found. Install the Windows 10/11 SDK, or add it to PATH.'
 }
 $makepri = Find-SdkTool 'makepri.exe'
+
+# Resolved before the pack, not after. Packing is the minute-long part of this script, and finding
+# out that signtool is missing on the far side of it wastes the whole minute.
+$signtool = $null
+if ($Sign -and -not $SkipPack) {
+    $signtool = Find-SdkTool 'signtool.exe'
+    if (-not $signtool) {
+        throw 'signtool.exe was not found, and -Sign needs it. Install the Windows 10/11 SDK, or add it to PATH.'
+    }
+}
 
 # --- Layout ----------------------------------------------------------------------------------
 $layout = Join-Path $PSScriptRoot 'obj\layout'
@@ -289,6 +356,90 @@ if (-not (Test-Path $package)) { throw "makeappx reported success but $package i
 
 $size = (Get-Item $package).Length
 Write-Host ("Package:     {0} ({1:N1} MB)" -f $package, ($size / 1MB))
+
+# --- Signed copy, for installing on this machine ----------------------------------------------
+# The file above goes to Partner Center and must stay unsigned. Windows will not install an
+# unsigned MSIX, so testing needs a second file - the same package with a signature appended.
+#
+# Signed rather than repacked: a package built separately from the one uploaded is not the one
+# being tested. Copy, sign the copy, leave the original untouched.
+if ($Sign) {
+    # The subject Windows will insist on. It compares the signing certificate's subject against the
+    # manifest's Publisher and refuses the install if they differ by so much as a space, which is
+    # why this is read back out of the written manifest rather than assumed.
+    $subject = $written.Package.Identity.Publisher
+
+    if ($SigningCertificateThumbprint) {
+        $certificate = Get-Item "Cert:\CurrentUser\My\$SigningCertificateThumbprint" -ErrorAction SilentlyContinue
+        if (-not $certificate) {
+            throw "No certificate with thumbprint $SigningCertificateThumbprint in Cert:\CurrentUser\My."
+        }
+        if ($certificate.Subject -ne $subject) {
+            throw "Certificate $SigningCertificateThumbprint has subject '$($certificate.Subject)', but the " +
+                  "package's Publisher is '$subject'. Windows requires these to match exactly."
+        }
+    }
+    else {
+        # Reused across runs, so repeated local builds do not litter the store with a certificate
+        # each and so a .cer trusted once keeps working. Matched on subject and code-signing EKU,
+        # and the longest-lived match wins, which keeps a not-yet-expired one in preference to an
+        # older one that happens to sort first.
+        $certificate =
+            Get-ChildItem Cert:\CurrentUser\My |
+            Where-Object {
+                $_.Subject -eq $subject -and
+                $_.NotAfter -gt (Get-Date) -and
+                $_.HasPrivateKey -and
+                ($_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3')
+            } |
+            Sort-Object NotAfter |
+            Select-Object -Last 1
+
+        if (-not $certificate) {
+            Write-Host "Certificate: none found for $subject - creating a self-signed one"
+            $certificate = New-SelfSignedCertificate `
+                -Type CodeSigningCert `
+                -Subject $subject `
+                -KeyUsage DigitalSignature `
+                -CertStoreLocation 'Cert:\CurrentUser\My' `
+                -NotAfter (Get-Date).AddYears(1) `
+                -FriendlyName 'RavensPort MSIX sideload test'
+        }
+    }
+
+    $signedName = "RavensPort-$Version-signed.msix"
+    $signedPackage = Join-Path $outRoot $signedName
+    Copy-Item $package $signedPackage -Force
+
+    Write-Host "SignTool:    $signtool"
+    # /fd SHA256 because MSIX requires SHA256 file digests. No timestamp: a timestamp exists so a
+    # signature outlives its certificate, and this certificate is a test artifact with a one-year
+    # life that nobody should be relying on afterwards.
+    & $signtool sign /fd SHA256 /sha1 $certificate.Thumbprint $signedPackage
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed with exit code $LASTEXITCODE." }
+
+    # The public half, so the certificate can be trusted on whatever machine installs the package.
+    # Exported every run rather than only on creation: the .cer is disposable, packaging/obj gets
+    # wiped, and regenerating it costs nothing.
+    $cerPath = Join-Path $outRoot "RavensPort-$Version-signed.cer"
+    Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
+
+    Write-Host ""
+    Write-Host "Signed copy: $signedPackage"
+    Write-Host "Certificate: $cerPath  ($($certificate.Thumbprint))"
+    Write-Host ""
+    Write-Host 'To install it on this machine, from an ELEVATED PowerShell:'
+    Write-Host ""
+    Write-Host "  Import-Certificate -FilePath '$cerPath' -CertStoreLocation Cert:\LocalMachine\TrustedPeople"
+    Write-Host "  Add-AppxPackage -Path '$signedPackage'"
+    Write-Host ""
+    Write-Host 'Trusting the certificate is only needed once per machine, and only for this test'
+    Write-Host 'certificate - the Store copy is signed by Microsoft at ingestion and needs none of it.'
+    Write-Host 'Uninstall with: Get-AppxPackage *RavensPort* | Remove-AppxPackage'
+    Write-Host ""
+    Write-Host "DO NOT upload $signedName. Partner Center takes the unsigned $fileName."
+    Write-Host ""
+}
 
 # No size gate here, deliberately. The installer needs one because it is committed to dist/ and
 # GitHub refuses a file over 100 MB in a repository; this is uploaded as a release asset and to

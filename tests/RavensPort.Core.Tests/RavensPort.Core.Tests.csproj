@@ -29,4 +29,19 @@
     <ProjectReference Include="..\..\src\RavensPort.Core\RavensPort.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The mTLS suites cover a feature the Microsoft Store build does not have: with StoreBuild=true,
+    MtlsCertificateFactory.GenerateClientCertificatePfx is not compiled at all, so these do not
+    build and there would be nothing for them to assert if they did. See BuildProfile.
+
+    CI runs `dotnet test` with no StoreBuild, so the shipped EXE's mTLS is covered exactly as
+    before — this only keeps a solution-wide `-p:StoreBuild=true` compiling, which is how the
+    store variant is checked locally.
+  -->
+  <ItemGroup Condition="'$(StoreBuild)' == 'true'">
+    <Compile Remove="MtlsCertificatePasswordTests.cs" />
+    <Compile Remove="Mcp\McpFunnelMtlsTests.cs" />
+    <Compile Remove="Mcp\McpMtlsRedirectTests.cs" />
+  </ItemGroup>
+
 </Project>

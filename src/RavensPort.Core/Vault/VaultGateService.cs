@@ -92,9 +92,18 @@ public sealed class VaultGateService
     {
         // Concurrently: each is a subprocess launch that may sit on an unlock prompt, and running
         // them in sequence would double the worst case on the startup path.
-        var probes = await Task.WhenAll(
-            ProbeSafelyAsync(_onePassword, depth, ct),
-            ProbeSafelyAsync(_protonPass, depth, ct));
+        //
+        // The one place Proton Pass is removed from the store build, and deliberately the only one.
+        // Everything downstream — the setup page's cards, the tie-break, the Settings tab's sign-out
+        // button — is driven by what this returns, so dropping the probe here takes the whole
+        // feature out of the UI without a second switch anywhere else to fall out of step with it.
+        // See BuildProfile.
+        var probes = BuildProfile.ProtonPassEnabled
+            ? await Task.WhenAll(
+                ProbeSafelyAsync(_onePassword, depth, ct),
+                ProbeSafelyAsync(_protonPass, depth, ct))
+            : await Task.WhenAll(
+                ProbeSafelyAsync(_onePassword, depth, ct));
 
         // A single-use session outranks whatever the probes found: the user chose memory, and a
         // manager quietly becoming available is not a reason to move their configuration into it.
@@ -164,6 +173,8 @@ public sealed class VaultGateService
     /// </summary>
     public async Task<VaultGateStatus> ConnectAsync(VaultBackendKind kind, CancellationToken ct = default)
     {
+        EnsureBackendIsInThisBuild(kind);
+
         // The attempt is the un-disconnecting, whether or not it succeeds. Leaving the flag set
         // would have the next evaluation report the user as still disconnected while they are
         // plainly in the middle of connecting.
@@ -225,6 +236,8 @@ public sealed class VaultGateService
     /// <summary>Records the user's answer for this run. Deliberately not persisted anywhere.</summary>
     public VaultGateStatus SelectBackend(VaultBackendKind kind)
     {
+        EnsureBackendIsInThisBuild(kind);
+
         _disconnected = false;
         _singleUse = null;
 
@@ -232,10 +245,29 @@ public sealed class VaultGateService
         return Publish(status, kind);
     }
 
+    /// <summary>
+    /// Refuses a backend this build does not ship. Belt to the probe's braces: the store build
+    /// never probes Proton Pass, so no card offers it and nothing should ever reach here with it —
+    /// but every one of these entry points is public, and a selection that slipped through would
+    /// hand the app a provider whose CLI it must not go looking for. Throwing says which build the
+    /// user is on, which is the one thing a "nothing happens" would not.
+    /// </summary>
+    private static void EnsureBackendIsInThisBuild(VaultBackendKind kind)
+    {
+        if (kind == VaultBackendKind.ProtonPass && !BuildProfile.ProtonPassEnabled)
+        {
+            throw new NotSupportedException(
+                "Proton Pass is not available in the Microsoft Store build of RavensPort. Use "
+                + "1Password, or single use, or install the version from the RavensPort releases page.");
+        }
+    }
+
     /// <summary>Creates a vault with the user's chosen name in the given manager, then re-evaluates.</summary>
     public async Task<VaultGateStatus> CreateVaultAsync(
         VaultBackendKind kind, string vaultName, CancellationToken ct = default)
     {
+        EnsureBackendIsInThisBuild(kind);
+
         _disconnected = false;
 
         await ProviderFor(kind).CreateVaultAsync(vaultName, ct);
@@ -251,6 +283,8 @@ public sealed class VaultGateService
     public async Task<VaultGateStatus> UseExistingVaultAsync(
         VaultBackendKind kind, string vaultName, CancellationToken ct = default)
     {
+        EnsureBackendIsInThisBuild(kind);
+
         _disconnected = false;
 
         await ProviderFor(kind).UseExistingVaultAsync(vaultName, ct);
