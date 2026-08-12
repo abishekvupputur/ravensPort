@@ -9,6 +9,17 @@
   tools you allow, with OAuth handled for you.</b>
 </p>
 
+<p align="center">
+  <a href="https://apps.microsoft.com/detail/9PBNQH53L61D"><b>Get it from the Microsoft Store</b></a>
+  &nbsp;·&nbsp;
+  <a href="../../releases"><b>Download the installer</b></a>
+</p>
+
+<p align="center">
+  <sub>The Store build has no Proton Pass and no mTLS — <a href="#from-the-microsoft-store">why</a>.
+  The installer is the full app.</sub>
+</p>
+
 A tray-resident Windows app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
 flow and token lifecycle for upstream APIs and MCP servers, then lets you compose those servers
 into filtered, per-agent MCP endpoints.
@@ -28,7 +39,8 @@ into filtered, per-agent MCP endpoints.
 > deletes it, and the setup page offers to delete it once you are done with it.
 >
 > You will need **1Password** or **Proton Pass** installed and unlocked — or, for 1Password, a
-> service account token, which needs nothing installed at all. See
+> service account token, which needs nothing installed at all. The Microsoft Store build has no
+> Proton Pass backend; see [From the Microsoft Store](#from-the-microsoft-store). See
 > [Where your configuration lives](#where-your-configuration-lives).
 
 ---
@@ -71,7 +83,7 @@ reach on its own.
 - **Automatic token refresh** — 10 minutes ahead of expiry, in the background; app logins re-mint
   from their stored secret instead of presenting a refresh token
 - **Any credential backs any route** — not a fixed 1:1 mapping
-- **Stored in your password manager** — 1Password or Proton Pass holds every secret; nothing is written to this PC
+- **Stored in your password manager** — 1Password or Proton Pass holds every secret; nothing is written to this PC (Proton Pass in the installer build only — [why](#from-the-microsoft-store))
 - **1Password without the desktop app** — sign in with a service account token instead, so nothing
   local has to be installed, running, or unlocked; the token is kept only in memory unless you ask
   for it to be saved behind Windows Hello
@@ -80,6 +92,7 @@ reach on its own.
   reach the rest
 - **Client certificates (mTLS)** — optionally require a certificate on every connection as well as
   the key, so a process that reads a key out of a config file still cannot call the proxy
+  (installer build only — [why](#from-the-microsoft-store))
 - **Activity log** with redaction and rotation, viewable in-app
 - **Tray-resident** — starts hidden, survives provider and network errors, single-instance guard
 - **CI-published releases** with build provenance attestation
@@ -110,15 +123,30 @@ A pass means the file is byte-for-byte what CI built from this repository.
 
 ### From the Microsoft Store
 
-The Store package is the same app with two features removed, because certification rejected them:
-**Proton Pass** (policy 10.1.5 — the setup card names a CLI acquired outside the Store) and **mTLS
-with its certificate generation** (10.2.10 / 10.2.10.1 — "Settings > Generate New Certificate").
-Everything else is identical: routes, funnels, OAuth2, proxy keys, 1Password, single use, the
-activity log.
+**[apps.microsoft.com/detail/9PBNQH53L61D](https://apps.microsoft.com/detail/9PBNQH53L61D)**
 
-Install from a release if you need either. The two builds read the same vault, so a Store install
-that finds mTLS switched on serves plain `http://127.0.0.1` and says so in the activity log — every
-caller still needs its endpoint's proxy key. See [docs/STORE-MSIX.md](docs/STORE-MSIX.md).
+Installs and updates through the Store, and raises no unknown-publisher warning: Microsoft signs
+the package at ingestion, which is the one thing the installer above cannot offer.
+
+**Two features are missing from it**, because Store certification rejected them:
+
+| | Installer | Store |
+|---|---|---|
+| 1Password, single use | yes | yes |
+| Routes, MCP funnels, OAuth2, proxy keys, activity log | yes | yes |
+| **Proton Pass** as a vault backend | yes | **no** |
+| **mTLS** and client certificate generation | yes | **no** |
+
+Policy 10.1.5 read the setup page's Proton Pass card as promoting software acquired outside the
+Store; 10.2.10 and 10.2.10.1 read *Settings → Generate new certificate* as certificate
+installation. Neither is hidden in the Store build — the code behind them is not compiled into it.
+
+**Install from a release if you need either.** Both builds read the same vault, so you can run the
+Store one on this machine and the installer on another; a Store install that finds mTLS switched on
+serves plain `http://127.0.0.1` and says so in the activity log, and every caller still needs its
+endpoint's proxy key. A vault last written by the Proton Pass backend is simply not read there.
+
+See [docs/STORE-MSIX.md](docs/STORE-MSIX.md) for how the two builds are produced.
 
 ### From source
 
@@ -670,7 +698,7 @@ that sign-in. Neither contains any of the above. See [Logs](#logs).)
 | Manager | Client | Install |
 | --- | --- | --- |
 | 1Password | [Native SDK (embedded)](https://github.com/1Password/onepassword-sdk-go), or `op.exe` when a service account token is used and the CLI is installed | `winget install AgileBits.1Password` (desktop app required for that mode) — or a **service account token**, which needs nothing installed |
-| Proton Pass | `pass-cli` | `winget install Proton.PassCLI` |
+| Proton Pass<br><sub>installer build only</sub> | `pass-cli` | `winget install Proton.PassCLI` |
 
 RavensPort installs neither of them, and does not link to anywhere that would. It looks for the CLI,
 shows the command above if it is missing, and runs what you installed.
