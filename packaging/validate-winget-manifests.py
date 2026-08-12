@@ -10,7 +10,18 @@ It deliberately does not reimplement winget's semantic rules (identifier casing 
 directory path, hash matching the installer). Those live in the pipeline, and guessing at them
 here would produce a check that disagrees with the real one.
 
-Usage:  python packaging/winget/validate-manifests.py [manifest-dir]
+It lives in packaging/ rather than in packaging/winget/ beside the manifests it checks, and that
+is not tidiness. `winget validate --manifest <dir>` reads *every* file in the directory it is
+given and refuses the whole set on anything that is not a manifest:
+
+    Manifest validation failed.
+    The manifest does not contain a valid root. File: validate-manifests.py
+
+So this script sitting next to the manifests made the one command the submission process actually
+depends on impossible to run against the real directory -- documented, and broken, until a
+submission needed it. packaging/winget/ now holds manifests and nothing else.
+
+Usage:  python packaging/validate-winget-manifests.py [manifest-dir]
 """
 
 import json
