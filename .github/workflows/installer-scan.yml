@@ -60,8 +60,11 @@ jobs:
       # winget.exe is not on GitHub's Windows runner images -- App Installer is not provisioned in
       # the Server SKUs -- so `winget validate` cannot run in CI at all. This validates against the
       # same published schemas instead.
+      #
+      # The script lives in packaging/, not in packaging/winget/ beside the manifests: winget
+      # validates a whole directory and rejects the set on any file in it that is not a manifest.
       - name: Validate manifests against the published schemas
-        run: python3 packaging/winget/validate-manifests.py packaging/winget
+        run: python3 packaging/validate-winget-manifests.py packaging/winget
 
   installer:
     name: Scan and test the installer
