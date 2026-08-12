@@ -412,10 +412,17 @@ if ($Sign) {
     Copy-Item $package $signedPackage -Force
 
     Write-Host "SignTool:    $signtool"
-    # /fd SHA256 because MSIX requires SHA256 file digests. No timestamp: a timestamp exists so a
-    # signature outlives its certificate, and this certificate is a test artifact with a one-year
-    # life that nobody should be relying on afterwards.
-    & $signtool sign /fd SHA256 /sha1 $certificate.Thumbprint $signedPackage
+    # /fd SHA256 is the digest the signature is actually computed with, which is what MSIX
+    # requires. No timestamp: a timestamp exists so a signature outlives its certificate, and this
+    # certificate is a test artifact with a one-year life nobody should be relying on afterwards.
+    #
+    # /sha1 is not a second algorithm choice. It is signtool's flag for "find the certificate in
+    # the store with this thumbprint", and thumbprints in Windows certificate stores are SHA1 by
+    # definition - Get-ChildItem Cert:\ has no other identifier to offer. Selecting by /n (subject
+    # name) would avoid the word and is worse: the subject here is shared by every test certificate
+    # ever minted for this package, so it would pick one of them rather than the one resolved
+    # above. Hence the suppression, which is scoped to this line only.
+    & $signtool sign /fd SHA256 /sha1 $certificate.Thumbprint $signedPackage # DevSkim: ignore DS126858
     if ($LASTEXITCODE -ne 0) { throw "signtool failed with exit code $LASTEXITCODE." }
 
     # The public half, so the certificate can be trusted on whatever machine installs the package.
@@ -440,6 +447,30 @@ if ($Sign) {
     Write-Host "DO NOT upload $signedName. Partner Center takes the unsigned $fileName."
     Write-Host ""
 }
+
+# --- The upload copy must be unsigned ---------------------------------------------------------
+# Asserted rather than assumed, and checked last so it covers the signing step above as well as the
+# pack. Partner Center rejects a package carrying a signature it did not apply -- ingestion is where
+# the Microsoft Trusted Root Program certificate goes on, and that is the entire reason this project
+# ships MSIX instead of the EXE (policy 10.2.9). A signed upload is a rejected upload.
+#
+# Read out of the package rather than by asking signtool: an MSIX is a zip, and a signed one carries
+# AppxSignature.p7x at its root. That needs no SDK tool, so the check runs on every build and not
+# only the ones that passed -Sign and resolved signtool.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($package)
+try {
+    $signatureEntry = $archive.Entries | Where-Object { $_.FullName -eq 'AppxSignature.p7x' }
+}
+finally {
+    $archive.Dispose()
+}
+if ($signatureEntry) {
+    throw "$package carries AppxSignature.p7x, so it is signed. Partner Center rejects a package " +
+          'it did not sign itself at ingestion. This is the copy to upload and it must stay unsigned; ' +
+          'the -Sign copy is a separate file. See docs/STORE-MSIX.md.'
+}
+Write-Host "Signature:   none (correct for the Partner Center upload)"
 
 # No size gate here, deliberately. The installer needs one because it is committed to dist/ and
 # GitHub refuses a file over 100 MB in a repository; this is uploaded as a release asset and to

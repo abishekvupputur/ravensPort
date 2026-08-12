@@ -69,47 +69,47 @@
       dependency tree can be read off it elsewhere.
     -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-  </PropertyGroup>
 
-  <!--
-    Which of the two builds this is. Default false, so `dotnet build`, `dotnet test`, the installer
-    publish and every IDE build produce the full app exactly as they did before — the EXE ships
-    every feature and nothing here changes it.
+    <!--
+      Which of the two builds this is. Default false, so `dotnet build`, `dotnet test`, the
+      installer publish and every IDE build produce the full app exactly as they did before — the
+      EXE ships every feature and nothing here changes it.
 
-    StoreBuild=true is the Microsoft Store variant, and it exists because certification rejects
-    features the EXE is free to have. See docs/STORE-MSIX.md for the findings; what it removes is
-    Proton Pass (10.1.5, the card names a CLI acquired outside the Store) and mTLS with its
-    certificate generation (10.2.10 / 10.2.10.1, "Settings > Generate New Certificate" was read as
-    certificate installation).
+      StoreBuild=true is the Microsoft Store variant, and it exists because certification rejects
+      features the EXE is free to have. See docs/STORE-MSIX.md for the findings; what it removes is
+      Proton Pass (10.1.5, the card names a CLI acquired outside the Store) and mTLS with its
+      certificate generation (10.2.10 / 10.2.10.1, "Settings > Generate New Certificate" was read
+      as certificate installation).
 
-    MUST be passed as a global property on the command line:
+      MUST be passed as a global property on the command line:
 
-        dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:StoreBuild=true ...
+          dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:StoreBuild=true ...
 
-    Not in the .pubxml, and this is the trap worth naming. Publish-profile properties apply to the
-    project being published and do not flow across a ProjectReference, so setting it there would
-    build the App with STORE_BUILD and RavensPort.Core without it — a package whose UI hides the
-    features while the code behind them is still compiled in. A command-line -p: is a global
-    property and reaches all three projects. packaging/build-msix.ps1 refuses to pack a payload
-    that was not built this way, and installer/build.ps1 refuses to ship one that was.
-  -->
-  <PropertyGroup>
+      Not in the .pubxml, and this is the trap worth naming. Publish-profile properties apply to
+      the project being published and do not flow across a ProjectReference, so setting it there
+      would build the App with STORE_BUILD and RavensPort.Core without it — a package whose UI
+      hides the features while the code behind them is still compiled in. A command-line -p: is a
+      global property and reaches all three projects. RavensPort.App.csproj fails the build if the
+      MSIX publish profile is used without it, packaging/build-msix.ps1 refuses to pack a payload
+      that was not built this way, and installer/build.ps1 refuses to ship one that was.
+
+      Conditions on the properties rather than on PropertyGroups around them, and this file stays
+      at one PropertyGroup deliberately. installer-scan.yml reads the version out of here as
+      `.Project.PropertyGroup.Version`; with more than one group that returns an array, PowerShell
+      renders it as "4.3.2   " with the empty groups trailing, and the version check downstream
+      fails on a string nobody wrote. That workflow now selects the node properly, but a file shape
+      that only works because a reader was fixed is a trap reset rather than sprung.
+    -->
     <StoreBuild Condition="'$(StoreBuild)' == ''">false</StoreBuild>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(StoreBuild)' == 'true'">
-    <DefineConstants>$(DefineConstants);STORE_BUILD</DefineConstants>
+    <DefineConstants Condition="'$(StoreBuild)' == 'true'">$(DefineConstants);STORE_BUILD</DefineConstants>
 
     <!--
       The marker both packaging scripts check. Product name rather than an assembly attribute
       because it lands in the PE version resource, where `(Get-Item RavensPort.exe).VersionInfo`
       reads it in one line from PowerShell and the file's own Properties tab shows it to a human.
     -->
-    <Product>RavensPort (Microsoft Store)</Product>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(StoreBuild)' != 'true'">
-    <Product>RavensPort</Product>
+    <Product Condition="'$(StoreBuild)' == 'true'">RavensPort (Microsoft Store)</Product>
+    <Product Condition="'$(StoreBuild)' != 'true'">RavensPort</Product>
   </PropertyGroup>
 
 </Project>
