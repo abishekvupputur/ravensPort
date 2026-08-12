@@ -1,5 +1,9 @@
 # Windows Package Manager (winget) submission
 
+**Published.** `winget install RavensPort` works today; `winget search ravensport` finds
+`AbishekNarasimhan.RavensPort`. Each new version is a fresh pull request against the community
+repository — the process below, repeated.
+
 `winget install RavensPort` requires three YAML manifests in the community repository,
 [microsoft/winget-pkgs][repo]. They live here in `packaging/winget/` so they are versioned with the
 code that produced the installer they describe; submitting means copying them into a fork of that
