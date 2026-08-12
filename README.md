@@ -10,14 +10,20 @@
 </p>
 
 <p align="center">
-  <a href="https://apps.microsoft.com/detail/9PBNQH53L61D"><b>Get it from the Microsoft Store</b></a>
-  &nbsp;·&nbsp;
-  <a href="../../releases"><b>Download the installer</b></a>
+  <code>winget install RavensPort</code>
 </p>
 
 <p align="center">
-  <sub>The Store build has no Proton Pass and no mTLS — <a href="#from-the-microsoft-store">why</a>.
-  The installer is the full app.</sub>
+  <a href="#with-winget"><b>winget</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://apps.microsoft.com/detail/9PBNQH53L61D"><b>Microsoft Store</b></a>
+  &nbsp;·&nbsp;
+  <a href="../../releases"><b>Releases</b></a>
+</p>
+
+<p align="center">
+  <sub>winget and the installer give you the full app. The Store build has no Proton Pass and no
+  mTLS — <a href="#from-the-microsoft-store">why</a>.</sub>
 </p>
 
 A tray-resident Windows app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
@@ -83,7 +89,7 @@ reach on its own.
 - **Automatic token refresh** — 10 minutes ahead of expiry, in the background; app logins re-mint
   from their stored secret instead of presenting a refresh token
 - **Any credential backs any route** — not a fixed 1:1 mapping
-- **Stored in your password manager** — 1Password or Proton Pass holds every secret; nothing is written to this PC (Proton Pass in the installer build only — [why](#from-the-microsoft-store))
+- **Stored in your password manager** — 1Password or Proton Pass holds every secret; nothing is written to this PC (Proton Pass is not in the Microsoft Store build — [why](#from-the-microsoft-store))
 - **1Password without the desktop app** — sign in with a service account token instead, so nothing
   local has to be installed, running, or unlocked; the token is kept only in memory unless you ask
   for it to be saved behind Windows Hello
@@ -92,7 +98,7 @@ reach on its own.
   reach the rest
 - **Client certificates (mTLS)** — optionally require a certificate on every connection as well as
   the key, so a process that reads a key out of a config file still cannot call the proxy
-  (installer build only — [why](#from-the-microsoft-store))
+  (not in the Microsoft Store build — [why](#from-the-microsoft-store))
 - **Activity log** with redaction and rotation, viewable in-app
 - **Tray-resident** — starts hidden, survives provider and network errors, single-instance guard
 - **CI-published releases** with build provenance attestation
@@ -104,6 +110,25 @@ reach on its own.
   source; released binaries are self-contained
 
 ## Install
+
+### With winget
+
+```powershell
+winget install RavensPort
+```
+
+The full app — Proton Pass and mTLS included. Upgrades come with `winget upgrade`, and
+`winget uninstall RavensPort` removes it.
+
+This is the same Inno installer the Releases page carries, so everything in
+[From a release](#from-a-release) below applies to it: per-user, no elevation prompt, no .NET to
+install. winget verifies the download against the SHA256 in the published manifest before running
+it. The manifests live in [packaging/winget/](packaging/winget/), versioned with the code that
+built the installer they describe.
+
+One thing worth knowing: **RavensPort will not install over a copy of itself that is running**, so
+close it from the tray before `winget upgrade`. It fails cleanly rather than silently — winget
+reports the package as in use and tells you to close it.
 
 ### From a release
 
@@ -130,7 +155,7 @@ the package at ingestion, which is the one thing the installer above cannot offe
 
 **Two features are missing from it**, because Store certification rejected them:
 
-| | Installer | Store |
+| | winget / installer | Store |
 |---|---|---|
 | 1Password, single use | yes | yes |
 | Routes, MCP funnels, OAuth2, proxy keys, activity log | yes | yes |
@@ -141,10 +166,11 @@ Policy 10.1.5 read the setup page's Proton Pass card as promoting software acqui
 Store; 10.2.10 and 10.2.10.1 read *Settings → Generate new certificate* as certificate
 installation. Neither is hidden in the Store build — the code behind them is not compiled into it.
 
-**Install from a release if you need either.** Both builds read the same vault, so you can run the
-Store one on this machine and the installer on another; a Store install that finds mTLS switched on
-serves plain `http://127.0.0.1` and says so in the activity log, and every caller still needs its
-endpoint's proxy key. A vault last written by the Proton Pass backend is simply not read there.
+**Use `winget install RavensPort` if you need either.** Both builds read the same vault, so you can
+run the Store one on this machine and the full app on another; a Store install that finds mTLS
+switched on serves plain `http://127.0.0.1` and says so in the activity log, and every caller still
+needs its endpoint's proxy key. A vault last written by the Proton Pass backend is simply not read
+there.
 
 See [docs/STORE-MSIX.md](docs/STORE-MSIX.md) for how the two builds are produced.
 
@@ -698,7 +724,7 @@ that sign-in. Neither contains any of the above. See [Logs](#logs).)
 | Manager | Client | Install |
 | --- | --- | --- |
 | 1Password | [Native SDK (embedded)](https://github.com/1Password/onepassword-sdk-go), or `op.exe` when a service account token is used and the CLI is installed | `winget install AgileBits.1Password` (desktop app required for that mode) — or a **service account token**, which needs nothing installed |
-| Proton Pass<br><sub>installer build only</sub> | `pass-cli` | `winget install Proton.PassCLI` |
+| Proton Pass<br><sub>not in the Store build</sub> | `pass-cli` | `winget install Proton.PassCLI` |
 
 RavensPort installs neither of them, and does not link to anywhere that would. It looks for the CLI,
 shows the command above if it is missing, and runs what you installed.
