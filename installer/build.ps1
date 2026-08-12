@@ -39,6 +39,17 @@ if (-not (Test-Path $payload)) {
 }
 $payload = (Resolve-Path $payload).Path
 
+# The installer ships the full app -- Proton Pass, mTLS, certificate generation, all of it. Only
+# the Microsoft Store package drops those, and only because certification rejected them. Wrapping a
+# store payload here would quietly ship a cut-down EXE to everyone downloading from GitHub, which
+# is the mirror image of the mistake packaging/build-msix.ps1 guards against. See BuildProfile.cs
+# and Directory.Build.props.
+$product = (Get-Item $payload).VersionInfo.ProductName
+if ($product -like '*Store*') {
+    throw "$payload was built with -p:StoreBuild=true (ProductName '$product'). The installer must " +
+          'wrap the full build: publish again without that property.'
+}
+
 $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {
     # Inno ships on the GitHub Windows runner images, but not always on PATH, and winget installs

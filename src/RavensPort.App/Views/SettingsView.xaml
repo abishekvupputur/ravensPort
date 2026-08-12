@@ -277,7 +277,14 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+            <!-- Absent from the Microsoft Store build, and the whole card goes rather than the
+                 buttons: certification failed the package under 10.2.10 and 10.2.10.1 naming
+                 "Settings > Generate New Certificate", and a section left behind explaining a
+                 feature that is not there would be worse than no section. IsMtlsAvailable is a
+                 build constant, so this collapses at load and never uncollapses, and the certificate
+                 code behind it is not compiled into that build at all. See BuildProfile. -->
+            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14"
+                    Visibility="{Binding IsMtlsAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                 <StackPanel>
                     <TextBlock Text="Client Certificate (mTLS)" Style="{StaticResource SectionHeaderStyle}"/>
                     <CheckBox Content="Require mTLS for all routes and funnels" IsChecked="{Binding MtlsEnabled}" Margin="0,0,0,8"/>

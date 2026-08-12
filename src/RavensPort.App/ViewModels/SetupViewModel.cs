@@ -4,6 +4,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.App.Views;
+using RavensPort.Core;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Vault;
@@ -32,6 +33,18 @@ public sealed partial class SetupViewModel(
         "store.dat");
 
     public ObservableCollection<ManagerCardViewModel> Managers { get; } = [];
+
+    /// <summary>
+    /// The managers this build can use, named in the page's opening sentence. The cards below it
+    /// come from what <see cref="VaultGateService"/> probed and so drop Proton Pass on their own in
+    /// the store build; this line is the one piece of prose that would otherwise still promise it.
+    ///
+    /// Removed there under 10.1.5, which reads a named CLI acquired outside the Store as promoting
+    /// it — so the name has to go from the copy as well as from the card. See
+    /// <see cref="BuildProfile"/>.
+    /// </summary>
+    public string SupportedManagers =>
+        BuildProfile.ProtonPassEnabled ? "1Password or Proton Pass" : "1Password";
 
     [ObservableProperty] private string _statusMessage = "Checking for a password manager…";
     [ObservableProperty] private bool _isBusy;

@@ -20,10 +20,15 @@
                            FontSize="18" Margin="0,0,0,6"/>
                 <!-- xml:space on the runs that end in a space: XAML trims a run's trailing
                      whitespace otherwise, and the emphasised words run into the words before. -->
+                <!-- The manager names are bound, not written: the Microsoft Store build has no
+                     Proton Pass (10.1.5), and a sentence still offering it would be the promise the
+                     cards below no longer keep. See SetupViewModel.SupportedManagers. -->
                 <TextBlock Style="{StaticResource HintTextStyle}" TextWrapping="Wrap" Margin="0,0,0,16"><Run
-                    xml:space="preserve">RavensPort keeps everything — credentials, tokens, API keys, proxy keys, routes and MCP funnels — in a vault called 'RavensPort' in 1Password or Proton Pass. </Run><Run
+                    xml:space="preserve">RavensPort keeps everything — credentials, tokens, API keys, proxy keys, routes and MCP funnels — in a vault called 'RavensPort' in </Run><Run
+                    Text="{Binding SupportedManagers, Mode=OneTime}"/><Run
+                    xml:space="preserve">. </Run><Run
                     Style="{StaticResource EmphasisRunStyle}">Nothing is stored on this PC</Run><Run
-                    >, so the proxy does not start until one of them is unlocked.</Run></TextBlock>
+                    >, so the proxy does not start until your vault is unlocked.</Run></TextBlock>
 
                 <!-- Says the thing the page's own behaviour now demonstrates. Startup only looks for
                      the binaries; no manager is asked anything, so no manager prompts. -->

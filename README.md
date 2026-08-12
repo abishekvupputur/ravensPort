@@ -108,6 +108,18 @@ gh attestation verify RavensPort-Setup-<version>.exe --repo abishekvupputur/rave
 
 A pass means the file is byte-for-byte what CI built from this repository.
 
+### From the Microsoft Store
+
+The Store package is the same app with two features removed, because certification rejected them:
+**Proton Pass** (policy 10.1.5 — the setup card names a CLI acquired outside the Store) and **mTLS
+with its certificate generation** (10.2.10 / 10.2.10.1 — "Settings > Generate New Certificate").
+Everything else is identical: routes, funnels, OAuth2, proxy keys, 1Password, single use, the
+activity log.
+
+Install from a release if you need either. The two builds read the same vault, so a Store install
+that finds mTLS switched on serves plain `http://127.0.0.1` and says so in the activity log — every
+caller still needs its endpoint's proxy key. See [docs/STORE-MSIX.md](docs/STORE-MSIX.md).
+
 ### From source
 
 ```
@@ -552,6 +564,11 @@ upstream responses so a permissive upstream cannot reopen the same hole.
 
 ## Client certificates (mTLS) <sub><sup>new in 4.2.0</sup></sub>
 
+> **Not in the Microsoft Store build.** Store certification rejected certificate generation under
+> policies 10.2.10 and 10.2.10.1, so the Store package has no mTLS, no Client Certificate card, and
+> no certificate-minting code. Install from a release if you need it — see
+> [docs/STORE-MSIX.md](docs/STORE-MSIX.md).
+
 Optional, off by default. Turn on **Require mTLS for all routes and funnels** on the Settings tab
 and the proxy switches from `http://127.0.0.1:5559` to **`https://127.0.0.1:5559`** and demands a
 client certificate on every connection — routes, funnels, everything.
@@ -900,6 +917,21 @@ Produces a self-contained `RavensPort.exe` (~180 MB, runtime bundled) under
 `src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64/`. See
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) before redistributing — it bundles components
 whose licenses require their notices travel along.
+
+### Building the Store variant
+
+```
+dotnet build RavensPort.slnx -p:StoreBuild=true -m:1
+```
+
+Defines `STORE_BUILD`, which drops Proton Pass and mTLS — see
+[`BuildProfile`](src/RavensPort.Core/BuildProfile.cs) and
+[docs/STORE-MSIX.md](docs/STORE-MSIX.md). It must be a command-line property, not a publish-profile
+one: profile properties do not cross a `ProjectReference`, so setting it there would build
+`RavensPort.App` with the features removed and `RavensPort.Core` with them still in. The packaging
+scripts check the built product name and refuse the wrong build in either direction.
+
+Every other command on this page builds the full app, unchanged.
 
 ### Project layout
 

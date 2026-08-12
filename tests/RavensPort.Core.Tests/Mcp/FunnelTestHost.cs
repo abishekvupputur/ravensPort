@@ -57,7 +57,15 @@ internal sealed class FunnelTestHost : IAsyncDisposable
     public static async Task<FunnelTestHost> StartAsync(bool mtls = false)
     {
         var logPath = Path.Combine(Path.GetTempPath(), $"ravensport-funnel-logs-{Guid.NewGuid()}");
+        // Not excluded from the store build the way the mTLS suites are: plenty of funnel tests use
+        // this host without mTLS, and they still have to build. Only the branch that mints goes,
+        // because MtlsCertificateFactory.GenerateClientCertificatePfx is not there. See BuildProfile.
+#if STORE_BUILD
+        if (mtls) throw new NotSupportedException("mTLS is not part of the Microsoft Store build.");
+        string? pfx = null;
+#else
         var pfx = mtls ? MtlsCertificateFactory.GenerateClientCertificatePfx() : null;
+#endif
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls($"{(mtls ? "https" : "http")}://127.0.0.1:0");

@@ -26,10 +26,14 @@ MSIX is what is implemented, and it is the route Microsoft's own rejection notic
 
 ## The package is deliberately unsigned
 
-Do not sign it. Partner Center accepts an unsigned `.msix` and signs it during ingestion with a
-certificate chaining to the Microsoft Trusted Root Program - which is the entire point. A package
-signed locally is *rejected*, because the certificate subject would not match the publisher Partner
-Center has on file.
+Do not sign the one you upload. Partner Center accepts an unsigned `.msix` and signs it during
+ingestion with a certificate chaining to the Microsoft Trusted Root Program - which is the entire
+point. A package signed locally is *rejected*, because the certificate subject would not match the
+publisher Partner Center has on file.
+
+Windows, on the other hand, will not *install* an unsigned MSIX, so trying the package out on your
+own machine needs a signed one. That is a second file, not a different build: see
+[Two packages: one to upload, one to test](#two-packages-one-to-upload-one-to-test).
 
 ## One-time setup
 
@@ -66,8 +70,8 @@ There is no separate tag and no separate workflow. The Store package is built by
 release pipeline, from the same tag as everything else:
 
 ```
-git tag v4.1.5
-git push origin v4.1.5
+git tag v4.3.2
+git push origin v4.3.2
 ```
 
 `release.yml` runs the test suite first and stops on failure, then publishes twice — once raw for
@@ -76,12 +80,12 @@ the release:
 
 | Asset | For |
 |---|---|
-| `RavensPort-Setup-4.1.5.exe` | installing outside the Store |
-| `RavensPort-4.1.5.msix` | uploading to Partner Center |
+| `RavensPort-Setup-4.3.2.exe` | installing outside the Store |
+| `RavensPort-4.3.2.msix` | uploading to Partner Center |
 
 Download the `.msix` from the release and upload it in Partner Center.
 
-The version comes off the tag, so `v4.1.5` produces a `4.1.5.0` package. MSIX wants four parts and
+The version comes off the tag, so `v4.3.2` produces a `4.3.2.0` package. MSIX wants four parts and
 the Store reserves the fourth, so `build-msix.ps1` pads it rather than letting you set it.
 
 Because both artifacts come off one tag, a Store resubmission means cutting a release — there is no
@@ -93,17 +97,63 @@ that cannot drift.
 Both assets are attested, so either can be checked against the build that produced it:
 
 ```bash
-gh attestation verify RavensPort-4.1.5.msix --repo abishekvupputur/ravensPort
+gh attestation verify RavensPort-4.3.2.msix --repo abishekvupputur/ravensPort
 ```
 
 ## Building locally
 
 ```powershell
-dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -c Release
+dotnet publish src/RavensPort.App/RavensPort.App.csproj `
+  -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release
 
-./packaging/build-msix.ps1 -Version 4.1.5 `
+./packaging/build-msix.ps1 -Version 4.3.2 -Sign `
   -PublishDir 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-msix'
 ```
+
+`-p:StoreBuild=true` is not optional and cannot be moved into the publish profile — see
+[the `StoreBuild` flag](#it-must-be-a-command-line-property) below. `build-msix.ps1` throws if the
+payload was built without it.
+
+### Two packages: one to upload, one to test
+
+`-Sign` is what makes the local build testable, and it produces a *second* file rather than
+changing the first:
+
+| File | For | Signature |
+|---|---|---|
+| `RavensPort-<version>.msix` | Partner Center | none — Microsoft signs it at ingestion |
+| `RavensPort-<version>-signed.msix` | installing on your machine | self-signed test certificate |
+| `RavensPort-<version>-signed.cer` | trusting that certificate once | — |
+
+Windows refuses to install an unsigned MSIX at all, so the upload copy cannot be the one you try.
+Signing the upload copy instead is not an option either: Partner Center rejects a package carrying
+a signature it did not apply. Hence two files, from one pack — the signed one is the same payload
+with a signature appended, so what you test is what you upload.
+
+Windows also checks the signing certificate's **subject against the manifest's `Publisher`** and
+refuses the install if they differ by a character. `build-msix.ps1` reads the subject back out of
+the manifest it just wrote and mints (or reuses) a self-signed code-signing certificate with
+exactly that subject in `Cert:\CurrentUser\My`, valid a year. Pass
+`-SigningCertificateThumbprint` to use one of your own; it is checked against the same rule.
+
+Installing, from an **elevated** PowerShell:
+
+```powershell
+Import-Certificate -FilePath packaging/obj/RavensPort-4.3.2-signed.cer `
+  -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+Add-AppxPackage -Path packaging/obj/RavensPort-4.3.2-signed.msix
+```
+
+The certificate import is once per machine. Uninstall with
+`Get-AppxPackage *RavensPort* | Remove-AppxPackage`.
+
+Two things to know before installing it. The test package carries the **same package identity as
+the Store one**, so it occupies the slot a Store install would use — uninstall it before installing
+from the Store. And an MSIX install redirects `%APPDATA%`/`%LOCALAPPDATA%` into the package's own
+`LocalCache`, so it starts with fresh local state; see *What running under MSIX changes* below.
+
+CI never passes `-Sign`. The release workflow wants exactly one artifact, unsigned, and
+`build-msix.ps1` returns that path alone — the signed copy is reported on the console only.
 
 Measured against Windows SDK 10.0.22621: a 249 MB layout of 644 files packs to a **99.3 MB** package
 in about a minute. Output goes to `packaging/obj/`, which the existing blanket `obj/` ignore rule
@@ -148,23 +198,102 @@ the Store build therefore starts with fresh local state - settings and activity 
 irreplaceable lives there, because the configuration itself is in the user's password manager, but
 it belongs in the release notes.
 
-## Software distribution: nothing, deliberately
+## The `StoreBuild` flag: what the package does not have
 
-Certification failed the 4.3.0 MSIX on two policies, both against the setup page's Proton Pass card:
+Certification kept failing the package on features the EXE is entitled to have. The first round
+(4.3.0) was answered by deleting them from the single Windows build; the second round was not
+survivable that way, because what it asked for is the removal of Proton Pass and mTLS altogether -
+and the EXE has no reason to give those up. So there are now two builds from one codebase.
 
-| Policy | What it said | What was there |
+### The findings
+
+| Policy | What it said | What it pointed at |
 |---|---|---|
-| 10.1.5 Software Distribution | "The product promotes acquiring software outside the Store" | An **Open download page** button, which opened the pass-cli site |
-| 10.2.10.1 Security | "An App or its metadata cannot initiate downloads of other apps or executables" | A **Download it for me** button, which fetched a pinned `pass-cli` release |
+| 10.1.5 Software Distribution | "The product promotes acquiring software outside the Store" | The setup page's Proton Pass card - originally its **Open download page** button, and on resubmission the card itself |
+| 10.2.10 Security | "Your product must not compromise the security of users... - Certificate Installation" | Settings -> **Generate new certificate** |
+| 10.2.10.1 Security | "An App or its metadata cannot initiate downloads of other apps or executables" | "Location of Download: Settings > Generate New Certificate" |
 
-Both features were removed outright, from the one and only Windows build - there is no Store variant
-and no build flag. `ProtonPassInstaller` is gone, `VaultLockGuidance.DownloadUrl` is gone, and the
-setup page now shows the `winget install Proton.PassCLI` line as read-only text and nothing else.
-That line was not flagged. Anyone running a local OAuth proxy can install a CLI themselves, so the
-feature was worth less than the policy surface it carried.
+The certificate findings are worth reading carefully, because the app never installed a certificate
+into a Windows store and never downloaded one. It minted a self-signed PFX for its own loopback
+listener and offered to save it. That is not what the policy is aimed at, and it is also not an
+argument worth having twice: mTLS on 127.0.0.1 sits behind a per-endpoint proxy key that is doing
+the real work anyway, so the store build drops it and the EXE keeps it.
 
-What remains: `pass-cli` is located by `VaultProbe` wherever the user installed it, and run as a
-child process. A copy left by 4.3.0 or earlier is still found, last, so upgrades keep working.
+### What each build ships
+
+| | EXE (installer, GitHub release) | MSIX (Microsoft Store) |
+|---|---|---|
+| 1Password backend | yes | yes |
+| Single use (memory only) | yes | yes |
+| Proton Pass backend | yes | **no** |
+| mTLS listener | yes | **no** |
+| Certificate generation and export | yes | **no** |
+| Everything else | yes | yes |
+
+Nothing else differs. Routes, funnels, OAuth2, proxy keys, the activity log, Windows Hello, the
+vault integrity check - all identical.
+
+### How it works
+
+`-p:StoreBuild=true` defines `STORE_BUILD`, which drives
+[`BuildProfile`](../src/RavensPort.Core/BuildProfile.cs). Two mechanisms, chosen per site:
+
+- **`const` flags** where the code has to stay compiled (`BuildProfile.ProtonPassEnabled`,
+  `BuildProfile.MtlsEnabled`). The compiler folds the branch, and XAML can bind to a view model
+  property that reads one - which is how the Settings tab's whole "Client Certificate" card
+  collapses.
+- **`#if STORE_BUILD`** where the point is that the code is *not in the package*. Most of all
+  `MtlsCertificateFactory.GenerateClientCertificatePfx`: the store build does not hide the Generate
+  button, it does not carry the method behind it.
+
+Proton Pass is removed at one place and one place only -
+`VaultGateService.EvaluateAsync` does not probe it. Everything the user sees is downstream of what
+that returns: the setup page's cards, the tie-break between two ready managers, the Settings tab's
+"Sign out of Proton Pass" button. One switch, so nothing can fall out of step with it. The public
+entry points (`ConnectAsync`, `SelectBackend`, `CreateVaultAsync`, `UseExistingVaultAsync`) throw
+`NotSupportedException` for the backend as a backstop.
+
+The Store listing copy is metadata under the same 10.1.5, so
+[STORE-LISTING.md](STORE-LISTING.md) does not name Proton Pass either.
+
+### It must be a command-line property
+
+```powershell
+dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release
+```
+
+Not in `win-x64-msix.pubxml`, and this is the trap. Publish-profile properties apply to the project
+being published and **do not flow across a `ProjectReference`**, so a profile-set flag would build
+`RavensPort.App` with `STORE_BUILD` and `RavensPort.Core` without it. The result compiles, looks
+right, and still has the removed code in it. A command-line `-p:` is a global property and reaches
+all three projects.
+
+Because that failure is invisible by inspection, it is checked rather than trusted. Under
+`StoreBuild=true` the PE product name becomes `RavensPort (Microsoft Store)`;
+`packaging/build-msix.ps1` refuses to pack a payload without it, and `installer/build.ps1` refuses
+to wrap one *with* it - so neither build can be shipped through the other's pipeline.
+
+### What running `pass-cli` still looks like
+
+Only in the EXE. There, `pass-cli` is located by `VaultProbe` wherever the user installed it and run
+as a child process; a copy left by 4.3.0 or earlier is still found, last, so upgrades keep working.
+The `ProtonPassInstaller` and `VaultLockGuidance.DownloadUrl` deleted for the first round are gone
+from both builds and are not coming back - the app installs no software.
+
+### A user moving between the two
+
+Both builds read the same vault. Someone with the EXE on one machine and the Store package on
+another has one configuration between them, so the store build has to cope with settings it cannot
+honour:
+
+- A vault whose `MtlsEnabled` is true: the store build binds `http://127.0.0.1` anyway and says so
+  in the activity log. Refusing to start would strand the user; binding silently would let them
+  believe the proxy demands a certificate when it does not. Per-endpoint proxy keys still apply.
+- A vault last written by the Proton Pass backend: nothing reads it in the store build. The user
+  connects 1Password, or installs the EXE.
+
+`AppSettings` deliberately keeps its mTLS fields in both builds. Forking the schema would have one
+build discard the other's settings on every write.
 
 ## What a reviewer sees
 
