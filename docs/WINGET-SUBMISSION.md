@@ -60,7 +60,7 @@ Values that were not invented for the manifest, and where they came from:
    the publisher, lowercased, then the two halves of the identifier, then the version:
 
    ```
-   manifests/a/AbishekNarasimhan/RavensPort/4.1.5/
+   manifests/a/AbishekNarasimhan/RavensPort/4.3.2/
    ```
 
 3. **Open the PR** against `microsoft/winget-pkgs` `master`, one package version per PR. Azure
@@ -119,14 +119,19 @@ Two things worth knowing before running these by hand:
   refuses to start if RavensPort is already installed, because a pre-existing install would make
   every assertion pass for the wrong reason.
 
-The manifests are checked separately, on Linux, by `packaging/winget/validate-manifests.py`.
+The manifests are checked separately, on Linux, by `packaging/validate-winget-manifests.py`.
 `winget validate` is not an option in CI — winget.exe is not on GitHub's Windows runner images,
 since App Installer is not provisioned in the Server SKUs — so it validates against the same
 published JSON schemas the tool would use. Run it locally with:
 
 ```powershell
-python packaging/winget/validate-manifests.py packaging/winget
+python packaging/validate-winget-manifests.py packaging/winget
 ```
+
+It sits in `packaging/` rather than beside the manifests on purpose, and `packaging/winget/` holds
+manifests and nothing else. `winget validate` reads every file in the directory it is given and
+rejects the whole set on anything that is not a manifest, so a script kept in there breaks the
+command above it.
 
 ## Where this package stands against the policies
 
