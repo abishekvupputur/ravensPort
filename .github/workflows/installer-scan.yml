@@ -126,7 +126,12 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $version = $env:GITHUB_REF_NAME -replace '^v', ''
           } else {
-            $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+            # SelectSingleNode, not .Project.PropertyGroup.Version. The dotted form walks every
+            # PropertyGroup in the file and hands back one value per group, so the moment a second
+            # group exists this becomes an array and interpolates as "4.3.2   " -- a version string
+            # with the empty groups trailing it, which build.ps1 then rejects against its digits-only
+            # pattern. Directory.Build.props is back to a single group, and this no longer cares.
+            $version = ([xml](Get-Content Directory.Build.props)).SelectSingleNode('/Project/PropertyGroup/Version').InnerText.Trim()
           }
           Write-Host "version=$version"
           echo "version=$version" >> $env:GITHUB_OUTPUT
