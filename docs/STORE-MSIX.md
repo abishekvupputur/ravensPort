@@ -4,6 +4,8 @@ How the Microsoft Store package is built and where it is published. The EXE/MSI 
 documented separately in [STORE-SUBMISSION.md](STORE-SUBMISSION.md); nothing about the installer,
 `release.yml`, or the `dist/` blob changes because of any of this.
 
+Live listing: **<https://apps.microsoft.com/detail/9PBNQH53L61D>**
+
 ## Why there is an MSIX at all
 
 The EXE submission was rejected under policy 10.2.9:
