@@ -109,7 +109,7 @@ dotnet publish src/RavensPort.App/RavensPort.App.csproj `
   -p:PublishProfile=win-x64-msix -p:StoreBuild=true -c Release
 
 ./packaging/build-msix.ps1 -Version 4.3.2 -Sign `
-  -PublishDir 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-msix'
+  -PublishDir 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-msix'
 ```
 
 `-p:StoreBuild=true` is not optional and cannot be moved into the publish profile — see

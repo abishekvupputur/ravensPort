@@ -116,10 +116,10 @@ Verified locally against Inno Setup 6.7.3: compiles clean, exit code 0, 67.9 MB 
 ```powershell
 dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x64-selfcontained `
   -c Release -p:EnableCompressionInSingleFile=false `
-  -p:PublishDir="bin\Release\net8.0-windows\publish\win-x64-raw\"
+  -p:PublishDir="bin\Release\net10.0-windows\publish\win-x64-raw\"
 
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\RavensPort.iss /DAppVersion=4.1.5 `
-  /DSourceExe=..\src\RavensPort.App\bin\Release\net8.0-windows\publish\win-x64-raw\RavensPort.exe
+  /DSourceExe=..\src\RavensPort.App\bin\Release\net10.0-windows\publish\win-x64-raw\RavensPort.exe
 ```
 
 Compilation takes about 80 seconds — LZMA2 on a 243 MB payload, not a hang.

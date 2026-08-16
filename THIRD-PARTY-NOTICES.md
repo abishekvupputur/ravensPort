@@ -22,28 +22,15 @@ tools](#optional-external-tools-not-bundled) below.
 
 | Component | Version | License |
 |---|---|---|
-| .NET Runtime / ASP.NET Core / WPF (`Microsoft.NETCore.App`, `Microsoft.AspNetCore.App`, `Microsoft.WindowsDesktop.App`) | 8.0.x | MIT |
+| .NET Runtime / ASP.NET Core / WPF (`Microsoft.NETCore.App`, `Microsoft.AspNetCore.App`, `Microsoft.WindowsDesktop.App`) | 10.0.x | MIT |
 | Yarp.ReverseProxy | 2.3.0 | MIT |
 | ModelContextProtocol | 2.0.0 | Apache-2.0 |
 | ModelContextProtocol.Core | 2.0.0 | Apache-2.0 |
 | ModelContextProtocol.AspNetCore | 2.0.0 | Apache-2.0 |
 | Microsoft.Extensions.AI.Abstractions | 10.8.3 | MIT |
-| Microsoft.Extensions.Caching.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.Configuration.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.Diagnostics.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.FileProviders.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.Hosting.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.Logging.Abstractions | 10.0.10 | MIT |
-| Microsoft.Extensions.Options | 10.0.10 | MIT |
-| Microsoft.Extensions.Primitives | 10.0.10 | MIT |
-| System.Diagnostics.DiagnosticSource | 10.0.10 | MIT |
 | System.IO.Hashing | 8.0.0 | MIT |
-| System.IO.Pipelines | 10.0.10 | MIT |
 | System.Management | 7.0.2 | MIT |
-| System.Net.ServerSentEvents | 10.0.10 | MIT |
-| System.Text.Encodings.Web | 10.0.10 | MIT |
-| System.Text.Json | 10.0.10 | MIT |
+| System.CodeDom | 7.0.0 | MIT |
 | Google.Apis.Auth | 1.75.0 | Apache-2.0 |
 | Google.Apis | 1.75.0 | Apache-2.0 |
 | Google.Apis.Core | 1.75.0 | Apache-2.0 |
@@ -52,10 +39,17 @@ tools](#optional-external-tools-not-bundled) below.
 | Newtonsoft.Json | 13.0.4 | MIT |
 | CommunityToolkit.Mvvm | 8.4.0 | MIT |
 
-The `Microsoft.Extensions.*`, `System.Text.*` and `System.Diagnostics.DiagnosticSource`
-packages resolve **above** the 8.0 shared framework, so they ship as real assemblies beside
-`RavensPort.dll` rather than being satisfied by the runtime. That is why they are listed
-separately from the framework row above.
+Shorter than it was under net8.0. The .NET 10 SDK prunes package references the shared framework
+already carries, so `Microsoft.Extensions.Caching/Configuration/DependencyInjection/Diagnostics/
+FileProviders/Hosting/Logging.Abstractions`, `Microsoft.Extensions.Options`,
+`Microsoft.Extensions.Primitives`, `System.Diagnostics.DiagnosticSource`, `System.IO.Pipelines`,
+`System.Net.ServerSentEvents`, `System.Text.Encodings.Web` and `System.Text.Json` are no longer
+resolved as packages at all — they come from the runtime and are covered by the framework row
+above. The ones left in this section resolve **above** the 10.0 shared framework or sit outside it
+entirely, so they still ship as real assemblies beside `RavensPort.dll`.
+
+The list is the resolved set in `packages.lock.json`; regenerate it from there after a dependency
+or target-framework change rather than editing by hand.
 
 ### Windows SDK projection
 
@@ -111,7 +105,7 @@ Copyright 2020-2023 wazero authors
 |---|---|---|
 | xunit (and xunit.core / xunit.assert / xunit.abstractions / xunit.analyzers / xunit.runner.visualstudio) | 2.5.3 | Apache-2.0 |
 | Microsoft.NET.Test.Sdk (and Microsoft.CodeCoverage / Microsoft.TestPlatform.*) | 17.8.0 | MIT |
-| Microsoft.AspNetCore.TestHost | 8.0.11 | MIT |
+| Microsoft.AspNetCore.TestHost | 10.0.5 | MIT |
 | coverlet.collector | 6.0.0 | MIT |
 | Moq | 4.20.72 | BSD-3-Clause |
 | Castle.Core | 5.1.1 | Apache-2.0 |

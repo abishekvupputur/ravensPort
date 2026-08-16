@@ -108,7 +108,7 @@ jobs:
 
   dotnet-vulnerable:
     name: dotnet list --vulnerable (NuGet)
-    # windows-latest because the target framework is net8.0-windows10.0.19041.0; a restore on Linux
+    # windows-latest because the target framework is net10.0-windows10.0.19041.0; a restore on Linux
     # cannot resolve the Windows SDK targeting packs, and this command needs a completed restore.
     runs-on: windows-latest
     permissions:
@@ -121,7 +121,7 @@ jobs:
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       # Not --locked-mode. The lock files are the thing being audited, and a restore that refuses to
       # run because one has drifted would report a lock-file problem as a security pass.

@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using ComboBox = System.Windows.Controls.ComboBox;
+using DataGrid = System.Windows.Controls.DataGrid;
 using TextBoxBase = System.Windows.Controls.Primitives.TextBoxBase;
 
 namespace RavensPort.App.Helpers;
