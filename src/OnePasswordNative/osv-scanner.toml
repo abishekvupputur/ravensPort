@@ -1,0 +1,31 @@
+# OSV-Scanner exclusions for the Go module, one advisory at a time.
+#
+# Beside go.mod rather than at the repository root on purpose: OSV-Scanner resolves this file
+# relative to the manifest it is scanning, and the only advisories set aside here are against that
+# manifest. A root config would also quietly cover the NuGet lock files, which have never needed one.
+#
+# The bar for adding an entry is the one osv-scanner.yml states: the gate has no severity threshold
+# and no ignore-unfixed, because an advisory with a fix should be fixed by bumping the package. This
+# file is for the ones where that is not a thing anyone can do.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+# Six months, not forever. Nothing about this is expected to change -- the entry exists so that the
+# assumption is re-read rather than inherited, and so a human looks again at whether openpgp is
+# still in the graph at all.
+ignoreUntil = 2027-02-16
+reason = """
+golang.org/x/crypto/openpgp is unmaintained and unsafe by design. OSV records this with no fixed
+version -- introduced=0 and no fix event -- because it is a statement about the package existing,
+not about a release. No version of x/crypto closes it, so the gate would stay shut forever on an
+advisory nothing in this repository can act on.
+
+Not reachable here, and not merely unused. x/crypto is in the module graph only because observe-sdk
+and extism name it in their own go.mod; nothing in this build imports any openpgp package, so
+`go build -buildmode=c-shared` links none of it into onepassword.dll. govulncheck, which does the
+call-graph analysis, has never reported it. See the note in go.mod on why the graph carries modules
+this build does not use.
+
+Revisit if the 1Password SDK ever pulls in something that genuinely signs or verifies OpenPGP data,
+at which point the fix is ProtonMail/go-crypto/openpgp rather than this entry.
+"""

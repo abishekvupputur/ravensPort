@@ -26,12 +26,23 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // fixed in v1.44.0). Both are pinned above their fix. The entries carried in alongside them --
 // otel/metric, otel/trace, auto/sdk, go-logr and xxhash -- are not pins and are not linked either.
 //
+// It happened again, and the same way. x/net moved to v0.56.0 for CVE-2026-46600 (a panic parsing
+// an invalid SVCB or HTTPS record in dns/dnsmessage) and x/text to v0.39.0 for CVE-2026-56852 (an
+// infinite loop in unicode/norm on invalid UTF-8); x/net v0.56.0 then carried x/crypto to v0.53.0
+// and x/sys to v0.46.0 on its own. Both are raised to exactly the fixed version rather than to the
+// latest release, because each step up drags a fresh set of requirements in behind it.
+//
+// One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
+// unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
+// statement about the package existing, not about a release. No version of x/crypto clears it, and
+// nothing here imports openpgp. See osv-scanner.toml, which is where it is set aside in writing.
+//
 // The catch: tidy keeps an indirect requirement only for a module providing a package the build
 // imports, and these provide none, so `go mod tidy` silently drops every pin back to the graph
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.55.0 google.golang.org/grpc@v1.82.1 go.opentelemetry.io/otel/sdk@v1.43.0 golang.org/x/crypto@v0.52.0 go.opentelemetry.io/otel@v1.44.0
+//	go get golang.org/x/net@v0.56.0 golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 go.opentelemetry.io/otel/sdk@v1.43.0 golang.org/x/crypto@v0.53.0 go.opentelemetry.io/otel@v1.44.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -48,10 +59,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
