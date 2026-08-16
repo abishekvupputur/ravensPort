@@ -30,7 +30,7 @@ Installers:
 # emulation; winget treats x64 as applicable there.
 - Architecture: x64
   InstallerUrl: https://github.com/abishekvupputur/ravensPort/releases/download/v4.3.2/RavensPort-Setup-4.3.2.exe
-  # Taken from the published v4.3.2 asset, not a local build: the release is built by CI from the
+  # Taken from the published release asset, not a local build: the release is built by CI from the
   # tag, and a hash that does not match what winget downloads fails validation. A local installer
   # built from the same commit hashes differently — compression settings and Inno's embedded
   # timestamps see to that — so this is downloaded from the release every time. See
