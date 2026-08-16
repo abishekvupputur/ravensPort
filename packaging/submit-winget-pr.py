@@ -3,7 +3,7 @@
 The second half of the winget submission, after update-winget-manifests.py has written the numbers
 in. Called by release.yml once the release exists, and runnable by hand for a resubmission:
 
-    python packaging/submit-winget-pr.py --version 4.3.3
+    python packaging/submit-winget-pr.py --version 4.3.4
 
 Everything goes through the GitHub API rather than a clone, and that is not an optimisation.
 winget-pkgs carries a manifest directory of several hundred thousand files; even a blobless,
@@ -52,7 +52,7 @@ def gh(*args, body=None):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True, help="digits only, e.g. 4.3.3")
+    parser.add_argument("--version", required=True, help="digits only, e.g. 4.3.4")
     parser.add_argument("--fork", required=True, help="owner/name of your winget-pkgs fork")
     parser.add_argument("--dir", default="packaging/winget")
     parser.add_argument("--repo", default="abishekvupputur/ravensPort", help="this project, for the PR body")
