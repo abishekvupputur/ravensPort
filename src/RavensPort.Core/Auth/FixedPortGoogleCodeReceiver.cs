@@ -51,13 +51,14 @@ internal sealed class FixedPortGoogleCodeReceiver(int port) : ICodeReceiver
             // Same shell-execute reasoning as LoopbackBrowser: verify it is really a web URL
             // before letting Windows decide what to launch.
             var authorizationUrl = url.Build().ToString();
-            if (!UrlValidation.IsSafeToOpenInBrowser(authorizationUrl))
+            if (!UrlValidation.IsSafeToOpenInBrowser(authorizationUrl, out var authorizationUri))
             {
                 throw new InvalidOperationException(
                     "Refusing to open the authorization URL: it is not an http/https address.");
             }
 
-            Process.Start(new ProcessStartInfo(authorizationUrl) { UseShellExecute = true });
+            // The parsed form rather than the string, so what is launched is what was checked.
+            Process.Start(new ProcessStartInfo(authorizationUri.AbsoluteUri) { UseShellExecute = true });
 
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(taskCancellationToken, timeoutCts.Token);
