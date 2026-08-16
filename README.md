@@ -106,7 +106,7 @@ reach on its own.
 ## Requirements
 
 - Windows 10/11
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or newer — only to build from
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or newer — only to build from
   source; released binaries are self-contained
 
 ## Install
@@ -968,7 +968,7 @@ dotnet publish src/RavensPort.App/RavensPort.App.csproj -p:PublishProfile=win-x6
 ```
 
 Produces a self-contained `RavensPort.exe` (~180 MB, runtime bundled) under
-`src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64/`. See
+`src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64/`. See
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) before redistributing — it bundles components
 whose licenses require their notices travel along.
 

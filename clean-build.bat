@@ -57,7 +57,7 @@ echo Build succeeded.
 
 echo Starting RavensPort...
 REM TargetFramework includes the Windows SDK version (see Directory.Build.props), so the
-REM framework output directory is net8.0-windows10.0.19041.0 rather than net8.0-windows.
+REM framework output directory is net10.0-windows10.0.19041.0 rather than net10.0-windows.
 set "APP_EXE=%~dp0publish\RavensPort.exe"
 if not exist "%APP_EXE%" (
     echo Build succeeded, but the application executable was not found:

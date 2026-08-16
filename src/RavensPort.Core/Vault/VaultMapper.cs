@@ -23,9 +23,11 @@ public sealed record VaultSecretItem(VaultItemRole Role, Guid RecordId, VaultIte
 
             var builder = new StringBuilder(Spec.Title).Append(Separator).Append(Spec.Category);
 
-            foreach (var field in Spec.Fields.OrderBy(f => f.Name, StringComparer.Ordinal))
+            // Not named `field`: C# 14 makes that a keyword inside a property accessor, where it
+            // binds to a synthesized backing field rather than the loop variable.
+            foreach (var specField in Spec.Fields.OrderBy(f => f.Name, StringComparer.Ordinal))
             {
-                builder.Append(Separator).Append(field.Name).Append(Separator).Append(field.Value);
+                builder.Append(Separator).Append(specField.Name).Append(Separator).Append(specField.Value);
             }
 
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));

@@ -27,7 +27,7 @@
 
 ; Overridable so the payload location can be pointed elsewhere without editing this file.
 #ifndef SourceExe
-  #define SourceExe "..\src\RavensPort.App\bin\Release\net8.0-windows\publish\win-x64\RavensPort.exe"
+  #define SourceExe "..\src\RavensPort.App\bin\Release\net10.0-windows\publish\win-x64\RavensPort.exe"
 #endif
 
 ; Also overridable, so the PR build can prove this script still compiles in seconds rather than

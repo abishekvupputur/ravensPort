@@ -2,7 +2,7 @@ name: Test, build, and release
 
 # Runs when a version tag is pushed (e.g. `git tag v1.2.0 && git push origin v1.2.0`):
 # test -> (if tests pass) build+publish -> create a GitHub release with the installer attached,
-# named after the tag. Windows-only runner because this is a net8.0-windows WPF app; it cannot
+# named after the tag. Windows-only runner because this is a net10.0-windows WPF app; it cannot
 # build on Linux/macOS runners.
 #
 # Two release assets: the installer, and the MSIX package uploaded to the Microsoft Store. The bare
@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -96,7 +96,7 @@ jobs:
             '-p:PublishProfile=win-x64-selfcontained',
             '-c', 'Release',
             '-p:EnableCompressionInSingleFile=false',
-            '-p:PublishDir=bin\Release\net8.0-windows\publish\win-x64-raw\'
+            '-p:PublishDir=bin\Release\net10.0-windows\publish\win-x64-raw\'
           )
           & dotnet @publishArgs
           if ($LASTEXITCODE -ne 0) {
@@ -126,7 +126,7 @@ jobs:
 
           $setup = ./installer/build.ps1 `
             -Version $version `
-            -SourceExe 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-raw/RavensPort.exe' `
+            -SourceExe 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-raw/RavensPort.exe' `
             | Select-Object -Last 1
 
           echo "setupPath=$setup" >> $env:GITHUB_OUTPUT
@@ -197,7 +197,7 @@ jobs:
 
           $package = ./packaging/build-msix.ps1 `
             -Version $version `
-            -PublishDir 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64-msix' `
+            -PublishDir 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-msix' `
             | Select-Object -Last 1
 
           echo "packagePath=$package" >> $env:GITHUB_OUTPUT

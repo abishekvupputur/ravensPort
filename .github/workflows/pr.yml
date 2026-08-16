@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -81,5 +81,5 @@ jobs:
         run: |
           ./installer/build.ps1 `
             -Version '0.0.0' `
-            -SourceExe 'src/RavensPort.App/bin/Release/net8.0-windows/publish/win-x64/RavensPort.exe' `
+            -SourceExe 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64/RavensPort.exe' `
             -CompressionMode none

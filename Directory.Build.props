@@ -49,7 +49,7 @@
       HelloKeyProtector. The cost is a floor of Windows 10 2004 (May 2020); the app is Windows-only
       and self-contained already, so this narrows the audience less than it looks.
     -->
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 
     <!-- Runs on anything from Windows 10 1809 up; only the Hello path needs 2004, and it checks. -->
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
@@ -62,7 +62,7 @@
       Needed because not every job that touches this repository is one we write. GitHub's Automatic
       Dependency Submission — the managed workflow that populates the dependency graph once
       Dependabot is enabled — runs `dotnet restore` on ubuntu against every csproj it finds, and it
-      is not editable. Every project here targets net8.0-windows10.0.19041.0, so it failed on all
+      is not editable. Every project here targets net10.0-windows10.0.19041.0, so it failed on all
       three and submitted no graph at all, which quietly takes Dependabot alerts down with it.
 
       This app is still Windows-only and still cannot run anywhere else. This only means the
