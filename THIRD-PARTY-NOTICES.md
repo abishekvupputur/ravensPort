@@ -86,11 +86,15 @@ so all of the following are redistributed with the binary even though none appea
 | golang.org/x/sys | v0.45.0 | BSD-3-Clause |
 | google.golang.org/protobuf | v1.36.11 | BSD-3-Clause |
 
-`go.mod` also pins `golang.org/x/net`, `google.golang.org/grpc`, `go.opentelemetry.io/otel/sdk`,
-`golang.org/x/text` and `google.golang.org/genproto/googleapis/rpc`, which are deliberately absent
-from the table: no package in any of them is imported, so `-buildmode=c-shared` links none of them
-into the DLL and none is redistributed. See the comment in `src/OnePasswordNative/go.mod` for why
-the pins exist.
+The table is shorter than `go.mod`'s require block, and deliberately so. Everything else in there
+— `golang.org/x/net`, `golang.org/x/crypto`, `google.golang.org/grpc`, `go.opentelemetry.io/otel`
+and its `sdk`/`metric`/`trace`, `golang.org/x/text`, `google.golang.org/genproto/googleapis/rpc`,
+`go.opentelemetry.io/auto/sdk`, `github.com/go-logr/*` and `github.com/cespare/xxhash/v2` — is a
+version floor raised for the dependency scanners, not something the build uses. No package in any
+of them is imported, so `-buildmode=c-shared` links none of them into the DLL and none is
+redistributed. `go.opentelemetry.io/proto/otlp` above is the one that looks similar and is not:
+it is genuinely linked. See the comment in `src/OnePasswordNative/go.mod` for why the floors exist
+and why the list grows.
 
 ## Required NOTICE passthrough
 
