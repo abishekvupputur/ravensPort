@@ -1,0 +1,12 @@
+# Snyk (https://snyk.io) policy file
+---
+# Snyk Code cannot ignore individual findings from this file, only exclude paths.
+# The test project is excluded because every credential-shaped literal in it is a
+# fixture, not a live secret: SENTINEL-* placeholders, trivial fakes ("secret",
+# "s3cret", "hunter2"), padded strings that only exist to clear minimum-length
+# validation, and shape-only tokens such as ghp_AAAA... used in negative tests.
+# Several of those constants are the subject of the tests that assert secrets are
+# redacted and never written to disk. None of them appear anywhere under src/.
+exclude:
+  code:
+    - tests/**
