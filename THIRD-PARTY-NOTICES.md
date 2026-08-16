@@ -74,7 +74,7 @@ so all of the following are redistributed with the binary even though none appea
 
 | Component | Version | License |
 |---|---|---|
-| Go runtime and standard library | 1.26.5 | BSD-3-Clause |
+| Go runtime and standard library | 1.26.6 | BSD-3-Clause |
 | github.com/1password/onepassword-sdk-go | v0.4.1 | MIT |
 | github.com/extism/go-sdk | v1.7.1 | BSD-3-Clause |
 | github.com/tetratelabs/wazero | v1.11.0 | Apache-2.0 |
