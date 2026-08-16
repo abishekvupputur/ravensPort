@@ -71,9 +71,19 @@ Submitting pushes to *your fork* of winget-pkgs, which this repository's own `GI
 rights over. So it needs a PAT in a repository secret named **`WINGET_PKGS_TOKEN`**:
 
 1. Fork `microsoft/winget-pkgs` if you have not (the job syncs it with upstream on every run).
-2. Create a fine-grained PAT with **Contents: read and write** on that fork, and **Pull requests:
-   read and write**.
-3. Add it as the `WINGET_PKGS_TOKEN` repository secret.
+2. Create a **classic** PAT with the **`public_repo`** scope, at
+   <https://github.com/settings/tokens>.
+3. Add it as the `WINGET_PKGS_TOKEN` repository secret, under **Settings → Secrets and variables →
+   Actions**, or with `gh secret set WINGET_PKGS_TOKEN`.
+
+Classic, not fine-grained, and the reason is not preference. A fine-grained token only acts on
+repositories owned by the owner you select, and the pull request is opened against
+`microsoft/winget-pkgs` — which you cannot select, because you do not own it. The token needs to
+write to your fork *and* open a pull request on a repository that is not yours, and `public_repo` is
+the scope that spans both. It is also what `wingetcreate` asks for, for the same reason.
+
+`public_repo` is write access to every public repository you can push to, so it is worth creating
+this token for this purpose alone rather than reusing one, and worth giving it an expiry.
 
 **Without it the release still succeeds.** The job stops at that point and writes the manual
 commands into the run summary, rather than painting a finished release red over a missing optional

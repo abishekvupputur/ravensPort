@@ -349,9 +349,11 @@ jobs:
               echo 'No `WINGET_PKGS_TOKEN` secret is set, so the winget-pkgs pull request was not opened.'
               echo 'The release itself published normally.'
               echo
-              echo 'To enable it: create a fine-grained PAT with **Contents: read and write** on your'
-              echo '`winget-pkgs` fork and **Pull requests: read and write**, then add it as the'
-              echo '`WINGET_PKGS_TOKEN` repository secret. See `docs/WINGET-SUBMISSION.md`.'
+              echo 'To enable it: create a **classic** PAT with the `public_repo` scope at'
+              echo 'https://github.com/settings/tokens, then add it as the `WINGET_PKGS_TOKEN`'
+              echo 'repository secret. Fine-grained tokens cannot do this — the pull request is'
+              echo 'opened against `microsoft/winget-pkgs`, which you cannot scope one to.'
+              echo 'See `docs/WINGET-SUBMISSION.md`.'
               echo
               echo 'To submit this version by hand in the meantime:'
               echo
