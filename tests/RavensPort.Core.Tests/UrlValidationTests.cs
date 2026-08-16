@@ -59,4 +59,41 @@ public class UrlValidationTests
         // launch a program or protocol handler instead of a browser.
         Assert.Equal(expected, UrlValidation.IsSafeToOpenInBrowser(url));
     }
+
+    [Fact]
+    public void IsSafeToOpenInBrowser_HandsBackTheParsedUri()
+    {
+        // The callers launch this rather than the string they passed in, so that what Windows
+        // resolves is what the scheme check inspected.
+        Assert.True(UrlValidation.IsSafeToOpenInBrowser("https://accounts.google.com/o/oauth2/auth", out var uri));
+        Assert.Equal("https://accounts.google.com/o/oauth2/auth", uri.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("ms-settings:privacy")]
+    [InlineData("not a url")]
+    public void IsSafeToOpenInBrowser_RejectionYieldsNothingToLaunch(string url)
+    {
+        // ms-settings parses fine and fails on scheme; "not a url" fails to parse at all. Neither
+        // may leave a caller with a URI it would then shell out.
+        Assert.False(UrlValidation.IsSafeToOpenInBrowser(url, out var uri));
+        Assert.True(uri is null || uri.Scheme is not ("http" or "https"));
+    }
+
+    [Fact]
+    public void IsSafeToOpenInBrowser_KeepsTheAuthorizationQueryIntact()
+    {
+        // The one real risk in launching AbsoluteUri instead of the original string: an OAuth
+        // authorization URL carries redirect_uri, scope and state percent-encoded, and a
+        // normalization that decoded or reordered any of them would break sign-in rather than
+        // secure it. Uri leaves reserved characters (%3A, %2F) escaped, which is what this pins.
+        const string authorize = "https://accounts.google.com/o/oauth2/auth"
+            + "?client_id=abc.apps.googleusercontent.com"
+            + "&redirect_uri=http%3A%2F%2F127.0.0.1%3A51005%2Fcallback%2F"
+            + "&scope=openid+email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive"
+            + "&state=xyz%3D%3D&code_challenge_method=S256";
+
+        Assert.True(UrlValidation.IsSafeToOpenInBrowser(authorize, out var uri));
+        Assert.Equal(authorize, uri.AbsoluteUri);
+    }
 }

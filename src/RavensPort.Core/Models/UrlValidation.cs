@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace RavensPort.Core.Models;
 
 /// <summary>
@@ -44,8 +46,19 @@ public static class UrlValidation
     /// Gate for anything about to be handed to Process.Start with UseShellExecute, where a
     /// non-http value would launch a program or protocol handler rather than a browser.
     /// </summary>
-    public static bool IsSafeToOpenInBrowser(string? url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+    public static bool IsSafeToOpenInBrowser(string? url) => IsSafeToOpenInBrowser(url, out _);
+
+    /// <summary>
+    /// As above, and hands back what it parsed.
+    ///
+    /// Callers shell out <c>uri.AbsoluteUri</c> rather than the string they passed in, so the
+    /// value Windows resolves is the one this method actually inspected. Checking a string and
+    /// then launching that same string leaves a gap wherever Uri's parse differs from what the
+    /// shell makes of it; passing the parsed form closes it by construction. AbsoluteUri is the
+    /// documented fully-escaped form, so nothing is decoded on the way out.
+    /// </summary>
+    public static bool IsSafeToOpenInBrowser(string? url, [NotNullWhen(true)] out Uri? uri) =>
+        Uri.TryCreate(url, UriKind.Absolute, out uri)
         && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
 
     private static bool IsLoopback(Uri uri) =>

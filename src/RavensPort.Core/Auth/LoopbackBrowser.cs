@@ -63,7 +63,7 @@ public sealed class LoopbackBrowser : IBrowser
             // protocol handler, a UNC path, an executable — not necessarily a browser. The URL
             // is built from user-editable endpoint config, so check the scheme before handing
             // it to the shell.
-            if (!UrlValidation.IsSafeToOpenInBrowser(options.StartUrl))
+            if (!UrlValidation.IsSafeToOpenInBrowser(options.StartUrl, out var startUri))
             {
                 return new BrowserResult
                 {
@@ -73,7 +73,9 @@ public sealed class LoopbackBrowser : IBrowser
                 };
             }
 
-            Process.Start(new ProcessStartInfo(options.StartUrl) { UseShellExecute = true });
+            // The parsed form, not options.StartUrl: what gets launched is then exactly what the
+            // scheme check inspected.
+            Process.Start(new ProcessStartInfo(startUri.AbsoluteUri) { UseShellExecute = true });
 
             var timeout = options.Timeout > TimeSpan.Zero ? options.Timeout : TimeSpan.FromMinutes(5);
             using var timeoutCts = new CancellationTokenSource(timeout);

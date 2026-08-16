@@ -345,7 +345,7 @@ public sealed class DeviceCodeService : IDisposable
         // The URL comes from a provider named by user-editable configuration, and UseShellExecute
         // hands whatever it is to the shell — a protocol handler, a UNC path, an executable. Same
         // guard the loopback browser applies for the same reason.
-        if (!UrlValidation.IsSafeToOpenInBrowser(url))
+        if (!UrlValidation.IsSafeToOpenInBrowser(url, out var verificationUri))
         {
             _activityLog.Log($"DEVICE '{credentialName}' verification URL is not an http/https address — not opening it");
             return;
@@ -353,7 +353,8 @@ public sealed class DeviceCodeService : IDisposable
 
         try
         {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            // The parsed form rather than the string, so what is launched is what was checked.
+            Process.Start(new ProcessStartInfo(verificationUri.AbsoluteUri) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
