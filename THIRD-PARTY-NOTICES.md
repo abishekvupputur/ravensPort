@@ -83,8 +83,14 @@ so all of the following are redistributed with the binary even though none appea
 | github.com/gobwas/glob | v0.2.3 | MIT |
 | github.com/ianlancetaylor/demangle | v0.0.0-20251118225945-96ee0021ea0f | BSD-3-Clause |
 | go.opentelemetry.io/proto/otlp | v1.9.0 | Apache-2.0 |
-| golang.org/x/sys | v0.44.0 | BSD-3-Clause |
+| golang.org/x/sys | v0.45.0 | BSD-3-Clause |
 | google.golang.org/protobuf | v1.36.11 | BSD-3-Clause |
+
+`go.mod` also pins `golang.org/x/net`, `google.golang.org/grpc`, `go.opentelemetry.io/otel/sdk`,
+`golang.org/x/text` and `google.golang.org/genproto/googleapis/rpc`, which are deliberately absent
+from the table: no package in any of them is imported, so `-buildmode=c-shared` links none of them
+into the DLL and none is redistributed. See the comment in `src/OnePasswordNative/go.mod` for why
+the pins exist.
 
 ## Required NOTICE passthrough
 
