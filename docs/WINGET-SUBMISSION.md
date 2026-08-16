@@ -40,7 +40,68 @@ Values that were not invented for the manifest, and where they came from:
 - Only an `x64` installer is listed. `ArchitecturesAllowed=x64compatible` means it installs and runs
   on ARM64 Windows under emulation, and winget treats x64 as applicable on ARM64.
 
-## Submitting a version
+## Submitting a version: automatic
+
+Pushing a version tag does it. `release.yml`'s `winget-manifests` job runs after the release is
+published and opens the `microsoft/winget-pkgs` pull request itself.
+
+Ordering matters and is deliberate: the manifest carries the installer's download URL and winget's
+validation pipeline fetches it, so the submission has to come *after* `gh release create`, not
+beside it.
+
+| Step | Script |
+|---|---|
+| Rewrite version, URL, SHA256, release date, release-notes link | `packaging/update-winget-manifests.py` |
+| Schema-check the result | `packaging/validate-winget-manifests.py` |
+| Push to the fork and open the PR | `packaging/submit-winget-pr.py` |
+
+**The hash comes from the build, not from a later download.** The release job hashes the installer
+it just built, scanned and install-tested, and hands it over as a job output. It cannot be
+recomputed: Inno embeds a timestamp and its compression is not bit-reproducible, so the same commit
+built twice gives two different hashes, and only the build behind the published URL knows the right
+one.
+
+Only the five fields that move are rewritten. Everything else in those manifests is hand-written
+prose explaining why a value is what it is, and it survives — winget-pkgs keeps the comments in what
+it merges, and they are the only place that reasoning is written down.
+
+### The one secret it needs
+
+Submitting pushes to *your fork* of winget-pkgs, which this repository's own `GITHUB_TOKEN` has no
+rights over. So it needs a PAT in a repository secret named **`WINGET_PKGS_TOKEN`**:
+
+1. Fork `microsoft/winget-pkgs` if you have not (the job syncs it with upstream on every run).
+2. Create a fine-grained PAT with **Contents: read and write** on that fork, and **Pull requests:
+   read and write**.
+3. Add it as the `WINGET_PKGS_TOKEN` repository secret.
+
+**Without it the release still succeeds.** The job stops at that point and writes the manual
+commands into the run summary, rather than painting a finished release red over a missing optional
+credential.
+
+### What stops it doing the wrong thing
+
+- **Already published** — if `manifests/a/AbishekNarasimhan/RavensPort/<version>/` exists upstream,
+  it stops. Versions there are immutable, so a second submission could only ever be closed again.
+- **Already open** — an existing open PR from the same branch is reported instead of a second one
+  being opened. The submission checklist asks for one PR per manifest.
+- **Manifests not rendered** — `submit-winget-pr.py` reads `PackageVersion` back out of the files
+  and refuses if it disagrees with `--version`, so a submission can never claim a version the
+  manifests inside it do not.
+
+### Doing it by hand
+
+The same two scripts, which is the point of them being scripts:
+
+```powershell
+python packaging/update-winget-manifests.py --version 4.3.3 --sha256 <hash of the published asset>
+python packaging/submit-winget-pr.py --version 4.3.3 --fork <you>/winget-pkgs
+```
+
+`gh` supplies the credentials. The manual route below still works too, and is worth reading once
+for what the automation is actually doing.
+
+## Submitting a version: by hand
 
 1. **Verify the manifests locally.**
 

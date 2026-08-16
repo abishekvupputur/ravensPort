@@ -34,6 +34,13 @@ jobs:
       id-token: write # OIDC token used to sign the build provenance attestation
       attestations: write # publish that attestation to the repo
 
+    # Handed to the winget-manifests job below, which cannot recompute any of them: it runs on a
+    # different runner with no access to this one's build output.
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      setupName: ${{ steps.hash.outputs.setupName }}
+      sha256: ${{ steps.hash.outputs.sha256 }}
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -152,6 +159,25 @@ jobs:
           $version = "${{ steps.version.outputs.version }}" -replace '^v', ''
           ./installer/test-install.ps1 -SetupExe '${{ steps.installer.outputs.setupPath }}' -Version $version
 
+      # The number winget publishes, taken from the file that just passed the two gates above.
+      #
+      # It has to be captured here rather than recomputed later, and that is the whole point: an
+      # installer built a second time from the same commit hashes differently, because Inno embeds
+      # a timestamp and the compression is not bit-reproducible. So there is exactly one build whose
+      # hash is the right one -- this one -- and it is the one being uploaded a few steps down.
+      # Recording it now is what makes the manifest PR below trustworthy instead of a guess.
+      - name: Hash the installer
+        id: hash
+        shell: pwsh
+        env:
+          SETUP_PATH: ${{ steps.installer.outputs.setupPath }}
+        run: |
+          $sha = (Get-FileHash -Algorithm SHA256 -Path $env:SETUP_PATH).Hash
+          $name = Split-Path -Leaf $env:SETUP_PATH
+          echo "sha256=$sha" >> $env:GITHUB_OUTPUT
+          echo "setupName=$name" >> $env:GITHUB_OUTPUT
+          Write-Host "$name  SHA256 $sha"
+
       # --- Microsoft Store package -------------------------------------------------------------
       # The Store submission is this MSIX, not the installer above. Policy 10.2.9 requires every PE
       # in an EXE/MSI submission to be signed by a CA in the Microsoft Trusted Root Program, and the
@@ -249,3 +275,101 @@ jobs:
             $env:SETUP_PATH `
             $env:MSIX_PATH
           if ($LASTEXITCODE -ne 0) { exit 1 }
+
+  # --- winget ---------------------------------------------------------------------------------
+  # Opens the microsoft/winget-pkgs pull request for the version that was just released.
+  #
+  # A separate job, and deliberately after the release exists: the manifest carries the installer's
+  # download URL, and winget's validation pipeline fetches it. Submitting before `gh release create`
+  # has run would put a 404 in front of it.
+  #
+  # It cannot recompute anything the job above measured. The hash in particular has to be the one
+  # taken from the artifact that was uploaded -- Inno embeds a timestamp and its compression is not
+  # bit-reproducible, so rebuilding the same commit gives a different hash and the submission would
+  # fail validation on a file nobody can reproduce. Hence the outputs on the job above.
+  #
+  # ubuntu, unlike everything above it: this only edits YAML and calls the GitHub API.
+  winget-manifests:
+    name: Open the winget-pkgs pull request
+    needs: test-build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing is pushed to this repository. The fork this submits through is reached with the
+          # PAT below, and leaving the checkout token in .git/config would only widen what a
+          # compromised step could use.
+          persist-credentials: false
+
+      # The version, URL, hash, release date and release-notes link. Everything else in those files
+      # is hand-written prose explaining why a value is what it is, and it survives -- winget-pkgs
+      # keeps the comments in what it merges.
+      - name: Render the manifests for this release
+        env:
+          VERSION: ${{ needs.test-build-release.outputs.version }}
+          SHA256: ${{ needs.test-build-release.outputs.sha256 }}
+        run: |
+          python3 packaging/update-winget-manifests.py \
+            --version "${VERSION#v}" \
+            --sha256 "$SHA256" \
+            --repo "${{ github.repository }}"
+          git --no-pager diff --stat
+
+      # The same check installer-scan.yml runs on every pull request, against the same published
+      # schemas. Repeated here because what it is checking is different now: there, the committed
+      # manifests; here, the ones this job just rewrote.
+      - name: Validate the rendered manifests
+        run: |
+          python3 -m pip install --quiet pyyaml jsonschema
+          python3 packaging/validate-winget-manifests.py packaging/winget
+
+      # Submitting needs a PAT: it pushes to a fork of winget-pkgs, which this repository's own
+      # GITHUB_TOKEN has no rights over. Absent, the job stops here rather than failing -- the
+      # release itself is already published and complete, and a missing optional credential is not
+      # a reason to paint a green release red. The summary says what to do about it.
+      #
+      # `secrets` cannot be read from a job-level `if`, which is why this is a step.
+      - name: Check for the submission token
+        id: token
+        env:
+          WINGET_PKGS_TOKEN: ${{ secrets.WINGET_PKGS_TOKEN }}
+          VERSION: ${{ needs.test-build-release.outputs.version }}
+          SHA256: ${{ needs.test-build-release.outputs.sha256 }}
+        run: |
+          if [ -n "$WINGET_PKGS_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### winget submission skipped"
+              echo
+              echo 'No `WINGET_PKGS_TOKEN` secret is set, so the winget-pkgs pull request was not opened.'
+              echo 'The release itself published normally.'
+              echo
+              echo 'To enable it: create a fine-grained PAT with **Contents: read and write** on your'
+              echo '`winget-pkgs` fork and **Pull requests: read and write**, then add it as the'
+              echo '`WINGET_PKGS_TOKEN` repository secret. See `docs/WINGET-SUBMISSION.md`.'
+              echo
+              echo 'To submit this version by hand in the meantime:'
+              echo
+              echo '```'
+              echo "python packaging/update-winget-manifests.py --version ${VERSION#v} --sha256 $SHA256"
+              echo "python packaging/submit-winget-pr.py --version ${VERSION#v} --fork <you>/winget-pkgs"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open the pull request
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_PKGS_TOKEN }}
+          VERSION: ${{ needs.test-build-release.outputs.version }}
+        run: |
+          fork="$(gh api user --jq .login)/winget-pkgs"
+          python3 packaging/submit-winget-pr.py \
+            --version "${VERSION#v}" \
+            --fork "$fork" \
+            --repo "${{ github.repository }}" | tee -a "$GITHUB_STEP_SUMMARY"
