@@ -26,6 +26,7 @@ Usage:  python packaging/validate-winget-manifests.py [manifest-dir]
 
 import json
 import pathlib
+import re
 import sys
 import urllib.request
 
@@ -44,6 +45,20 @@ SCHEMA_URL = (
     "https://raw.githubusercontent.com/microsoft/winget-cli/master"
     "/schemas/JSON/manifests/v{version}/manifest.{name}.{version}.json"
 )
+
+# ManifestVersion is substituted into that URL twice, and it is read straight out of a manifest
+# rather than chosen here, so it is checked before it is used. A value carrying slashes or dot
+# segments steers the fetch at some other path -- and raw.githubusercontent.com serves every
+# repository on GitHub, so "somewhere else on the same host" includes a schema an attacker wrote,
+# which would then approve whatever manifest referenced it.
+#
+# The check earns its place on the ordinary failure too: without it a missing or misspelled
+# ManifestVersion means a 404 inside load_schema and a urllib traceback, instead of the FAIL line
+# every other malformed manifest gets. winget's schema versions are three dotted numbers (1.12.0).
+#
+# ManifestType needs no equivalent: it is looked up in SCHEMA_NAMES, so only those four literals
+# ever reach the URL.
+VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 
 _schema_cache = {}
 
@@ -104,6 +119,13 @@ def main(directory):
         manifest_version = document.get("ManifestVersion")
         if manifest_type not in SCHEMA_NAMES:
             print(f"FAIL {path.name}: unknown ManifestType {manifest_type!r}")
+            failures += 1
+            continue
+
+        # Before it reaches the schema URL -- see VERSION_PATTERN. str() because an unquoted 1.12
+        # is a float by the time it gets here, and that is a malformed version, not a crash.
+        if not VERSION_PATTERN.fullmatch(str(manifest_version)):
+            print(f"FAIL {path.name}: unusable ManifestVersion {manifest_version!r}")
             failures += 1
             continue
 
