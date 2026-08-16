@@ -157,7 +157,13 @@ public static class MtlsCertificateFactory
     {
         try
         {
-            return new X509Certificate2(Convert.FromBase64String(base64Pfx), Resolve(password), StorageFlags);
+            // X509CertificateLoader, not the X509Certificate2 constructor: that overload is
+            // obsolete as of .NET 9 (SYSLIB0057) because it guessed at the format of the bytes it
+            // was handed. This says PKCS#12 outright, which is what a PFX is and the only thing
+            // this ever loads -- so a blob that is something else now fails as one rather than
+            // being sniffed into a certificate with no private key and failing at the handshake.
+            return X509CertificateLoader.LoadPkcs12(
+                Convert.FromBase64String(base64Pfx), Resolve(password), StorageFlags);
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException)
         {

@@ -182,7 +182,20 @@ public static class ExecutableSignature
     {
         try
         {
+            // SYSLIB0057 obsoletes CreateFromSignedFile along with the certificate constructors,
+            // and points at X509CertificateLoader. That replacement does not cover this case:
+            // X509CertificateLoader loads a certificate *file* -- LoadCertificate,
+            // LoadCertificateFromFile, LoadPkcs12 and friends, and that is the whole of its surface
+            // -- whereas this pulls the Authenticode signer back out of a signed executable, which
+            // has no managed equivalent. The alternative is P/Invoking CryptQueryObject by hand, in
+            // the one file that decides whether a binary is allowed to run at all, to silence a
+            // warning rather than to fix a defect.
+            //
+            // Scoped to the single call, so the rest of the file still reports the obsoletion. Worth
+            // revisiting if a loader for signed files ever appears.
+#pragma warning disable SYSLIB0057
             using var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+#pragma warning restore SYSLIB0057
             var name = certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
 
             return string.IsNullOrWhiteSpace(name) ? null : name;
