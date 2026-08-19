@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using RavensPort.Core.Diagnostics;
@@ -107,6 +107,12 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // Before anything else touches the profile directory: the pre-2.0 store is a blob of the
+        // user's credentials that this version cannot read, so there is no reason for it to live
+        // through a launch. Zeroed and deleted, never merely unlinked. Unconditional and silent —
+        // a prompt would only ever be answered "yes", and a "no" would leave secrets on disk.
+        PurgeLegacyStore();
+
         // Everything below can fail in ways that used to leave a live process with no tray
         // icon, no window, and no message: a listen port already in use throws out of
         // app.Start(), and DispatcherUnhandledException then marked it handled, so the app
@@ -121,6 +127,28 @@ public partial class App : Application
         {
             ReportStartupFailure(ex);
             Shutdown();
+        }
+    }
+
+    /// <summary>
+    /// Wipes the pre-2.0 store file. Silent on success, which is the ordinary case and includes
+    /// the file never having existed. A failure means something else holds the file open, so it
+    /// is recorded rather than shown: the launch is unaffected, and the next start tries again.
+    /// </summary>
+    private static void PurgeLegacyStore()
+    {
+        try
+        {
+            if (LegacyStorePurge.Purge()) return;
+
+            new ActivityLog().Log(
+                "The pre-2.0 store.dat could not be removed — it is still on disk. "
+                + "Close anything holding it open; RavensPort tries again on the next start.");
+        }
+        catch
+        {
+            // Logging is the whole of this method's failure path, so there is nowhere left to
+            // report to. Never worth failing a launch over.
         }
     }
 

@@ -41,8 +41,10 @@ into filtered, per-agent MCP endpoints.
 > Credentials, upstreams, routes, MCP sources and funnels all need to be set up again, and every
 > client needs to be handed the new key for the endpoint it calls.
 >
-> The old `%AppData%\RavensPort\store.dat` is left where it is — RavensPort never reads or
-> deletes it, and the setup page offers to delete it once you are done with it.
+> **The old `%AppData%\RavensPort\store.dat` is erased the first time you start this version** —
+> every byte overwritten with zeros, then the file deleted. It is never read, and it is not kept
+> for reference: it is a blob of your old credentials that nothing can open any more, so it is not
+> left sitting on the disk. There is no prompt and no undo.
 >
 > You will need **1Password** or **Proton Pass** installed and unlocked — or, for 1Password, a
 > service account token, which needs nothing installed at all. The Microsoft Store build has no

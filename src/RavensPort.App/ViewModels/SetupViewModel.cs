@@ -1,6 +1,5 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.App.Views;
@@ -26,12 +25,6 @@ public sealed partial class SetupViewModel(
     OnePasswordSession onePasswordSession,
     HelloKeyProtector helloKeyProtector) : ObservableObject
 {
-    /// <summary>The pre-vault store, kept only so the page can offer to delete it.</summary>
-    private static readonly string LegacyStorePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "RavensPort",
-        "store.dat");
-
     public ObservableCollection<ManagerCardViewModel> Managers { get; } = [];
 
     /// <summary>
@@ -65,6 +58,10 @@ public sealed partial class SetupViewModel(
     [ObservableProperty] private bool _hasPortConflict;
     [ObservableProperty] private string _listenPort = "5559";
 
+    /// <summary>
+    /// Set only when the pre-2.0 store survived the wipe at startup — normally it is gone before
+    /// this page is ever built, so the card stays hidden. See <see cref="LegacyStorePurge"/>.
+    /// </summary>
     [ObservableProperty] private bool _hasLegacyStore;
 
     /// <summary>Raised when the gate opens, so the host can start the proxy.</summary>
@@ -862,24 +859,22 @@ public sealed partial class SetupViewModel(
     }
 
     /// <summary>
-    /// Deletes the pre-vault store. Offered rather than done automatically: it is an encrypted
-    /// file full of the user's secrets, and this version can no longer read it — silently
-    /// destroying it on their behalf is not this app's call to make.
+    /// Retries the wipe of the pre-vault store. Startup already tried and failed, or this card
+    /// would not be on screen; the button exists so the user can close whatever was holding the
+    /// file open and finish the job without restarting.
     /// </summary>
     [RelayCommand]
     private void DeleteLegacyStore()
     {
-        try
+        if (LegacyStorePurge.Purge())
         {
-            if (File.Exists(LegacyStorePath)) File.Delete(LegacyStorePath);
-
             HasLegacyStore = false;
-            StatusMessage = "Deleted the old configuration file.";
+            StatusMessage = "The old configuration file has been overwritten and deleted.";
+            return;
         }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Could not delete it: {ex.Message}";
-        }
+
+        StatusMessage =
+            "The old file is still there — something else has it open. Close it and try again.";
     }
 
     /// <summary>
@@ -927,7 +922,9 @@ public sealed partial class SetupViewModel(
 
         NeedsAChoice = status.NeedsAChoice;
         IsDisconnected = gate.IsDisconnected;
-        HasLegacyStore = File.Exists(LegacyStorePath);
+        // Startup wipes this file; retried here because the page is rebuilt on every check, and a
+        // handle that blocked the first attempt may since have gone.
+        HasLegacyStore = !LegacyStorePurge.Purge();
 
         // Re-read on every evaluation: signing out happens on the Settings tab, which deletes the
         // session and clears the key without this page hearing about it directly.

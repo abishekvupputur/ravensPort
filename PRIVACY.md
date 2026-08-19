@@ -89,9 +89,15 @@ that exists only in RavensPort's memory and is never written to disk: the files 
 be read by anything — including RavensPort — without the key you paste in. Signing out deletes
 them. Losing the key costs you the session and nothing else; your data is in Proton Pass.
 
-If you upgraded from a version before 2.0, an old `%AppData%\RavensPort\store.dat` may still exist
-from that version. RavensPort never reads it and never deletes it on its own; the setup page offers
-to delete it for you.
+**The legacy store is destroyed at startup.** If you upgraded from a version before 2.0, an old
+`%AppData%\RavensPort\store.dat` may exist from that version — an encrypted blob holding every
+credential you had then. RavensPort never reads it, and does not leave it lying around either:
+on every start, if that file is present, each of its bytes is overwritten with zeros and flushed to
+the drive before the file is deleted. The overwrite is what makes this a wipe rather than an unlink,
+which would leave the old bytes recoverable on the volume until something else reused the space.
+This is unconditional and silent — there is no setting and no prompt. If another program has the
+file open the wipe cannot run; the setup page then says so and offers to retry, and the next start
+tries again by itself.
 
 ### 3.3 What the logs deliberately do not contain
 
@@ -154,7 +160,7 @@ from your own systems:
 | RavensPort's Proton Pass session | **Sign out of Proton Pass** on the setup page, or delete `%LocalAppData%\RavensPort\pass-session\` |
 | The downloaded Proton Pass CLI | Delete `%LocalAppData%\RavensPort\cli\` |
 | Autostart entry | Turn off **Start with Windows**, or delete the `RavensPort` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
-| Legacy pre-2.0 store | Delete `%AppData%\RavensPort\store.dat` |
+| Legacy pre-2.0 store | Nothing to do — RavensPort zeros and deletes `%AppData%\RavensPort\store.dat` at startup |
 | The application | Delete the executable. It is self-contained and has no installer |
 
 Revoking an OAuth grant is separate: **Disconnect** on a credential clears the local token but does
