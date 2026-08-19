@@ -181,7 +181,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          .\snyk.exe test --all-projects --detection-depth=4 --sarif-file-output=snyk.sarif
+          .\snyk.exe test --all-projects --sarif-file-output=snyk.sarif
           # Explicit, because GitHub's pwsh wrapper exits with $LASTEXITCODE and the CLI returns 1
           # whenever it found anything. The gate below is what decides whether that matters.
           exit 0
@@ -198,22 +198,22 @@ jobs:
           # resolved a Snyk finding or the other way round.
           category: "snyk"
 
-      # The gate, threshold-matched to dependency-scan.yml rather than to osv-scanner.yml. Those
-      # two disagree on purpose: OSV-Scanner gates on any advisory because it reads pinned lock
-      # files and the tree is clean, while the NuGet pass gates on High and Critical because a
-      # Moderate advisory in a transitive package is worth seeing and is not worth blocking a merge
-      # on. This asks the same question of the same packages, so it takes the same answer --
-      # everything below High still appears in the Security tab from the pass above.
+      # The gate, set between the two thresholds already in this repository. OSV-Scanner gates on
+      # any advisory at all because it reads pinned lock files and the tree is clean; the NuGet pass
+      # in dependency-scan.yml gates on High and Critical only. Medium here means a Moderate
+      # advisory in a transitive package blocks a merge rather than being left to be noticed in the
+      # Security tab, and Low still only reports.
       #
       # One threshold over both ecosystems, which is a real decision now that Go is in scope. The
       # graph-only pins in go.mod exist because scanners read the module graph, so raising one is
-      # already the routine answer here; a High advisory against a module in that graph will fail
-      # this job even though govulncheck calls it unreachable, and the fix is the same `go get`
-      # the go.mod comment spells out. Setting a Go-specific threshold would mean maintaining two
-      # numbers to hide a case that has a one-line fix.
+      # already the routine answer here; an advisory against a module in that graph will fail this
+      # job even though govulncheck calls it unreachable, and the fix is the same `go get` the
+      # go.mod comment spells out. Medium rather than High makes that a more frequent event -- the
+      # trade taken deliberately, since the fix is one line and the alternative is a known advisory
+      # sitting in the graph until somebody reads an alert.
       - name: Run Snyk (gate)
         if: always()
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         shell: pwsh
-        run: .\snyk.exe test --all-projects --detection-depth=4 --severity-threshold=high
+        run: .\snyk.exe test --all-projects --severity-threshold=medium
