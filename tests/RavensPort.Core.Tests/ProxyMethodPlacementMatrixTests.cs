@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -59,14 +59,19 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
         return data;
     }
 
-    /// <summary>Every verb crossed with every placement.</summary>
+    /// <summary>
+    /// Every verb crossed with every placement a route may actually use. Query is excluded
+    /// deliberately: it is no longer a way to send a credential, so asking whether it delivers a
+    /// token for each verb is asking the wrong question. What happens instead — no route at all,
+    /// for every verb — is pinned by <see cref="AQueryPlacementRouteIsNotServedAtAll"/>.
+    /// </summary>
     public static TheoryData<string, CredentialPlacement> MethodPlacementMatrix()
     {
         var data = new TheoryData<string, CredentialPlacement>();
 
         foreach (var method in new[] { "GET", "POST", "PUT", "PATCH", "DELETE" })
         {
-            foreach (var placement in Enum.GetValues<CredentialPlacement>())
+            foreach (var placement in CredentialPlacements.Permitted)
             {
                 data.Add(method, placement);
             }
@@ -168,6 +173,8 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
                 });
 
             AddRoute(PrefixFor(CredentialPlacement.Header), CredentialPlacement.Header, "Authorization", "Bearer ");
+            // Kept even though nothing may create one any more: this is what a store written by
+            // an older build holds, and the proxy has to refuse it rather than honour it.
             AddRoute(PrefixFor(CredentialPlacement.Query), CredentialPlacement.Query, "access_token", "");
             AddRoute(PrefixFor(CredentialPlacement.Body), CredentialPlacement.Body, "access_token", "");
         });
@@ -214,11 +221,6 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
             case CredentialPlacement.Header:
                 Assert.Equal($"Bearer {Token}", seen.Header("Authorization"));
                 Assert.DoesNotContain(Token, seen.Query);
-                break;
-
-            case CredentialPlacement.Query:
-                Assert.Contains($"access_token={Token}", seen.Query);
-                Assert.Null(seen.Header("Authorization"));
                 break;
 
             case CredentialPlacement.Body:
@@ -285,10 +287,12 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
 
     [Theory]
     [MemberData(nameof(AllMethods))]
-    public async Task TheApiKeyMayAlsoArriveInTheQueryForEveryMethod(string method)
+    public async Task TheApiKeyInTheQueryIsRefusedForEveryMethod(string method)
     {
-        // The fallback that exists for clients which cannot set headers — browser EventSource,
-        // and the SSE transports some MCP clients still use.
+        // This used to be the fallback for clients that cannot set headers - browser EventSource,
+        // and the SSE transports some MCP clients still use. Withdrawn for every verb alike: a URL
+        // is written down in places a header is not, and this key is the whole of the proxy's
+        // authorization.
         var request = new HttpRequestMessage(
             new HttpMethod(method),
             $"{PrefixFor(CredentialPlacement.Header)}/resource?page=2&{LocalAccessGuard.ApiKeyQueryName}={ApiKey}")
@@ -297,12 +301,30 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
         };
 
         var response = await _client.SendAsync(request);
-        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode} / {_lastForwarderError}");
 
-        var seen = Single();
-        Assert.DoesNotContain(ApiKey, seen.Query);
-        Assert.DoesNotContain(LocalAccessGuard.ApiKeyQueryName, seen.Query);
-        Assert.Contains("page=2", seen.Query);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(_received);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllMethods))]
+    public async Task AQueryPlacementRouteIsNotServedAtAll(string method)
+    {
+        // The store still describes this route - an older build wrote it - but the config builder
+        // refuses to make a route out of a credential set it cannot put on the wire, so the path
+        // resolves to nothing. Withdrawing the placement therefore costs the route rather than
+        // silently downgrading it to an unauthenticated forward, and no verb is an exception.
+        var request = new HttpRequestMessage(
+            new HttpMethod(method), $"{PrefixFor(CredentialPlacement.Query)}/resource?page=2")
+        {
+            Content = WithJsonBody(method),
+        };
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(_received);
     }
 
     [Theory]

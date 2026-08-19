@@ -45,9 +45,10 @@ own.
 ROUTES
 Attach a live OAuth2 token or a static API key to every request forwarded to an upstream. Your
 client never handles authentication. Credentials can be placed anywhere the upstream expects them:
-an Authorization header, any other header, a query parameter, or a request-body field, with a
-custom value prefix. A route may attach none, one, or several credentials at once, in any mix, and
-the same credential may appear in more than one place. Tokens refresh automatically ten minutes
+an Authorization header, any other header, or a request-body field, with a custom value prefix.
+Credentials are never placed in a query string, where they would be written to the upstream's
+access log. A route may attach none, one, or several credentials at once, in any mix, and the same
+credential may appear in more than one place. Tokens refresh automatically ten minutes
 before they expire.
 
 FUNNELS
@@ -96,7 +97,7 @@ or 11, 64-bit.
 Per-agent MCP endpoints that pool several servers and expose only the tools you pick
 OAuth2 handled for you — Google, Nextcloud, or any custom provider, with automatic token refresh
 Static API keys for services that never offered OAuth, with a Test button against a real endpoint
-Credentials placed in any header, query parameter, or body field, with a custom value prefix
+Credentials placed in any header or body field — never in a URL, with a custom value prefix
 Any number of credentials per route, in any mix, including the same credential in several places
 Every secret stored in your own 1Password vault — nothing written to this PC
 A separate proxy key per route and per funnel, each with its own expiry

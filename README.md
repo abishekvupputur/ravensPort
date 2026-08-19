@@ -84,10 +84,11 @@ reach on its own.
   and keeps working with nobody at the keyboard
 - **Static API keys** — for the many services that never offered OAuth; attach to routes exactly
   like a token, with an optional **Test** button that checks the key against a real endpoint
-- **Flexible credential placement** — `Authorization: Bearer <token>` by default, or any header,
-  query parameter, or request-body field, with a custom value prefix
-- **Any number of credentials per route** — none, one, or several at once, in any mix of headers,
-  query parameters, and body fields; the same credential may appear in more than one place
+- **Flexible credential placement** — `Authorization: Bearer <token>` by default, or any other
+  header, or a request-body field, with a custom value prefix. Query-string placements are not
+  offered: a secret in a URL is written to the upstream's access log and every intermediary's
+- **Any number of credentials per route** — none, one, or several at once, in any mix of headers
+  and body fields; the same credential may appear in more than one place
 - **Automatic token refresh** — 10 minutes ahead of expiry, in the background; app logins re-mint
   from their stored secret instead of presenting a refresh token
 - **Any credential backs any route** — not a fixed 1:1 mapping
@@ -369,7 +370,7 @@ rather than a credential one.
 - **Only `200` passes**, and **redirects are not followed** — following one would report a login
   page as proof the credential works, which is exactly the failure being tested for.
 - A **body** default placement cannot be tested: the request is a GET and has no body. Set the
-  default placement to a header or query parameter to test, then override it on the route.
+  default placement to a header to test, then override it on the route.
 - The endpoint must be `https` (or localhost) — the secret is sent there. Neither the result
   message nor the activity log ever contains the secret or the query string it might sit in.
 
@@ -398,18 +399,27 @@ elsewhere, each credential on a route has a **placement**, a **name**, and a **v
 | Placement | Name means | Result |
 |---|---|---|
 | **Header** (default) | header name | `Authorization: Bearer <token>` or `X-Api-Key: <token>` |
-| **Query** | query parameter name | `?access_token=<token>` |
 | **Body** | field in the request body | `{"access_token": "<token>"}` |
+
+> **Query-string placements have been removed.** A URL is recorded by the upstream's access
+> log, by every intermediary between here and it, by browser history, and in the `Referer` of
+> anything the response loads — none of which RavensPort can redact. An upstream that accepts its
+> credential *only* as `?access_token=` cannot be used through RavensPort.
+>
+> A route inherited from an earlier version with a query placement **is not served at all**: the
+> config builder drops the whole route rather than forward it with that credential missing, and
+> the activity log names it as `SKIPPED`. Change the entry to a header or body field to bring the
+> route back.
 
 - The value prefix is literal text before the token — `Bearer ` **including the trailing space**.
   Leave it empty for a bare token.
-- A caller-supplied header, parameter, or field of the same name is **replaced**, never
-  duplicated, so the upstream never sees two candidate credentials.
+- A caller-supplied header or field of the same name is **replaced**, never duplicated, so the
+  upstream never sees two candidate credentials.
 - Body injection applies to JSON objects and `application/x-www-form-urlencoded` bodies up to
   1 MB, including chunked and streamed ones. Anything larger or in another content type is
   forwarded untouched and the activity log says why.
-- Names the proxy owns are rejected: `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`,
-  `Upgrade` as headers, and `proxy_key` as a query parameter.
+- Header names the proxy owns are rejected: `Host`, `Content-Length`, `Transfer-Encoding`,
+  `Connection`, `Upgrade`.
 
 ### Zero, one, or several credentials per route
 
@@ -422,11 +432,9 @@ route can carry any combination:
 |---|---|
 | Nothing | plain forwarding hop to an upstream that needs no token |
 | One credential | `Authorization: Bearer <token>` — the usual case |
-| Two query parameters | `?access_token=<A>&api_key=<B>` |
 | Two or more headers | `Authorization: Bearer <A>` + `X-Project-Key: <B>` |
-| Query + header | `?access_token=<A>` + `X-Api-Key: <B>` |
-| Query + several headers | `?access_token=<A>` + `Authorization: Bearer <A>` + `X-Api-Key: <B>` + `PRIVATE-TOKEN: token <B>` |
-| Header + query + body | all three at once, from the same or different credentials |
+| Several headers | `Authorization: Bearer <A>` + `X-Api-Key: <B>` + `PRIVATE-TOKEN: token <B>` |
+| Header + body | `Authorization: Bearer <A>` + `{"auth_token": "<B>"}` |
 | Several body fields | `{"access_token": "<A>", "project_token": "<B>"}` — written in one rewrite |
 | OAuth token + API key | `Authorization: Bearer <token>` + `X-Api-Key: <key>` — a user grant plus a project key, which plenty of APIs demand together |
 
@@ -438,15 +446,15 @@ route can carry any combination:
 - **A route with no credential still forwards**, and still strips the caller's own `Authorization`
   header and cookies. Attaching nothing is not a licence to relay whatever the caller sent — that
   guarantee holds on every route, and the route's own proxy key is still required.
-- **No two entries may write the same slot.** Two credentials on one header, query parameter, or
-  body field would silently overwrite each other, so the pair is refused at the point of editing.
-  Header names are compared case-insensitively (HTTP treats them that way); query parameter and
-  body field names are case-sensitive.
+- **No two entries may write the same slot.** Two credentials on one header or one body field
+  would silently overwrite each other, so the pair is refused at the point of editing. Header
+  names are compared case-insensitively (HTTP treats them that way); body field names are
+  case-sensitive.
 - A credential you delete stops being attached on the routes that referenced it — **the other
   credentials on those routes keep working**. The row shows `⚠ credential missing`.
 - If a request cannot carry a body placement (a `GET`, or a body this cannot parse), that entry is
-  skipped and the header and query entries on the same route still arrive. The activity log names
-  every credential that was attached and every one that was not.
+  skipped and the header entries on the same route still arrive. The activity log names every
+  credential that was attached and every one that was not.
 - Routes created by older versions carry their single credential over unchanged on first load.
 
 ---
@@ -507,16 +515,18 @@ add an unrelated source, breaking every agent prompt that referenced it.
 {
   "servers": {
     "my-agent": {
-      "url": "http://127.0.0.1:5559/mcp/my-agent?proxy_key=<this-funnel's-key>"
+      "url": "http://127.0.0.1:5559/mcp/my-agent",
+      "headers": { "X-Proxy-Key": "<this-funnel's-key>" }
     }
   }
 }
 ```
 
 Each funnel has **its own** proxy key — no route's key opens it, and no other funnel's does.
-Select the funnel to copy its key, or the whole URL with the key already attached.
+Select the funnel to copy its key.
 
-Or send the key as the `X-Proxy-Key` header if your client supports custom headers.
+The key must go in the `X-Proxy-Key` header. An MCP client that cannot set request headers cannot
+reach a funnel — see [The proxy key](#the-proxy-key).
 
 ### Behaviour
 
@@ -557,15 +567,17 @@ funnel's from the panel under the **MCP Funnel** tab.
 curl -H "X-Proxy-Key: <this-route's-key>" http://127.0.0.1:5559/app/my-service/foo
 ```
 
-For clients that cannot set headers (browser `EventSource`, some MCP SSE transports), pass it as a
-query parameter instead:
+**The header is the only place the key is read from.** A `?proxy_key=` query parameter used to be
+accepted as well, for clients that cannot set headers (browser `EventSource`, some MCP SSE
+transports). It is now ignored: a URL ends up in the upstream's access log, in every intermediary's,
+in browser history, and in the `Referer` of anything the response loads, and this key is the whole
+of the proxy's authorization. A request carrying only the parameter gets `403`, and the activity
+log says which parameter it saw so the cause is not a guess. A client that cannot set a header
+cannot use RavensPort.
 
-```
-http://127.0.0.1:5559/app/my-service?token=abc&proxy_key=<this-route's-key>
-```
-
-The key is stripped before forwarding — in both forms — so it never reaches the upstream's access
-log or this app's activity log. Your own headers and parameters pass through untouched.
+The key is stripped before forwarding — the header, and the `proxy_key` parameter if a caller
+still sends one — so it never reaches the upstream's access log or this app's activity log. Your
+own headers and parameters pass through untouched.
 
 Anything without a valid key gets `403`: a wrong key, another endpoint's key, an expired key, and
 a path belonging to no route or funnel all answer the same way, so the reply cannot be used to map
@@ -1033,13 +1045,14 @@ same reason.
 dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj
 ```
 
-427 tests, covering the OAuth and storage layers, the full HTTP method × credential placement
-matrix against a real upstream, multi-credential routes (two query parameters, several headers,
-header + query + body together, the same credential in three slots at once, and routes attaching
-nothing), static API keys (forwarded in every placement, mixed with an OAuth token on one request,
-and a key with a line break refused before it reaches the wire), credential testing against a real
-endpoint that checks what it was sent, and end-to-end funnel behaviour — including that two
-funnels over one upstream stay isolated, run in parallel, and never cross-deliver a response.
+877 tests, covering the OAuth and storage layers, the full HTTP method × credential placement
+matrix against a real upstream, multi-credential routes (several headers, header + body together,
+the same credential in two slots at once, and routes attaching nothing), static API keys (forwarded
+in every permitted placement, mixed with an OAuth token on one request, and a key with a line break
+refused before it reaches the wire), credential testing against a real endpoint that checks what it
+was sent, the refusal of query-string credentials and of a proxy key sent in a URL, the wipe of the
+pre-2.0 store, and end-to-end funnel behaviour — including that two funnels over one upstream stay
+isolated, run in parallel, and never cross-deliver a response.
 
 ### Publishing a standalone exe
 

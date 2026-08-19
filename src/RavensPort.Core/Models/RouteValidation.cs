@@ -1,4 +1,4 @@
-namespace RavensPort.Core.Models;
+﻿namespace RavensPort.Core.Models;
 
 /// <summary>
 /// One place deciding whether a route's path prefix is usable, so the UI and the YARP config
@@ -109,11 +109,21 @@ public static class RouteValidation
     /// </summary>
     public static string? ValidateCredentialInjection(CredentialPlacement placement, string? name, string? valuePrefix)
     {
+        // Checked before anything else, including the empty-name case: there is no name that
+        // makes this placement acceptable, so a "name is required" answer would only send the
+        // user off to fill in a field that cannot help. A store written by an older build can
+        // still hold one of these, which is why the check lives here and not only in the picker.
+        if (!CredentialPlacements.IsPermitted(placement))
+        {
+            return "Sending a credential in the query string is not permitted — query strings are "
+                   + "written to the upstream's access log, to every intermediary's, and to browser "
+                   + "history. Use a header placement, or a body field.";
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             return placement switch
             {
-                CredentialPlacement.Query => "Query parameter name is required.",
                 CredentialPlacement.Body => "Body field name is required.",
                 _ => "Header name is required.",
             };
@@ -142,23 +152,6 @@ public static class RouteValidation
                 {
                     return $"'{trimmed}' is set by the proxy itself and cannot carry a credential. "
                            + "Use a header such as 'Authorization' or 'X-Api-Key'.";
-                }
-
-                return null;
-
-            case CredentialPlacement.Query:
-                if (trimmed.Any(char.IsWhiteSpace) || trimmed.Any(char.IsControl) ||
-                    trimmed.IndexOfAny(['&', '=', '?', '#']) >= 0)
-                {
-                    return "Query parameter name may not contain spaces or any of: & = ? #";
-                }
-
-                // The local API key can arrive as this parameter and is stripped from every
-                // request before forwarding. Re-adding it here with a different value would put
-                // the proxy's own key name on the upstream carrying the upstream's token.
-                if (string.Equals(trimmed, "proxy_key", StringComparison.OrdinalIgnoreCase))
-                {
-                    return "'proxy_key' is reserved for this proxy's own local API key. Pick another name.";
                 }
 
                 return null;

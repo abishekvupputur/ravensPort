@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -33,9 +33,15 @@ public static class LocalAccessGuard
     public const string ApiKeyHeaderName = "X-Proxy-Key";
 
     /// <summary>
-    /// Fallback for clients that physically cannot set headers — browser EventSource, used by
-    /// some MCP SSE transports, is the motivating case. Logging redacts it (see ActivityLog
-    /// callers) so it never lands on disk.
+    /// The name this key was once *also* accepted under, as a fallback for clients that cannot
+    /// set headers. No longer accepted: a query string is the one part of a request that gets
+    /// written down everywhere — browser history, proxy and server access logs, Referer headers
+    /// on any outbound link — so a key sent this way is a key that leaks by design, and this one
+    /// is what stands between a local caller and the user's OAuth grant.
+    ///
+    /// The name is kept because the parameter must still be *stripped* from every request before
+    /// forwarding, so a caller that sends it anyway does not hand it to the upstream's access log
+    /// as well. See <see cref="StripInternalHeadersFromRequest"/>.
     /// </summary>
     public const string ApiKeyQueryName = "proxy_key";
 
@@ -83,7 +89,8 @@ public static class LocalAccessGuard
                 await context.Response.WriteAsync(
                     "Forbidden. This endpoint requires its own proxy key — copy it from the row for "
                     + "this route on RavensPort's Routes tab, or for this funnel on the MCP Funnel tab — "
-                    + $"sent as the '{ApiKeyHeaderName}' header or the '{ApiKeyQueryName}' query parameter.");
+                    + $"sent as the '{ApiKeyHeaderName}' request header. The key is only ever read from "
+                    + $"that header; a '{ApiKeyQueryName}' query parameter is ignored and stripped.");
                 return;
             }
 
@@ -160,10 +167,17 @@ public static class LocalAccessGuard
             return "path contains a '..' segment";
         }
 
+        // Header only. The query-parameter form used to be accepted for clients that cannot set
+        // headers; it is refused now because a query string is copied into places the header
+        // never reaches — browser history, the access log of every intermediary, and the Referer
+        // of any link the response goes on to load — and this key is the whole of the proxy's
+        // authorization. A caller that sends one is told so by name rather than left to guess,
+        // since the parameter used to work and the answer would otherwise be a bare 403.
         var presented = request.Headers[ApiKeyHeaderName].ToString();
-        if (string.IsNullOrEmpty(presented))
+        if (string.IsNullOrEmpty(presented) && request.Query.ContainsKey(ApiKeyQueryName))
         {
-            presented = request.Query[ApiKeyQueryName].ToString();
+            return $"proxy key was sent as the '{ApiKeyQueryName}' query parameter, which is no "
+                   + $"longer accepted — send it as the '{ApiKeyHeaderName}' header";
         }
 
         // Only the key belonging to the endpoint being called is accepted. A path that belongs to

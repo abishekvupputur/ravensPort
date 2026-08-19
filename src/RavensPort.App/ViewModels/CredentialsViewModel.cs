@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -30,7 +30,11 @@ public sealed partial class CredentialsViewModel : ObservableObject
     /// </summary>
     public IReadOnlyList<CredentialKindInfo> Kinds { get; } = CredentialKindInfo.All;
 
-    public IReadOnlyList<CredentialPlacement> Placements { get; } = Enum.GetValues<CredentialPlacement>();
+    /// <summary>
+    /// Not Enum.GetValues: the enum still carries Query so old stores deserialize, but it is not
+    /// a choice anyone may make. See <see cref="CredentialPlacements"/>.
+    /// </summary>
+    public IReadOnlyList<CredentialPlacement> Placements { get; } = CredentialPlacements.Permitted;
 
     [ObservableProperty] private CredentialKind _selectedKind = CredentialKind.OAuth2;
     [ObservableProperty] private OAuthProviderPreset _selectedPreset = OAuthProviderPreset.Google;

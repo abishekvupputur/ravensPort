@@ -1,4 +1,4 @@
-<Application x:Class="RavensPort.App.App"
+﻿<Application x:Class="RavensPort.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:RavensPort.App"
@@ -16,7 +16,7 @@
 
             <sys:String x:Key="ProxyKeyHelpText">The secret a caller must present to use this endpoint, and nothing else.
 
-Send it as the "X-Proxy-Key" header, or as "?proxy_key=..." for clients that cannot set headers.
+Send it as the "X-Proxy-Key" header. It is read from that header and nowhere else — a "?proxy_key=..." query parameter is ignored and stripped, because query strings end up in access logs, browser history and Referer headers.
 
 Each route and each funnel has its own key. A key issued for one endpoint does not open any other, so a client that leaks it exposes only what that endpoint reaches — and revoking it costs nothing anywhere else.</sys:String>
 

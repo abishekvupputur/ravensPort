@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -157,13 +157,18 @@ public class CredentialTestServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AGoodKeyInAQueryParameterPasses()
+    public async Task AKeyInAQueryParameterIsRefusedWithoutSendingAnything()
     {
+        // Test sends a real request to a real endpoint, so it leaks whatever a proxied request
+        // would. If this were the one path that still put the secret in a URL, the withdrawal
+        // would be cosmetic - and the user would have been shown a green tick for a
+        // configuration the proxy refuses to serve.
         var result = await _service.TestAsync(
             await AddApiKeyAsync("/query", placement: CredentialPlacement.Query, name: "api_key"));
 
-        Assert.True(result.Success, result.Message);
-        Assert.Equal(200, result.StatusCode);
+        Assert.False(result.Success);
+        Assert.Null(result.StatusCode);
+        Assert.Contains("not permitted", result.Message);
     }
 
     [Fact]

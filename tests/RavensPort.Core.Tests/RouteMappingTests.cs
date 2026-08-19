@@ -1,4 +1,4 @@
-using RavensPort.Core.Models;
+﻿using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests;
 
@@ -10,7 +10,6 @@ public class RouteMappingTests
 {
     [Theory]
     [InlineData(CredentialPlacement.Header, "Authorization", "Bearer ")]
-    [InlineData(CredentialPlacement.Query, "access_token", "")]
     [InlineData(CredentialPlacement.Body, "access_token", "")]
     public void RouteCredentialFor_UsesThePlacementsDefaults(
         CredentialPlacement placement, string name, string prefix)
@@ -39,13 +38,38 @@ public class RouteMappingTests
             Credentials =
             [
                 RouteCredential.For(first, CredentialPlacement.Header),
-                RouteCredential.For(second, CredentialPlacement.Query),
+                RouteCredential.For(second, CredentialPlacement.Body),
             ],
         };
 
         var described = route.DescribeCredentials(id => id == first ? "alpha" : "bravo");
 
         Assert.Contains("alpha as header Authorization", described);
-        Assert.Contains("bravo as query ?access_token=", described);
+        Assert.Contains("bravo as body field", described);
+    }
+
+    [Fact]
+    public void DescribeCredentials_MarksAnInheritedQueryPlacementAsNotPermitted()
+    {
+        // The grid is where a user meets a route the config builder has quietly refused to serve.
+        // Describing it the old way - "as query ?access_token=<token>" - would read as a working
+        // configuration and send them looking at the upstream instead.
+        var id = Guid.NewGuid();
+        var route = new RouteMapping
+        {
+            PathPrefix = "/app/api",
+            Credentials = [new RouteCredential
+            {
+                CredentialId = id,
+                Placement = CredentialPlacement.Query,
+                ParameterName = "access_token",
+                ValuePrefix = "",
+            }],
+        };
+
+        var described = route.DescribeCredentials(_ => "alpha");
+
+        Assert.Contains("not permitted", described);
+        Assert.DoesNotContain("<token>", described);
     }
 }

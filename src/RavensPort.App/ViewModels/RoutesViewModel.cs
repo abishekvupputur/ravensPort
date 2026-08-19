@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Mcp;
@@ -44,7 +44,11 @@ public sealed partial class RoutesViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = "Ready.";
 
     /// <summary>Drop-down source for both the add-route form and each row's editor.</summary>
-    public static IReadOnlyList<CredentialPlacement> AllPlacements { get; } = Enum.GetValues<CredentialPlacement>();
+    /// <summary>
+    /// Not Enum.GetValues: the enum still carries Query so old stores deserialize, but it is not
+    /// a choice anyone may make. See <see cref="CredentialPlacements"/>.
+    /// </summary>
+    public static IReadOnlyList<CredentialPlacement> AllPlacements { get; } = CredentialPlacements.Permitted;
 
     public IReadOnlyList<CredentialPlacement> Placements => AllPlacements;
 

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -52,13 +52,18 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
     private string? _lastForwarderError;
 
     // Prefixes, one per combination under test.
-    private const string TwoQueries = "/c/two-queries";
     private const string TwoHeaders = "/c/two-headers";
-    private const string QueryAndHeader = "/c/query-header";
-    private const string QueryAndManyHeaders = "/c/query-many-headers";
-    private const string QueryBodyAndHeader = "/c/query-body-header";
+    private const string ManyHeaders = "/c/many-headers";
+    private const string BodyAndHeader = "/c/body-header";
     private const string TwoBodyFields = "/c/two-body-fields";
     private const string SameCredentialTwice = "/c/same-credential-twice";
+
+    /// <summary>
+    /// A route as an older build could have stored it, with a query-string placement among its
+    /// credentials. Nothing may create one now; this is here to pin what happens to the ones that
+    /// already exist.
+    /// </summary>
+    private const string LegacyQuery = "/c/legacy-query";
     private const string Everything = "/c/everything";
     private const string NoCredential = "/c/none";
     private const string OneGoodOneDeleted = "/c/one-deleted";
@@ -142,26 +147,17 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
                     Key = new ProxyKey { Value = ApiKey },
                 });
 
-            AddRoute(TwoQueries,
-                Query(alpha.Id, "access_token"),
-                Query(bravo.Id, "api_key"));
-
             AddRoute(TwoHeaders,
                 Header(alpha.Id, "Authorization", "Bearer "),
                 Header(bravo.Id, "X-Project-Key", ""));
 
-            AddRoute(QueryAndHeader,
-                Query(alpha.Id, "access_token"),
-                Header(bravo.Id, "X-Api-Key", ""));
-
-            AddRoute(QueryAndManyHeaders,
-                Query(alpha.Id, "access_token"),
+            AddRoute(ManyHeaders,
                 Header(alpha.Id, "Authorization", "Bearer "),
+                Header(alpha.Id, "X-Alpha-Token", ""),
                 Header(bravo.Id, "X-Api-Key", ""),
                 Header(bravo.Id, "PRIVATE-TOKEN", "token "));
 
-            AddRoute(QueryBodyAndHeader,
-                Query(alpha.Id, "access_token"),
+            AddRoute(BodyAndHeader,
                 Body(bravo.Id, "auth_token"),
                 Header(alpha.Id, "Authorization", "Bearer "));
 
@@ -169,19 +165,23 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
                 Body(alpha.Id, "access_token"),
                 Body(bravo.Id, "project_token"));
 
-            // The same credential landing in three different slots.
+            // The same credential landing in two different slots.
             AddRoute(SameCredentialTwice,
                 Header(alpha.Id, "Authorization", "Bearer "),
-                Query(alpha.Id, "access_token"),
                 Body(alpha.Id, "access_token"));
 
             AddRoute(Everything,
                 Header(alpha.Id, "Authorization", "Bearer "),
                 Header(bravo.Id, "X-Api-Key", ""),
-                Query(alpha.Id, "access_token"),
-                Query(bravo.Id, "api_key"),
                 Body(alpha.Id, "auth_token"),
                 Body(bravo.Id, "project_token"));
+
+            // Three entries that would work and one that may not exist any more. The whole route
+            // has to go, not just the offending entry - see TheWholeRouteGoesForOneQueryEntry.
+            AddRoute(LegacyQuery,
+                Header(alpha.Id, "Authorization", "Bearer "),
+                Query(alpha.Id, "access_token"),
+                Body(bravo.Id, "auth_token"));
 
             // No credentials at all — a plain forwarding hop.
             AddRoute(NoCredential);
@@ -228,13 +228,19 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TwoQueryParameters_BothArrive()
+    public async Task TheWholeRouteGoesForOneQueryEntry()
     {
-        var seen = await GetAsync($"{TwoQueries}/resource?page=2");
+        // Fail closed, and closed for the whole route: the config builder will not serve a
+        // credential set it cannot put on the wire as written. Attaching the two usable entries
+        // and dropping the third would leave a route that looks configured, authenticates
+        // differently from what the tab shows, and never says so.
+        var request = new HttpRequestMessage(HttpMethod.Get, $"{LegacyQuery}/resource?page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
 
-        Assert.Contains($"access_token={TokenA}", seen.Query);
-        Assert.Contains($"api_key={TokenB}", seen.Query);
-        Assert.Contains("page=2", seen.Query);
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(_received);
     }
 
     [Fact]
@@ -247,32 +253,23 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task QueryPlusHeader_BothArrive()
+    public async Task SeveralHeaders_AllArrive()
     {
-        var seen = await GetAsync($"{QueryAndHeader}/resource");
+        var seen = await GetAsync($"{ManyHeaders}/resource");
 
-        Assert.Contains($"access_token={TokenA}", seen.Query);
-        Assert.Equal(TokenB, seen.Header("X-Api-Key"));
-    }
-
-    [Fact]
-    public async Task QueryPlusSeveralHeaders_AllArrive()
-    {
-        var seen = await GetAsync($"{QueryAndManyHeaders}/resource");
-
-        Assert.Contains($"access_token={TokenA}", seen.Query);
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
+        Assert.Equal(TokenA, seen.Header("X-Alpha-Token"));
         Assert.Equal(TokenB, seen.Header("X-Api-Key"));
         Assert.Equal($"token {TokenB}", seen.Header("PRIVATE-TOKEN"));
     }
 
     [Fact]
-    public async Task QueryPlusBodyPlusHeader_AllArrive()
+    public async Task BodyPlusHeader_BothArrive()
     {
-        var seen = await PostJsonAsync($"{QueryBodyAndHeader}/rpc", """{"jsonrpc":"2.0","method":"ping"}""");
+        var seen = await PostJsonAsync($"{BodyAndHeader}/rpc", """{"jsonrpc":"2.0","method":"ping"}""");
 
-        Assert.Contains($"access_token={TokenA}", seen.Query);
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
+        Assert.DoesNotContain(TokenA, seen.Query);
 
         using var json = JsonDocument.Parse(seen.Body);
         Assert.Equal(TokenB, json.RootElement.GetProperty("auth_token").GetString());
@@ -309,26 +306,26 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheSameCredentialCanBeSentInThreePlacesAtOnce()
+    public async Task TheSameCredentialCanBeSentInTwoPlacesAtOnce()
     {
         var seen = await PostJsonAsync($"{SameCredentialTwice}/rpc", """{"method":"ping"}""");
 
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
-        Assert.Contains($"access_token={TokenA}", seen.Query);
+        Assert.DoesNotContain(TokenA, seen.Query);
 
         using var json = JsonDocument.Parse(seen.Body);
         Assert.Equal(TokenA, json.RootElement.GetProperty("access_token").GetString());
     }
 
     [Fact]
-    public async Task SixCredentialsAcrossAllThreePlacements_AllArrive()
+    public async Task FourCredentialsAcrossBothPlacements_AllArrive()
     {
         var seen = await PostJsonAsync($"{Everything}/rpc", """{"method":"ping"}""");
 
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
         Assert.Equal(TokenB, seen.Header("X-Api-Key"));
-        Assert.Contains($"access_token={TokenA}", seen.Query);
-        Assert.Contains($"api_key={TokenB}", seen.Query);
+        Assert.DoesNotContain(TokenA, seen.Query);
+        Assert.DoesNotContain(TokenB, seen.Query);
 
         using var json = JsonDocument.Parse(seen.Body);
         Assert.Equal(TokenA, json.RootElement.GetProperty("auth_token").GetString());
@@ -428,11 +425,11 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
     public async Task BodyCredentialsAreSkippedOnARequestWithNoBodyWithoutAffectingTheOthers()
     {
         // A GET has no body to put a field in, and inventing one would change the request's
-        // meaning. The header and query entries on the same route must still arrive.
+        // meaning. The header entries on the same route must still arrive.
         var seen = await GetAsync($"{Everything}/resource");
 
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
-        Assert.Contains($"access_token={TokenA}", seen.Query);
+        Assert.Equal(TokenB, seen.Header("X-Api-Key"));
         Assert.DoesNotContain("auth_token", seen.Body);
     }
 
@@ -446,7 +443,7 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
 
         Assert.Equal(plain, seen.Body);
         Assert.Equal($"Bearer {TokenA}", seen.Authorization);
-        Assert.Contains($"access_token={TokenA}", seen.Query);
+        Assert.Equal(TokenB, seen.Header("X-Api-Key"));
     }
 
     private async Task<Seen> GetAsync(string url)

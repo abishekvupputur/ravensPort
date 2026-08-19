@@ -1,5 +1,4 @@
-using System.Net;
-using Microsoft.AspNetCore.WebUtilities;
+﻿using System.Net;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 
@@ -107,9 +106,17 @@ public sealed class CredentialTestService : IDisposable
         var value = injection.FormatValue(secret);
         var url = credential.TestEndpoint!.Trim();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, injection.Placement == CredentialPlacement.Query
-            ? QueryHelpers.AddQueryString(url, injection.Name, value)
-            : url);
+        // The test request is a real request to a real upstream, so it leaks exactly as much as a
+        // proxied one would. A placement the proxy refuses to send must not be sent from here
+        // either — otherwise "Test" would be the one path that still puts the secret in a URL.
+        if (!injection.IsPermitted)
+        {
+            return new CredentialTestResult(false, null,
+                "Sending a credential in the query string is not permitted. Change this "
+                + "credential's placement to a header or body field, then test again.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
         if (injection.Placement == CredentialPlacement.Header &&
             !request.Headers.TryAddWithoutValidation(injection.Name, value))
@@ -118,7 +125,7 @@ public sealed class CredentialTestService : IDisposable
                 $"'{injection.Name}' could not be set as a request header.");
         }
 
-        // Endpoint only, never the query string — a query placement puts the secret in it.
+        // Endpoint only, never the query string — a caller's own test URL may carry secrets in it.
         var loggedTarget = new Uri(url).GetLeftPart(UriPartial.Path);
         _activityLog.Log($"TEST '{credential.Name}' -> GET {loggedTarget} [{injection.Placement.ToString().ToLowerInvariant()} {injection.Name}]");
 
