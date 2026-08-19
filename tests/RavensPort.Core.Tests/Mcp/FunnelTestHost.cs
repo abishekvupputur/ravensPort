@@ -1,4 +1,5 @@
-﻿using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -26,6 +27,19 @@ internal sealed class FunnelTestHost : IAsyncDisposable
 {
     // A fixture the test host hands to itself, not a credential.
     public const string ApiKey = "funnel-test-key-0123456789"; // gitleaks:allow
+
+    // Named because MtlsCertificateFactory has no default to fall back on: every PFX it writes
+    // carries a password its caller chose. Drawn from the system CSPRNG at first use rather than
+    // written down, so there is no password-shaped literal in the source or in the built test
+    // assembly for a scanner to find or a reader to try somewhere else.
+    //
+    // Nothing outside this process ever needs it. The host mints its certificate and opens it again
+    // within the same run, so the value only has to survive that long -- and a fresh 256 bits per
+    // run is strictly stronger than any constant that could be put here.
+    //
+    // static readonly, not const: a const would be folded into every call site at compile time,
+    // which is exactly the literal this is avoiding.
+    public static readonly string PfxPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
     private readonly WebApplication _proxy;
     private readonly string _logPath;
@@ -64,7 +78,7 @@ internal sealed class FunnelTestHost : IAsyncDisposable
         if (mtls) throw new NotSupportedException("mTLS is not part of the Microsoft Store build.");
         string? pfx = null;
 #else
-        var pfx = mtls ? MtlsCertificateFactory.GenerateClientCertificatePfx() : null;
+        var pfx = mtls ? MtlsCertificateFactory.GenerateClientCertificatePfx(PfxPassword) : null;
 #endif
 
         var builder = WebApplication.CreateBuilder();
@@ -90,7 +104,7 @@ internal sealed class FunnelTestHost : IAsyncDisposable
 
         var proxy = builder.Build();
 
-        if (pfx is not null) proxy.Services.GetRequiredService<KestrelMtlsState>().Enable(pfx);
+        if (pfx is not null) proxy.Services.GetRequiredService<KestrelMtlsState>().Enable(pfx, PfxPassword);
 
         // A forwarding failure surfaces as a bare 502 with no detail, which is nearly impossible
         // to tell from an upstream that fell over. YARP records the real reason here.
@@ -121,6 +135,7 @@ internal sealed class FunnelTestHost : IAsyncDisposable
             store.Settings.McpFunnelEnabled = true;
             store.Settings.MtlsEnabled = mtls;
             store.Settings.MtlsClientCertificatePfx = pfx ?? "";
+            store.Settings.MtlsClientCertificatePassword = pfx is null ? "" : PfxPassword;
 
             // A route-backed source is dialled at 127.0.0.1:{ListenPort}, so the stored port has
             // to match the port actually bound. In the app they are the same by construction —

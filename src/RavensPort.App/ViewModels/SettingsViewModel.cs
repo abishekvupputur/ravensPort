@@ -900,6 +900,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             CertificateExpirySummary = "";
             IsCertificateExpiryUrgent = false;
+            CertificateExpired = false;
             return;
         }
 
@@ -916,6 +917,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             if (remaining <= TimeSpan.Zero)
             {
                 IsCertificateExpiryUrgent = true;
+                CertificateExpired = true;
                 CertificateExpirySummary =
                     $"This certificate expired on {expiresOn}. The proxy now refuses every caller that "
                     + "presents it — including its own MCP funnel — and the failure happens during the TLS "
@@ -926,6 +928,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             // Ceiling, not truncation: with eleven hours left, "0 days" reads as already gone and
             // "1 day" is the answer to the question actually being asked, which is how long there is.
+            CertificateExpired = false;
+
             var days = (int)Math.Ceiling(remaining.TotalDays);
             var howLong = days == 1 ? "1 day" : $"{days} days";
 
@@ -942,6 +946,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             // app will not be able to present it either, so it is said in the same place and in the
             // same colour rather than swallowed into an empty line.
             IsCertificateExpiryUrgent = true;
+            CertificateExpired = true;
             CertificateExpirySummary = $"The stored certificate could not be read: {ex.Message}";
         }
     }
@@ -967,37 +972,41 @@ public sealed partial class SettingsViewModel : ObservableObject
 #else
     private async Task PersistMtlsAsync(bool value)
     {
-        var minted = false;
-
         try
         {
-            await _configStoreCache.MutateAsync(store =>
+            // Switching mTLS on with no certificate the app can open would leave it unable to
+            // start at all: the listener has nothing to present, and quietly binding plain HTTP
+            // instead would tell the user their proxy is certificate-protected when anything on
+            // the machine can call it.
+            //
+            // Minting one here is not the way out. Generating means choosing the PFX password, and
+            // this click is not the one that offers a box to type it in — a certificate minted
+            // under a password RavensPort picked would be a password every install shares. So the
+            // switch refuses and points at Generate, which is the one place a password is asked
+            // for. An empty stored password means the same thing for a store written before that
+            // box existed: the blob carries a built-in password this build no longer knows.
+            var settings = _configStoreCache.Current.Settings;
+            if (value && (string.IsNullOrWhiteSpace(settings.MtlsClientCertificatePfx) ||
+                          string.IsNullOrEmpty(settings.MtlsClientCertificatePassword)))
             {
-                // Switching mTLS on with no certificate would leave the app unable to start at
-                // all: the listener has nothing to present, and there is no sane fallback —
-                // quietly binding plain HTTP instead would tell the user their proxy is
-                // certificate-protected when anything on the machine can call it. Generating one
-                // here makes the switch mean what it says on the first click; the user still has
-                // to export it to whatever will be calling the proxy, which the status says.
-                //
-                // No password is asked for here, because this click is not the one that offers a
-                // box to type it in. The certificate takes the built-in password and the status
-                // below points at Generate, which is where a password of the user's own is set.
-                if (value && string.IsNullOrWhiteSpace(store.Settings.MtlsClientCertificatePfx))
-                {
-                    store.Settings.MtlsClientCertificatePfx = MtlsCertificateFactory.GenerateClientCertificatePfx();
-                    store.Settings.MtlsClientCertificatePassword = "";
-                    minted = true;
-                }
+                // Straight back off, so the switch does not sit on over a setting that was never
+                // written. OnMtlsEnabledChanged compares against the store before it persists, and
+                // the store still says off, so this does not come back through here.
+                MtlsEnabled = false;
 
-                store.Settings.MtlsEnabled = value;
-            });
+                StatusMessage = string.IsNullOrWhiteSpace(settings.MtlsClientCertificatePfx)
+                    ? "Generate a client certificate first: use Generate new certificate and choose a password. mTLS cannot be enabled until one exists."
+                    : "The stored certificate predates the password box and cannot be opened. Use Generate new certificate, choose a password, and install the export on every client before enabling mTLS.";
+                return;
+            }
+
+            await _configStoreCache.MutateAsync(store => store.Settings.MtlsEnabled = value);
 
             IsMtlsRestartRequired = true;
             RefreshCertificateExpiry();
             StatusMessage = value
-                ? minted
-                    ? "mTLS enabled, and a certificate was generated so the listener has one to present. It carries the built-in password; use Generate new certificate to set your own before exporting. Restart RavensPort for the change to take effect."
+                ? CertificateExpired
+                    ? "mTLS enabled, but the stored certificate is past its expiry date. The listener will bind and then refuse every caller — the MCP funnel included — during the TLS handshake. Generate a new certificate and install it everywhere before restarting."
                     : "mTLS enabled. Restart RavensPort for the change to take effect."
                 : "mTLS disabled. Restart RavensPort for the change to take effect.";
         }
@@ -1007,6 +1016,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 #endif
+
+    /// <summary>
+    /// Whether the stored certificate is past its expiry date, or cannot be opened at all — settled
+    /// by <see cref="RefreshCertificateExpiry"/> alongside the summary it writes, so the status line
+    /// can say so without parsing a second PFX.
+    ///
+    /// A property rather than a field because only the EXE build reads it: the store build has no
+    /// mTLS switch to warn, and a private field written in one build and read in neither would be
+    /// CS0414 there. Nothing binds to it in either.
+    /// </summary>
+    private bool CertificateExpired { get; set; }
 
     [ObservableProperty] private bool _isConfirmingGenerateCertificate;
 

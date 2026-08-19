@@ -144,7 +144,7 @@ public class McpFunnelMtlsTests : IAsyncLifetime
         // Without a SAN the certificate is rejected by every client that validates a hostname
         // before it reaches the pinning question — which is every MCP host that is not this app.
         using var certificate = MtlsCertificateFactory.Load(
-            _host.Cache.Current.Settings.MtlsClientCertificatePfx);
+            _host.Cache.Current.Settings.MtlsClientCertificatePfx, FunnelTestHost.PfxPassword);
 
         var subjectAlternativeNames = certificate.Extensions
             .OfType<System.Security.Cryptography.X509Certificates.X509SubjectAlternativeNameExtension>()

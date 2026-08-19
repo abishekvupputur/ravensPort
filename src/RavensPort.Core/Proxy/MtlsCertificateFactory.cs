@@ -15,29 +15,20 @@ namespace RavensPort.Core.Proxy;
 public static class MtlsCertificateFactory
 {
     /// <summary>
-    /// The password used when the user was not asked for one: certificates minted by the mTLS
-    /// switch itself, by startup repairing a store that says "on" and holds none, and every
-    /// certificate written before the Settings tab offered a password box.
-    ///
-    /// Not a secret and not pretending to be one. The file is the credential: anyone holding the
-    /// PFX holds the access it grants regardless of what is typed here, which is why a user-chosen
-    /// password changes who can open the exported copy and nothing about what it can reach.
-    /// </summary>
-    public const string DefaultPfxPassword = "ravensport";
-
-    /// <summary>
     /// How long a generated certificate stays inside its validity window. 90 days, so a copy that
     /// leaked — off a machine it was installed on, out of a backup of one — stops being a working
     /// credential within a quarter rather than within a decade. There is no revocation here: no CA,
     /// no CRL, no OCSP, so expiry is the only thing that retires a certificate the user cannot get
     /// back.
     ///
-    /// Note what this does not do. Both ends pin the thumbprint and accept it in spite of chain
-    /// errors — see the validation callbacks in App.xaml.cs and McpSourceConnectionPool — so an
-    /// expired certificate is not refused by this app, and the curl and Node recipes on the
-    /// Settings tab disable verification too. The date is a prompt to rotate, not an enforced
-    /// cut-off, and rotating means generating, exporting, reinstalling on every client, and
-    /// restarting.
+    /// The date is enforced, not advisory. Both ends pin the thumbprint and accept the certificate
+    /// in spite of chain errors — see the validation callbacks in App.xaml.cs and
+    /// McpSourceConnectionPool — and that turns off the platform's own expiry check along with
+    /// everything else, so both callbacks put it back by hand. Past the date the listener refuses
+    /// every caller, the funnel refuses its own hop into its own routes, and clients following the
+    /// recipes on the Settings tab and in the README refuse it too, because they verify against
+    /// this certificate installed as a trust anchor. Rotating means generating, exporting,
+    /// reinstalling on every client, and restarting.
     /// </summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(90);
 
@@ -100,9 +91,17 @@ public static class MtlsCertificateFactory
 
 #if !STORE_BUILD
     /// <param name="password">
-    /// What the exported PFX will ask for. Empty or null takes <see cref="DefaultPfxPassword"/>,
-    /// so the callers that have nobody to ask do not each have to name it.
+    /// What the exported PFX will ask for. Required, with no default and no fallback: a password
+    /// this app chose is one every install shares, so it protects the exported file against nobody
+    /// who has ever seen the source. Every caller therefore has a user-typed password to pass, and
+    /// the callers that have nobody to ask do not generate — they say so and point at the box.
     /// </param>
+    /// <exception cref="ArgumentException">
+    /// The password is null or empty. Not a silent fallback, because the two things a fallback
+    /// could do here are both worse than failing: minting under a built-in password hands back a
+    /// certificate whose password is not the one the caller believes it set, and minting with none
+    /// produces a PFX that Windows' certificate import and curl's Schannel backend both refuse.
+    /// </exception>
     /// <remarks>
     /// Absent from the Microsoft Store build. Certification failed the package under 10.2.10 and
     /// 10.2.10.1 for exactly this — "Location of Download: Settings &gt; Generate New Certificate" —
@@ -110,8 +109,15 @@ public static class MtlsCertificateFactory
     /// <see cref="Load"/> stays in both builds: reading a certificate is not producing one, and the
     /// vault is shared with the EXE, which may well have written one.
     /// </remarks>
-    public static string GenerateClientCertificatePfx(string? password = null)
+    public static string GenerateClientCertificatePfx(string password)
     {
+        if (string.IsNullOrEmpty(password))
+        {
+            throw new ArgumentException(
+                "A password is required to generate a client certificate. RavensPort does not write "
+                + "PFX files under a built-in password.", nameof(password));
+        }
+
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=RavensPort MCP Client", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
@@ -135,26 +141,31 @@ public static class MtlsCertificateFactory
         var expire = DateTimeOffset.UtcNow.Add(Lifetime);
         using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), expire);
 
-        var pfxBytes = cert.Export(X509ContentType.Pfx, Resolve(password));
+        var pfxBytes = cert.Export(X509ContentType.Pfx, password);
         return Convert.ToBase64String(pfxBytes);
     }
 #endif
 
     /// <summary>
-    /// Empty means "the store predates the password box", not "no password" — see
-    /// <see cref="Models.AppSettings.MtlsClientCertificatePassword"/>. Both readings load an
-    /// existing certificate; only this one loads the ones already on disk.
-    /// </summary>
-    private static string Resolve(string? password) =>
-        string.IsNullOrEmpty(password) ? DefaultPfxPassword : password;
-
-    /// <summary>
     /// Reads back a certificate stored by <see cref="GenerateClientCertificatePfx"/>. The single
     /// place the storage flags and the password are applied, so the copy Kestrel serves and the
     /// copy the funnel presents are loaded identically and their thumbprints match.
+    ///
+    /// An empty password is refused rather than resolved to anything. It is the marker of a store
+    /// written before the password box existed — see
+    /// <see cref="Models.AppSettings.MtlsClientCertificatePassword"/> — and the built-in password
+    /// those certificates carry no longer exists to try, so the honest answer is that this blob
+    /// cannot be opened and a new certificate has to be generated.
     /// </summary>
-    public static X509Certificate2 Load(string base64Pfx, string? password = null)
+    public static X509Certificate2 Load(string base64Pfx, string password)
     {
+        if (string.IsNullOrEmpty(password))
+        {
+            throw new InvalidOperationException(
+                "The stored mTLS certificate has no password recorded for it, so it cannot be opened. "
+                + "Generate a new one on the Settings tab, install it on every client, and restart.");
+        }
+
         try
         {
             // X509CertificateLoader, not the X509Certificate2 constructor: that overload is
@@ -163,7 +174,7 @@ public static class MtlsCertificateFactory
             // this ever loads -- so a blob that is something else now fails as one rather than
             // being sniffed into a certificate with no private key and failing at the handshake.
             return X509CertificateLoader.LoadPkcs12(
-                Convert.FromBase64String(base64Pfx), Resolve(password), StorageFlags);
+                Convert.FromBase64String(base64Pfx), password, StorageFlags);
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException)
         {

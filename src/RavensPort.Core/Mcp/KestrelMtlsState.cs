@@ -55,11 +55,11 @@ public sealed class KestrelMtlsState : IDisposable
     /// fixed at bind time, which is why toggling the setting in the GUI asks for a restart.
     /// </summary>
     /// <param name="password">
-    /// The password the stored PFX was written with, from settings. Empty is the ordinary case for
-    /// a certificate the app minted itself — see
-    /// <see cref="Models.AppSettings.MtlsClientCertificatePassword"/>.
+    /// The password the stored PFX was written with, from settings. Required: every certificate
+    /// this app writes carries a password the user typed, so there is no built-in one to fall back
+    /// to — see <see cref="Models.AppSettings.MtlsClientCertificatePassword"/>.
     /// </param>
-    public void Enable(string base64Pfx, string? password = null)
+    public void Enable(string base64Pfx, string password)
     {
         if (string.IsNullOrWhiteSpace(base64Pfx))
         {
