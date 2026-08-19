@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -303,7 +303,9 @@ public class ClientCredentialsTests : IAsyncLifetime
         new GoogleOAuthService(_activityLog),
         new GoogleServiceAccountService(_activityLog),
         _service,
-        new DeviceCodeService(_activityLog),
+        // DoNotOpen for the reason DeviceCodeTests gives. Nothing here reaches the device flow,
+        // but the dependency is constructed all the same and a later test might.
+        new DeviceCodeService(_activityLog, DeviceCodeService.DoNotOpen),
         _activityLog);
 
     [Fact]

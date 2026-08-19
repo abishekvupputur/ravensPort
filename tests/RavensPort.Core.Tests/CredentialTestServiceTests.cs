@@ -90,7 +90,8 @@ public class CredentialTestServiceTests : IAsyncLifetime
             new GoogleOAuthService(activityLog),
             new GoogleServiceAccountService(activityLog),
             new ClientCredentialsService(activityLog),
-            new DeviceCodeService(activityLog),
+            // DoNotOpen for the reason DeviceCodeTests gives.
+            new DeviceCodeService(activityLog, DeviceCodeService.DoNotOpen),
             activityLog);
         _service = new CredentialTestService(new AccessTokenProvider(_cache, oAuth2Service, activityLog), activityLog);
     }

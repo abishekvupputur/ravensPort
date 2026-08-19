@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +84,20 @@ public class DeviceCodeTests : IAsyncLifetime
                         """);
                     return;
 
+                // A provider answering with something the shell would resolve to a local file rather
+                // than a page. Real providers do not do this; a mistyped or tampered endpoint can.
+                case "/device-file-uri":
+                    await context.Response.WriteAsync($$"""
+                        {
+                          "device_code": "{{DeviceCode}}",
+                          "user_code": "{{UserCode}}",
+                          "verification_uri": "file:///C:/Windows/System32/calc.exe",
+                          "expires_in": 600,
+                          "interval": 1
+                        }
+                        """);
+                    return;
+
                 case "/device/no-flow":
                     context.Response.StatusCode = 400;
                     await context.Response.WriteAsync(
@@ -133,7 +147,10 @@ public class DeviceCodeTests : IAsyncLifetime
             .Addresses.First().TrimEnd('/');
 
         _activityLog = new ActivityLog(_logPath);
-        _service = new DeviceCodeService(_activityLog);
+        // DoNotOpen, or every authorization in this class launches a browser: these tests run the
+        // real flow against the stub above, and the service opens the verification page as a
+        // convenience. On CI that is a window per test on the agent.
+        _service = new DeviceCodeService(_activityLog, DeviceCodeService.DoNotOpen);
     }
 
     public async Task DisposeAsync()
@@ -232,6 +249,49 @@ public class DeviceCodeTests : IAsyncLifetime
 
         Assert.Contains(UserCode, log);
         Assert.DoesNotContain(DeviceCode, log);
+    }
+
+    [Fact]
+    public async Task TheVerificationPageIsOpenedThroughTheInjectedOpenerAndNothingElse()
+    {
+        // The seam that keeps CI quiet. Without it AuthorizeAsync shells out to the real browser,
+        // and every test in this class that runs the flow -- most of them -- opens a window on the
+        // agent. Asserting the opener is *called* rather than merely absent is what stops the fix
+        // from being a silently dead convenience: production still opens the page.
+        var opened = new List<Uri>();
+
+        using var service = new DeviceCodeService(_activityLog, opened.Add);
+
+        var credential = NewCredential();
+        var outcome = await service.AuthorizeAsync(credential, prompt: null);
+
+        Assert.True(outcome.Success, outcome.ErrorDescription);
+
+        // The complete URI, not the bare one: it carries the user code, which is the whole point of
+        // opening a page rather than making someone type it.
+        var launched = Assert.Single(opened);
+        Assert.Equal(_baseUrl + "/activate", launched.GetLeftPart(UriPartial.Path));
+        Assert.Contains("user_code=" + UserCode, launched.Query);
+    }
+
+    [Fact]
+    public async Task ANonHttpVerificationUrlIsNotHandedToTheOpener()
+    {
+        // The endpoint comes from user-editable configuration and the default opener is a shell
+        // execute, which resolves whatever it is given -- a protocol handler, a UNC path, an
+        // executable. The scheme check has to happen before the opener sees it, so a recording
+        // opener is the only way to tell "refused" from "opened something dangerous".
+        var opened = new List<Uri>();
+
+        using var service = new DeviceCodeService(_activityLog, opened.Add);
+
+        var credential = NewCredential(devicePath: "/device-file-uri");
+        await service.AuthorizeAsync(credential, prompt: null);
+
+        Assert.Empty(opened);
+        Assert.Contains(
+            _activityLog.GetRecent(200),
+            line => line.Contains("not opening it", StringComparison.OrdinalIgnoreCase));
     }
 
     // ---- Refusals -------------------------------------------------------------------------------
