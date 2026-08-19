@@ -4,11 +4,16 @@ using RavensPort.Core.Proxy;
 namespace RavensPort.Core.Tests;
 
 /// <summary>
-/// The password on the exported PFX, and the one property that has to hold across an upgrade: a
-/// certificate generated before the Settings tab offered a password box is still openable
-/// afterwards. Nothing re-encrypts the stored blob, so if the fallback ever stops matching what was
-/// written, the proxy cannot load its own listener certificate and mTLS fails at startup rather
-/// than at the first request — with a store the user cannot tell is intact.
+/// The password on the exported PFX, and the rule the whole flow now rests on: RavensPort never
+/// writes a certificate under a password it chose itself. A built-in password is one every install
+/// shares, so it protects the exported file against nobody who has read the source — and the file
+/// is what the user copies to every machine allowed to call the proxy.
+///
+/// The cost of that rule is paid here too. A store written before the password box existed records
+/// no password, its blob carries the old built-in one, and nothing re-encrypts it — so it can no
+/// longer be opened, and the only way forward is a new certificate reinstalled on every client.
+/// These tests pin both halves: generation refuses to invent a password, and loading refuses to
+/// guess one.
 /// </summary>
 public class MtlsCertificatePasswordTests
 {
@@ -23,39 +28,46 @@ public class MtlsCertificatePasswordTests
     }
 
     [Fact]
-    public void ACertificateGeneratedWithAChosenPassword_DoesNotOpenWithTheBuiltInOne()
+    public void ACertificateGeneratedWithAChosenPassword_DoesNotOpenWithAnother()
     {
         var pfx = MtlsCertificateFactory.GenerateClientCertificatePfx("a chosen password");
 
         // Settings holding the wrong password is indistinguishable from a corrupt blob at this
         // level, and both surface as the same "generate a new one" instruction.
-        Assert.Throws<InvalidOperationException>(() => MtlsCertificateFactory.Load(pfx));
+        Assert.Throws<InvalidOperationException>(
+            () => MtlsCertificateFactory.Load(pfx, "some other password"));
     }
 
     /// <summary>
-    /// The upgrade case. An empty stored password means the certificate predates the box, not that
-    /// it was written with no password at all — see AppSettings.MtlsClientCertificatePassword.
+    /// No password means no certificate. The alternatives are both worse than failing: minting
+    /// under a built-in password hands back a certificate whose password is not the one the caller
+    /// believes it set, and minting with none produces a PFX that Windows' certificate import and
+    /// curl's Schannel backend both refuse.
     /// </summary>
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public void ACertificateGeneratedWithoutOne_OpensWithTheBuiltInPassword(string? stored)
+    public void GeneratingWithoutAPassword_IsRefused(string? password)
     {
-        var pfx = MtlsCertificateFactory.GenerateClientCertificatePfx();
-
-        using var loaded = MtlsCertificateFactory.Load(pfx, stored);
-
-        Assert.True(loaded.HasPrivateKey);
+        Assert.Throws<ArgumentException>(
+            () => MtlsCertificateFactory.GenerateClientCertificatePfx(password!));
     }
 
-    [Fact]
-    public void TheBuiltInPassword_IsWhatAnUnaskedGenerationWrites()
+    /// <summary>
+    /// The upgrade case, and the one behaviour that deliberately changed. An empty stored password
+    /// marks a store written before the box existed — see AppSettings.MtlsClientCertificatePassword
+    /// — whose certificate carries a built-in password this build no longer knows. Refused outright
+    /// rather than guessed at, so the failure names itself instead of surfacing later as a
+    /// handshake that closes with no status.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void LoadingWithoutAPassword_IsRefused(string? stored)
     {
-        var pfx = MtlsCertificateFactory.GenerateClientCertificatePfx();
+        var pfx = MtlsCertificateFactory.GenerateClientCertificatePfx("a chosen password");
 
-        using var loaded = MtlsCertificateFactory.Load(pfx, MtlsCertificateFactory.DefaultPfxPassword);
-
-        Assert.True(loaded.HasPrivateKey);
+        Assert.Throws<InvalidOperationException>(() => MtlsCertificateFactory.Load(pfx, stored!));
     }
 
     /// <summary>

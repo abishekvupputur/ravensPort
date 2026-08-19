@@ -23,18 +23,19 @@ public sealed class AppSettings
     public string MtlsClientCertificatePfx { get; set; } = "";
 
     /// <summary>
-    /// The password <see cref="MtlsClientCertificatePfx"/> is encrypted with, when the user chose
-    /// one on the Settings tab. Empty means the certificate carries
-    /// <see cref="Proxy.MtlsCertificateFactory.DefaultPfxPassword"/> — which is the case for every
-    /// store written before this field existed, and for the certificates the app mints for itself
-    /// when the switch is turned on with nothing stored and there is nobody to ask.
+    /// The password <see cref="MtlsClientCertificatePfx"/> is encrypted with. Always a password the
+    /// user typed on the Settings tab: nothing in this app mints a certificate under a password of
+    /// its own, so there is no value here that RavensPort itself chose.
+    ///
+    /// Empty is not "no password" and no longer resolves to one. It marks a store written before
+    /// this field existed, whose certificate carries a built-in password that this build no longer
+    /// knows — so that blob cannot be opened, mTLS does not come up, and the log and the Settings
+    /// tab both say to generate a new certificate. That is a one-time cost at upgrade, paid by
+    /// regenerating and reinstalling on every client that calls the proxy.
     ///
     /// It lives here because the app has to re-read its own certificate unattended at every start,
     /// so a password it cannot recover is a password that locks the proxy out of its own listener.
-    /// The vault this is written to is the same one holding the OAuth refresh tokens; a password
-    /// stored beside the file it opens buys nothing on top of that, which is why the exported copy
-    /// is the credential and the password is only there to stop Windows and curl refusing a PFX
-    /// with no password at all.
+    /// The vault this is written to is the same one holding the OAuth refresh tokens.
     /// </summary>
     public string MtlsClientCertificatePassword { get; set; } = "";
 

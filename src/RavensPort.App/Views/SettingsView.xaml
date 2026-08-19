@@ -339,7 +339,7 @@
                     </WrapPanel>
                     
                     <TextBox IsReadOnly="True" FontFamily="Consolas" Margin="0,8,0,0" Padding="8" BorderThickness="1" BorderBrush="{StaticResource BorderBrush0}" Background="{StaticResource PanelAltBrush}" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"
-                             Text="cURL: curl -k --cert &quot;cert.pfx:PASSWORD&quot; --cert-type P12 https://...&#x0a;Node.js / MCP: https.request({ pfx: fs.readFileSync('cert.pfx'), passphrase: 'PASSWORD', rejectUnauthorized: false }, ...)" />
+                             Text="Install the certificate as a trust anchor first, then verify normally — see the mTLS section of the README.&#x0a;Trust:  Import-Certificate -FilePath ravensport.cer -CertStoreLocation Cert:\CurrentUser\Root&#x0a;cURL:   curl --cert &quot;cert.pfx:PASSWORD&quot; --cert-type P12 https://127.0.0.1:5559/...&#x0a;Node.js / MCP: https.request({ pfx: fs.readFileSync('cert.pfx'), passphrase: 'PASSWORD', ca: fs.readFileSync('ravensport.pem'), rejectUnauthorized: true }, ...)" />
                 </StackPanel>
             </Border>
 

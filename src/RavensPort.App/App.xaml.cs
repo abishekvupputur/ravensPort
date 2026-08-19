@@ -406,45 +406,63 @@ public partial class App : Application
 #else
                 if (configStoreCache.Current.Settings.MtlsEnabled)
                 {
-                    // A store can say "mTLS on" and hold no certificate — earlier builds let the
-                    // checkbox be ticked without generating one. Neither answer to that is free:
-                    // binding plain HTTP anyway would tell the user their proxy is certificate-
-                    // protected while anything on the machine can call it, and refusing to start
-                    // strands them on the setup page with no way back to the checkbox. So the
-                    // certificate is minted, and the Settings tab's export is where they get it.
-                    if (string.IsNullOrWhiteSpace(configStoreCache.Current.Settings.MtlsClientCertificatePfx))
-                    {
-                        await configStoreCache.MutateAsync(store =>
-                            store.Settings.MtlsClientCertificatePfx = MtlsCertificateFactory.GenerateClientCertificatePfx());
+                    // A store can say "mTLS on" and hold nothing this build can open: no
+                    // certificate at all, because earlier builds let the checkbox be ticked without
+                    // generating one, or a certificate written before the password box existed,
+                    // whose built-in password no longer exists to try.
+                    //
+                    // Minting one here is not an answer any more. Generating means choosing the PFX
+                    // password, every certificate this app writes carries a password the user typed,
+                    // and startup is precisely the moment there is nobody to ask. Refusing to start
+                    // would strand them on the setup page with no way back to the checkbox — so the
+                    // listener comes up on http:// and the log says plainly that it did, which is
+                    // the same trade the store build makes above.
+                    var storedPfx = configStoreCache.Current.Settings.MtlsClientCertificatePfx;
+                    var storedPfxPassword = configStoreCache.Current.Settings.MtlsClientCertificatePassword;
 
+                    if (string.IsNullOrWhiteSpace(storedPfx) || string.IsNullOrEmpty(storedPfxPassword))
+                    {
                         _webApp.Services.GetService<ActivityLog>()?.Log(
-                            "mTLS was enabled with no certificate stored; a new one was generated. "
-                            + "Export it from the Settings tab and install it on every client that calls this proxy.");
+                            "STARTUP mTLS is switched on, but there is no client certificate this build can open "
+                            + "— either none is stored, or the stored one predates the password box and has no "
+                            + "password recorded for it. The proxy is listening on http://127.0.0.1 and every "
+                            + "caller still needs its endpoint's proxy key. Use Generate new certificate on the "
+                            + "Settings tab, choose a password, install the export on every client, and restart.");
                     }
-
-                    kestrelMtls.Enable(
-                        configStoreCache.Current.Settings.MtlsClientCertificatePfx,
-                        configStoreCache.Current.Settings.MtlsClientCertificatePassword);
-
-                    // The other half of the pin, recorded at the moment it is decided. When the
-                    // funnel later refuses this listener it logs what was presented; without this
-                    // line there is nothing to compare that against, and "the remote certificate
-                    // was rejected" is equally consistent with a stale certificate, a certificate
-                    // regenerated since the last start, and Kestrel never having received one.
-                    _webApp.Services.GetService<ActivityLog>()?.Log(
-                        $"mTLS enabled — serving certificate …{kestrelMtls.Certificate!.Thumbprint[^8..]} "
-                        + "and requiring the same one from every caller.");
-
-                    // Said at startup as well as on the Settings tab, because this is the state in
-                    // which every request fails at the handshake: no status code reaches the
-                    // caller, so without a line here the only evidence is a connection that closes.
-                    if (kestrelMtls.IsExpired)
+                    else
                     {
-                        _webApp.Services.GetService<ActivityLog>()?.Log(
-                            $"STARTUP the mTLS certificate expired on {kestrelMtls.ExpiresUtc:yyyy-MM-dd} and is no "
-                            + "longer accepted. Every caller will be refused at the TLS handshake until a new "
-                            + "certificate is generated on the Settings tab, exported, installed on every client, "
-                            + "and RavensPort restarted.");
+                        kestrelMtls.Enable(storedPfx, storedPfxPassword);
+
+                        // Either way the thumbprint is recorded at the moment it is decided. When the
+                        // funnel later refuses this listener it logs what was presented; without that
+                        // there is nothing to compare against, and "the remote certificate was
+                        // rejected" is equally consistent with a stale certificate, a certificate
+                        // regenerated since the last start, and Kestrel never having received one.
+                        //
+                        // An expired certificate does not get the line saying mTLS is up. The date is
+                        // enforced rather than warned about — pinning a thumbprint turns the platform's
+                        // own expiry check off, so both validation callbacks put it back by hand — and
+                        // the listener binds and then refuses everyone, this app's own funnel included.
+                        // "mTLS enabled" would be the last thing read before a connection that closes
+                        // with no status code to explain it.
+                        var thumbprintTail = kestrelMtls.Certificate!.Thumbprint[^8..];
+
+                        if (kestrelMtls.IsExpired)
+                        {
+                            _webApp.Services.GetService<ActivityLog>()?.Log(
+                                $"STARTUP the mTLS certificate expired on {kestrelMtls.ExpiresUtc:yyyy-MM-dd}. The "
+                                + $"listener is bound on https and presenting certificate …{thumbprintTail}, but the "
+                                + "expiry date is enforced at both ends: every caller is refused during the TLS "
+                                + "handshake — no status code reaches them, the connection simply closes — and the MCP "
+                                + "funnel cannot reach its own routes either. Generate a new certificate on the "
+                                + "Settings tab, export it, install it on every client, and restart RavensPort.");
+                        }
+                        else
+                        {
+                            _webApp.Services.GetService<ActivityLog>()?.Log(
+                                $"mTLS enabled — serving certificate …{thumbprintTail} "
+                                + "and requiring the same one from every caller.");
+                        }
                     }
                 }
 #endif

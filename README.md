@@ -636,6 +636,11 @@ of the endpoint it is calling.
 certificate demand are fixed when Kestrel binds, so nothing about this takes effect until the app
 is restarted — the Settings tab says so in red until it is.
 
+**Generate the certificate first.** The switch refuses to turn on until one exists. RavensPort
+never mints a certificate behind the switch, because generating one means choosing the PFX password
+and a password the app picked for you is a password every install shares. Use **Generate new
+certificate** below, choose your own, then come back and enable mTLS.
+
 ### Generating and exporting
 
 **Generate new certificate** asks for a password, then mints a self-signed certificate. RavensPort
@@ -654,8 +659,43 @@ demands it back, and the funnel presents it when it dials this app's own routes.
 
 ### Pointing a client at it
 
+The certificate is self-signed, so nothing trusts it until you say so. Install it as a trust anchor
+on the machine that will be calling the proxy, and every client there verifies the listener the
+ordinary way from then on.
+
+**1. Get the public half out of the export.** The `.pfx` carries the private key; a trust store only
+needs the certificate, and only the certificate should travel.
+
+```powershell
+$cert = Get-PfxCertificate -FilePath cert.pfx          # prompts for the password
+Export-Certificate -Cert $cert -FilePath ravensport.cer
+certutil -encode ravensport.cer ravensport.pem         # PEM, for clients that want one
+```
+
+**2. Install it into the Windows trust store.**
+
+```powershell
+# This user only — no administrator rights needed
+Import-Certificate -FilePath ravensport.cer -CertStoreLocation Cert:\CurrentUser\Root
+
+# Machine-wide, for services and other accounts — run as Administrator
+Import-Certificate -FilePath ravensport.cer -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+Windows asks you to confirm, and it is worth reading: a root you install is one that machine will
+trust wherever it is presented. Take it back out when the certificate is rotated or retired, or the
+machine goes on trusting a certificate you no longer control.
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\Root |
+  Where-Object { $_.Subject -eq 'CN=RavensPort MCP Client' } |
+  Remove-Item
+```
+
+**3. Call the proxy.**
+
 ```bash
-curl -k --cert "cert.pfx:<your-password>" --cert-type P12 \
+curl --cert "cert.pfx:<your-password>" --cert-type P12 \
      -H "X-Proxy-Key: <this-route's-key>" \
      https://127.0.0.1:5559/app/my-service/foo
 ```
@@ -664,14 +704,52 @@ curl -k --cert "cert.pfx:<your-password>" --cert-type P12 \
 https.request({
   pfx: fs.readFileSync('cert.pfx'),
   passphrase: '<your-password>',
-  rejectUnauthorized: false
+  ca: fs.readFileSync('ravensport.pem'),
+  rejectUnauthorized: true
 }, ...)
 ```
 
-`-k` / `rejectUnauthorized: false` are there because the certificate is self-signed and no
-machine trusts it. That switches off the client's verification of the *server*, not the server's
-demand for a certificate from the *client* — which is the direction that matters here. RavensPort
-does not skip anything: it compares the thumbprint of what it was handed against its own.
+**`rejectUnauthorized: true` is the most important line in that snippet.** What it prevents is worth
+being precise about.
+
+Loopback is not a trust boundary. `127.0.0.1:5559` is first come, first served: any process running
+as any user on the machine can bind it whenever RavensPort is not already holding it — before the
+app starts at boot, after it exits, in the window a crash leaves open. Binding a loopback port needs
+no privilege and no consent, and nothing about the address makes whatever answers on it the proxy.
+
+Then look at the order things happen in. The TLS handshake completes **first**. The request — method,
+path, and every header, `X-Proxy-Key` and anything else your client attaches included — goes out
+**after** it. Verifying the server is the only step that happens before your client has said
+anything. A client that skips it has already handed the endpoint's proxy key to whatever answered by
+the time there is any way to notice, and that key does not come back: it spends the OAuth grant
+behind that route, and it works against the real proxy afterwards.
+
+The client certificate does not cover this. mTLS is mutual, and the two halves protect different
+parties — the certificate your client presents proves the *client* to RavensPort, and the
+certificate RavensPort presents is what proves the *server* to your client. An impostor on 5559 can
+demand a client certificate exactly as RavensPort does; asking costs it nothing, and your client
+will present one. The trust anchor from step 2 is the only thing that tells the two listeners apart.
+
+RavensPort itself refuses to start when the port is already taken and says so on the setup page, so
+a squatter is visible from the app's side. Your client has no such view. It connects, something
+answers, and it either checks the certificate or it does not — and that check is the whole of what
+stands between a local process and your credentials.
+
+Three things decide whether that works:
+
+- **Use `127.0.0.1` or `localhost`, and nothing else.** The certificate carries exactly those names
+  — `localhost`, `127.0.0.1`, `::1` — and checking the hostname is part of what verification does.
+  Any other name for the same machine is refused: Node says `ERR_TLS_CERT_ALTNAME_INVALID`.
+- **curl on Windows reads the Windows trust store.** Both the `curl.exe` in `System32` and the one
+  Git Bash ships are built against Schannel, so step 2 is all they need and no extra flag belongs on
+  the command line. A curl built against OpenSSL — WSL, most Linux distributions — reads its own CA
+  bundle instead: pass `--cacert ravensport.pem` there rather than installing a root.
+- **Node does not read the Windows trust store,** whatever step 2 did, because it carries its own
+  OpenSSL. Hand it the certificate explicitly the way the snippet does, or set
+  `NODE_EXTRA_CA_CERTS=ravensport.pem` for the whole process.
+
+On RavensPort's side of the same handshake: it compares the thumbprint of what it was handed against
+its own and refuses anything else, it enforces the certificate's expiry date itself, and every request still needs the proxy key of the endpoint it is calling.
 
 ### Expiry
 
