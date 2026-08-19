@@ -87,7 +87,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: src/OnePasswordNative/go.mod
-          cache-dependency-path: src/OnePasswordNative/go.sum
+          # Off for the reason release.yml gives at more length. This job does not publish, so a
+          # poisoned cache could not reach a user directly -- but it builds the same DLL and the
+          # same installer that release.yml does, and then scans them. A cache entry that changed
+          # what got built would make this pass on something other than what ships, which is the
+          # one thing a pre-release scan exists to rule out.
+          cache: false
 
       - name: Restore
         run: dotnet restore RavensPort.slnx --locked-mode
