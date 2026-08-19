@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
@@ -366,7 +366,8 @@ public class DeferredSyncTests : IDisposable
         new GoogleOAuthService(NewLog()),
         new GoogleServiceAccountService(NewLog()),
         new ClientCredentialsService(NewLog()),
-        new DeviceCodeService(NewLog()),
+        // DoNotOpen for the reason DeviceCodeTests gives.
+        new DeviceCodeService(NewLog(), DeviceCodeService.DoNotOpen),
         NewLog());
 
     // ---- Disconnecting --------------------------------------------------------------------------

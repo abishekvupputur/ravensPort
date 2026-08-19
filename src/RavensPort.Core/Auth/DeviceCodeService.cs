@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using IdentityModel.Client;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
@@ -53,12 +53,27 @@ public sealed class DeviceCodeService : IDisposable
 
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Never opens anything. Pass this from tests and from any headless host: the device flow is
+    /// exercised end to end against a stub provider, and the default would shell out to a real
+    /// browser once per authorization -- on a CI agent that is a window per test, on a developer's
+    /// machine it is a tab per test, and in neither case is it what the test is asserting.
+    /// </summary>
+    public static readonly Action<Uri> DoNotOpen = _ => { };
+
     private readonly ActivityLog _activityLog;
     private readonly HttpClient _httpClient;
 
-    public DeviceCodeService(ActivityLog activityLog)
+    /// <summary>
+    /// How the verification page gets opened, injected so the shell-out is substitutable. Left at
+    /// its default everywhere in the app; see <see cref="DoNotOpen"/> for why anything else exists.
+    /// </summary>
+    private readonly Action<Uri> _openBrowser;
+
+    public DeviceCodeService(ActivityLog activityLog, Action<Uri>? openBrowser = null)
     {
         _activityLog = activityLog;
+        _openBrowser = openBrowser ?? ShellOpen;
 
         // Same reason as everywhere else a token endpoint is called directly: a provider that
         // defaults to form-encoded output otherwise returns something the parser rejects.
@@ -354,13 +369,21 @@ public sealed class DeviceCodeService : IDisposable
         try
         {
             // The parsed form rather than the string, so what is launched is what was checked.
-            Process.Start(new ProcessStartInfo(verificationUri.AbsoluteUri) { UseShellExecute = true });
+            _openBrowser(verificationUri);
         }
         catch (Exception ex)
         {
             _activityLog.LogError($"Could not open the verification page for '{credentialName}'", ex);
         }
     }
+
+    /// <summary>
+    /// The real thing: hand the URL to the shell and let Windows pick the browser. Only ever
+    /// reached through <see cref="_openBrowser"/>, and only when the caller supplied nothing --
+    /// which is every caller in the app and none in the tests.
+    /// </summary>
+    private static void ShellOpen(Uri uri) =>
+        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
 
     public void Dispose() => _httpClient.Dispose();
 }
