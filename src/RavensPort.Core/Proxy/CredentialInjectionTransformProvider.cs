@@ -1,4 +1,4 @@
-using RavensPort.Core.Auth;
+﻿using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
@@ -9,8 +9,9 @@ namespace RavensPort.Core.Proxy;
 
 /// <summary>
 /// Attaches the route's credentials to each proxied request, in whichever shapes the route is
-/// configured for — headers (the "Authorization: Bearer &lt;token&gt;" default), query
-/// parameters, fields in the request body, or any combination of those.
+/// configured for — headers (the "Authorization: Bearer &lt;token&gt;" default), fields in the
+/// request body, or both. Query-string placements are refused rather than sent; see
+/// <see cref="CredentialPlacement.Query"/>.
 ///
 /// A route may carry none, one, or several credentials, and the same credential may appear in
 /// more than one slot. Body fields are collected and written in a single pass at the end, so a
@@ -80,6 +81,18 @@ public sealed class CredentialInjectionTransformProvider(
                 if (token is null)
                 {
                     failed.Add($"{label} (credential not connected)");
+                    continue;
+                }
+
+                // A store written before query placements were withdrawn can still name one.
+                // Refused rather than downgraded to a header: the upstream expects the parameter
+                // and would reject a header it does not read, so quietly "fixing" it would turn a
+                // clear failure into a confusing one. Checked before the token is fetched so a
+                // route nobody can use does not keep refreshing a grant on every request.
+                if (!injection.IsPermitted)
+                {
+                    failed.Add($"{label} (query-string placements are no longer permitted — "
+                               + "change it to a header or body field on the Routes tab)");
                     continue;
                 }
 
@@ -192,9 +205,9 @@ public sealed class CredentialInjectionTransformProvider(
     }
 
     /// <summary>
-    /// Puts one token where its entry says it goes. Header and query only — body placements are
-    /// batched by the caller so the body is rewritten once regardless of how many credentials
-    /// live in it.
+    /// Puts one token where its entry says it goes. Headers only — body placements are batched by
+    /// the caller so the body is rewritten once regardless of how many credentials live in it,
+    /// and query placements never reach here.
     /// </summary>
     private static bool Inject(RequestTransformContext context, CredentialInjection injection, string token)
     {
@@ -208,17 +221,13 @@ public sealed class CredentialInjectionTransformProvider(
         // silently trimmed key is a key that does not work, reported as one that does.
         if (value.Any(char.IsControl)) return false;
 
-        if (injection.Placement == CredentialPlacement.Query)
-        {
-            // Assigning replaces any same-named parameter the caller supplied, so a caller
-            // cannot pre-set "?access_token=..." and have the upstream see two of them.
-            context.Query.Collection[injection.Name] = value;
-            return true;
-        }
+        // Belt and braces. The caller filters these out already; reaching here would mean a token
+        // going into a query string, which is the thing this placement was withdrawn to prevent.
+        if (!injection.IsPermitted) return false;
 
-        // Removed first for the same reason: TryAddWithoutValidation appends rather than
-        // replaces, so without this a caller-supplied header of the same name would be
-        // sent alongside ours and the upstream would pick whichever it liked.
+        // Removed first because TryAddWithoutValidation appends rather than replaces, so without
+        // this a caller-supplied header of the same name would be sent alongside ours and the
+        // upstream would pick whichever it liked.
         //
         // Both collections are tried because HttpClient splits headers between them and
         // which one a given name lives in depends on the name, not on the caller.

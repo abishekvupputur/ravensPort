@@ -1,4 +1,4 @@
-<UserControl x:Class="RavensPort.App.Views.RoutesView"
+﻿<UserControl x:Class="RavensPort.App.Views.RoutesView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -18,8 +18,9 @@ Leave this ON unless the upstream genuinely expects the prefix in its path.</sys
         <sys:String x:Key="CredentialPlacementHelpText">Where the access token is put on the forwarded request.
 
 Header — Authorization: Bearer &lt;token&gt;   (the default; what almost every OAuth API expects)
-Query  — ?access_token=&lt;token&gt;
 Body   — a field added to the JSON object or form body
+
+Query strings are not offered: they are written to the upstream's access log, to every intermediary's, and to browser history, so a token placed there leaks somewhere RavensPort cannot reach.
 
 Body only works on a JSON or application/x-www-form-urlencoded body under 1 MB that declares a Content-Length; anything else is forwarded untouched and the activity log says so.</sys:String>
 

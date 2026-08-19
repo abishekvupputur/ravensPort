@@ -1,4 +1,4 @@
-<UserControl x:Class="RavensPort.App.Views.SettingsView"
+﻿<UserControl x:Class="RavensPort.App.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -270,7 +270,7 @@
                 <StackPanel>
                     <TextBlock Text="Proxy keys" Style="{StaticResource SectionHeaderStyle}"/>
                     <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8" TextWrapping="Wrap"
-                               Text="Every proxied request must present the key of the endpoint it is calling, as the 'X-Proxy-Key' header or a 'proxy_key' query parameter. Without it the proxy would attach your OAuth tokens for any program on this machine that knows the port."/>
+                               Text="Every proxied request must present the key of the endpoint it is calling, as the 'X-Proxy-Key' header — the only place it is read from. Without it the proxy would attach your OAuth tokens for any program on this machine that knows the port."/>
                     <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8" TextWrapping="Wrap"
                                Text="There is no single key for the whole proxy. Each route and each MCP funnel has its own, with its own expiry — a key issued for one endpoint does not open any other, so a client that leaks it exposes only what that endpoint reaches."/>
                     <TextBlock Text="{Binding KeyLocationSummary}" Style="{StaticResource HintTextStyle}" TextWrapping="Wrap"/>

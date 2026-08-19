@@ -1,4 +1,4 @@
-using RavensPort.Core.Models;
+﻿using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests;
 
@@ -75,8 +75,6 @@ public class RouteValidationTests
     [InlineData(CredentialPlacement.Header, "Authorization", "Bearer ")]
     [InlineData(CredentialPlacement.Header, "X-Api-Key", "")]
     [InlineData(CredentialPlacement.Header, "PRIVATE-TOKEN", "")]
-    [InlineData(CredentialPlacement.Query, "access_token", "")]
-    [InlineData(CredentialPlacement.Query, "api-key", "")]
     [InlineData(CredentialPlacement.Body, "access_token", "")]
     [InlineData(CredentialPlacement.Body, "auth.token", "Bearer ")]
     public void ValidateCredentialInjection_AcceptsOrdinarySettings(
@@ -85,7 +83,6 @@ public class RouteValidationTests
 
     [Theory]
     [InlineData(CredentialPlacement.Header)]
-    [InlineData(CredentialPlacement.Query)]
     [InlineData(CredentialPlacement.Body)]
     public void ValidateCredentialInjection_RequiresAName(CredentialPlacement placement)
     {
@@ -116,7 +113,6 @@ public class RouteValidationTests
 
     [Theory]
     [InlineData(CredentialPlacement.Header)]
-    [InlineData(CredentialPlacement.Query)]
     [InlineData(CredentialPlacement.Body)]
     public void ValidateCredentialInjection_RejectsNewlinesInThePrefix(CredentialPlacement placement)
     {
@@ -129,23 +125,34 @@ public class RouteValidationTests
     }
 
     [Theory]
+    [InlineData("access_token")]
+    [InlineData("api-key")]
+    [InlineData("")]
+    [InlineData("   ")]
     [InlineData("two words")]
-    [InlineData("a=b")]
-    [InlineData("a&b")]
-    [InlineData("a?b")]
-    [InlineData("a#b")]
-    public void ValidateCredentialInjection_RejectsQueryNamesWithQueryStringSyntax(string name) =>
-        Assert.NotNull(RouteValidation.ValidateCredentialInjection(CredentialPlacement.Query, name, ""));
-
-    [Fact]
-    public void ValidateCredentialInjection_RejectsTheProxysOwnQueryParameterName()
+    [InlineData("proxy_key")]
+    public void ValidateCredentialInjection_RejectsEveryQueryPlacement(string name)
     {
-        // The local API key can arrive as "?proxy_key=" and is stripped from every request
-        // before forwarding; re-adding it here would send the upstream's token under that name.
-        var error = RouteValidation.ValidateCredentialInjection(CredentialPlacement.Query, "proxy_key", "");
+        // No parameter name rescues this placement, so the answer must not depend on the name -
+        // including for the empty one, where a "name is required" reply would send the user off
+        // to fill in a field that cannot help. Reachable because a store written by an older
+        // build can still hold a query entry; the picker no longer offers one.
+        var error = RouteValidation.ValidateCredentialInjection(CredentialPlacement.Query, name, "");
 
         Assert.NotNull(error);
-        Assert.Contains("reserved", error);
+        Assert.Contains("not permitted", error);
+    }
+
+    [Fact]
+    public void ValidateCredentialInjection_RejectsAQueryPlacementBeforeCheckingThePrefix()
+    {
+        // Same reasoning one field over: a control character in the prefix is a real problem, but
+        // reporting it here would imply that fixing it makes the entry usable.
+        var error = RouteValidation.ValidateCredentialInjection(
+            CredentialPlacement.Query, "access_token", "Bearer \r\n");
+
+        Assert.NotNull(error);
+        Assert.Contains("not permitted", error);
     }
 
     // ---- credential lists --------------------------------------------------------------------
@@ -168,19 +175,9 @@ public class RouteValidationTests
     }
 
     [Fact]
-    public void ValidateCredentials_AcceptsTwoQueryParameters()
+    public void ValidateCredentials_AcceptsSeveralHeaders()
     {
         Assert.Null(RouteValidation.ValidateCredentials([
-            Entry(CredentialPlacement.Query, "access_token"),
-            Entry(CredentialPlacement.Query, "api_key"),
-        ]));
-    }
-
-    [Fact]
-    public void ValidateCredentials_AcceptsAQueryParameterAlongsideSeveralHeaders()
-    {
-        Assert.Null(RouteValidation.ValidateCredentials([
-            Entry(CredentialPlacement.Query, "access_token"),
             Entry(CredentialPlacement.Header, "Authorization", "Bearer "),
             Entry(CredentialPlacement.Header, "X-Api-Key"),
             Entry(CredentialPlacement.Header, "PRIVATE-TOKEN"),
@@ -188,14 +185,29 @@ public class RouteValidationTests
     }
 
     [Fact]
-    public void ValidateCredentials_AcceptsHeaderQueryAndBodyTogether()
+    public void ValidateCredentials_AcceptsHeaderAndBodyTogether()
     {
         Assert.Null(RouteValidation.ValidateCredentials([
             Entry(CredentialPlacement.Header, "Authorization", "Bearer "),
-            Entry(CredentialPlacement.Query, "access_token"),
             Entry(CredentialPlacement.Body, "auth_token"),
             Entry(CredentialPlacement.Body, "project_key"),
         ]));
+    }
+
+    [Fact]
+    public void ValidateCredentials_RejectsTheWholeSetForOneQueryEntry()
+    {
+        // How an inherited route reaches the editor: three usable entries and one written by a
+        // build that still allowed query placements. Saving it as-is has to be refused, or the
+        // withdrawal would hold only for newly created routes.
+        var error = RouteValidation.ValidateCredentials([
+            Entry(CredentialPlacement.Header, "Authorization", "Bearer "),
+            Entry(CredentialPlacement.Query, "access_token"),
+            Entry(CredentialPlacement.Body, "auth_token"),
+        ]);
+
+        Assert.NotNull(error);
+        Assert.Contains("not permitted", error);
     }
 
     [Fact]
@@ -213,7 +225,6 @@ public class RouteValidationTests
 
     [Theory]
     [InlineData(CredentialPlacement.Header, "Authorization")]
-    [InlineData(CredentialPlacement.Query, "access_token")]
     [InlineData(CredentialPlacement.Body, "token")]
     public void ValidateCredentials_RejectsTwoCredentialsInTheSameSlot(CredentialPlacement placement, string name)
     {
@@ -235,16 +246,14 @@ public class RouteValidationTests
         ]));
     }
 
-    [Theory]
-    [InlineData(CredentialPlacement.Query)]
-    [InlineData(CredentialPlacement.Body)]
-    public void ValidateCredentials_TreatsQueryAndBodyNamesAsCaseSensitive(CredentialPlacement placement)
+    [Fact]
+    public void ValidateCredentials_TreatsBodyFieldNamesAsCaseSensitive()
     {
         // Plenty of APIs distinguish "Token" from "token"; refusing the pair would block a
         // legitimate configuration.
         Assert.Null(RouteValidation.ValidateCredentials([
-            Entry(placement, "Token"),
-            Entry(placement, "token"),
+            Entry(CredentialPlacement.Body, "Token"),
+            Entry(CredentialPlacement.Body, "token"),
         ]));
     }
 

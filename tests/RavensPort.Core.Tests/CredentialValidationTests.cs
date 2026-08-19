@@ -1,4 +1,4 @@
-using RavensPort.Core.Models;
+﻿using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests;
 
@@ -74,11 +74,31 @@ public class CredentialValidationTests
             Name = "shodan",
             Kind = CredentialKind.ApiKey,
             ApiKey = "secret-key",
-            DefaultPlacement = CredentialPlacement.Query,
-            DefaultParameterName = "key",
+            DefaultPlacement = CredentialPlacement.Header,
+            DefaultParameterName = "X-Api-Key",
             DefaultValuePrefix = "",
             TestEndpoint = "https://api.example.com/account/profile",
         }));
+
+    [Fact]
+    public void Validate_RejectsAnApiKeyCredentialDefaultingToTheQueryString()
+    {
+        // The default placement is what the Test button sends and what prefills a route entry, so
+        // a credential may not carry a placement the proxy would refuse. Otherwise the refusal
+        // would only appear later, at the route, on a credential the tab called valid.
+        var error = CredentialValidation.Validate(new CredentialRecord
+        {
+            Name = "shodan",
+            Kind = CredentialKind.ApiKey,
+            ApiKey = "secret-key",
+            DefaultPlacement = CredentialPlacement.Query,
+            DefaultParameterName = "key",
+            DefaultValuePrefix = "",
+        });
+
+        Assert.NotNull(error);
+        Assert.Contains("not permitted", error);
+    }
 
     [Fact]
     public void Validate_AcceptsAnOAuthCredentialWithNoApiKey()

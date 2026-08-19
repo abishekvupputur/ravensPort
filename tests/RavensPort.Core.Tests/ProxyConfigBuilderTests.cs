@@ -1,4 +1,4 @@
-using RavensPort.Core.Models;
+﻿using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 
 namespace RavensPort.Core.Tests;
@@ -102,7 +102,7 @@ public class ProxyConfigBuilderTests
             UpstreamId = upstream.Id,
             Credentials =
             [
-                new RouteCredential { CredentialId = first, Placement = CredentialPlacement.Query, ParameterName = "access_token", ValuePrefix = "" },
+                new RouteCredential { CredentialId = first, Placement = CredentialPlacement.Body, ParameterName = "access_token", ValuePrefix = "" },
                 new RouteCredential { CredentialId = second, Placement = CredentialPlacement.Header, ParameterName = "X-Api-Key", ValuePrefix = "" },
             ],
         };
@@ -113,13 +113,37 @@ public class ProxyConfigBuilderTests
         Assert.Equal(2, read.Count);
 
         Assert.Equal(first, read[0].CredentialId);
-        Assert.Equal(CredentialPlacement.Query, read[0].Placement);
+        Assert.Equal(CredentialPlacement.Body, read[0].Placement);
         Assert.Equal("access_token", read[0].ParameterName);
         Assert.Equal("", read[0].ValuePrefix);
 
         Assert.Equal(second, read[1].CredentialId);
         Assert.Equal(CredentialPlacement.Header, read[1].Placement);
         Assert.Equal("X-Api-Key", read[1].ParameterName);
+    }
+
+    [Fact]
+    public void Build_DropsARouteHoldingAQueryPlacement()
+    {
+        // Only an inherited store can contain one. Building the route anyway would serve it with
+        // that credential silently missing, so the whole route goes - the same fail-closed rule
+        // an unparseable prefix gets, and the notifier names it in the activity log.
+        var upstream = new UpstreamRecord { Name = "api", BaseUrl = "https://api.test" };
+        var route = new RouteMapping
+        {
+            PathPrefix = "/app/api",
+            UpstreamId = upstream.Id,
+            Credentials =
+            [
+                new RouteCredential { CredentialId = Guid.NewGuid(), Placement = CredentialPlacement.Header, ParameterName = "X-Api-Key", ValuePrefix = "" },
+                new RouteCredential { CredentialId = Guid.NewGuid(), Placement = CredentialPlacement.Query, ParameterName = "access_token", ValuePrefix = "" },
+            ],
+        };
+
+        var (routes, clusters) = ProxyConfigBuilder.Build([route], [upstream]);
+
+        Assert.Empty(routes);
+        Assert.Empty(clusters);
     }
 
     [Fact]

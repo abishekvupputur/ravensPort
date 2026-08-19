@@ -1,4 +1,4 @@
-using RavensPort.Core.Diagnostics;
+﻿using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 using Yarp.ReverseProxy.Configuration;
@@ -37,6 +37,14 @@ public sealed class ProxyConfigChangeNotifier(
             else if (store.Upstreams.All(u => u.Id != mapping.UpstreamId))
             {
                 activityLog.Log($"  SKIPPED '{mapping.PathPrefix}' — its upstream no longer exists");
+            }
+            else if (RouteValidation.ValidateCredentials(mapping.Credentials) is { } credentialError)
+            {
+                // The third way a route disappears, and the one a user is most likely to meet
+                // without having touched anything: a route stored with a query-string placement
+                // stopped being buildable when that placement was withdrawn. Unnamed, it would be
+                // a 404 on a route the tab still lists as enabled.
+                activityLog.Log($"  SKIPPED '{mapping.PathPrefix}' — {credentialError}");
             }
         }
     }

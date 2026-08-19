@@ -122,23 +122,56 @@ public class LocalAccessGuardTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ValidKeyInQueryString_IsAllowedThrough()
+    public async Task ValidKeyInQueryString_IsRefused()
     {
-        // Supported because browser EventSource, used by some MCP SSE transports, cannot set
-        // request headers at all.
+        // The query form was once accepted, for clients such as browser EventSource that cannot
+        // set request headers. Withdrawn: a query string is copied into browser history, into the
+        // access log of every intermediary, and into the Referer of anything the response loads,
+        // and this key is the whole of the proxy's authorization. A correct key in the wrong place
+        // is still refused - that is the point of the change.
         var response = await _client.GetAsync(
             $"http://127.0.0.1/anything?{LocalAccessGuard.ApiKeyQueryName}={ValidKey}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ValidKeyInQueryString_DoesNotReachTheUpstreamAtAll()
+    {
+        // The rejection must come before forwarding, or the refusal would still have handed the
+        // upstream a request - and its access log the key.
+        var response = await _client.GetAsync(
+            $"http://127.0.0.1/anything?{LocalAccessGuard.ApiKeyQueryName}={ValidKey}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(response.Headers.Contains("X-Echo-Query"));
+    }
+
+    [Fact]
+    public async Task ValidKeyInHeader_IsNotOverriddenByAQueryParameter()
+    {
+        // A header-authenticated request is allowed even when a proxy_key parameter is also
+        // present: the parameter is never read, so it can neither authenticate nor veto.
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, $"http://127.0.0.1/anything?{LocalAccessGuard.ApiKeyQueryName}=whatever&page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ValidKey);
+
+        var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
-    public async Task ApiKeyInQueryString_IsNotForwardedUpstream()
+    public async Task ApiKeyInQueryString_IsStillStrippedBeforeForwarding()
     {
-        // It authenticates the caller to this proxy and nothing else. Forwarded, it would land
-        // in the upstream's access log — handing a third party the key to the local proxy.
-        var response = await _client.GetAsync(
-            $"http://127.0.0.1/anything?{LocalAccessGuard.ApiKeyQueryName}={ValidKey}");
+        // Not read any more, but still removed: a caller that sends it out of habit must not have
+        // it copied into the upstream's access log. Stripping is what makes that true, and it has
+        // to keep working now that nothing else looks at the parameter.
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, $"http://127.0.0.1/anything?{LocalAccessGuard.ApiKeyQueryName}={ValidKey}&page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ValidKey);
+
+        var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var forwardedQuery = response.Headers.GetValues("X-Echo-Query").Single();
@@ -150,8 +183,12 @@ public class LocalAccessGuardTests : IAsyncLifetime
     public async Task OtherQueryParameters_SurviveUntouched()
     {
         // The caller's own parameters are the whole point of the request; only proxy_key goes.
-        var response = await _client.GetAsync(
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
             $"http://127.0.0.1/anything?token=abc&{LocalAccessGuard.ApiKeyQueryName}={ValidKey}&page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ValidKey);
+
+        var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var forwardedQuery = response.Headers.GetValues("X-Echo-Query").Single();

@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -48,6 +49,10 @@ public class ApiKeyCredentialForwardingTests : IAsyncLifetime
     private string? _lastForwarderError;
 
     private const string KeyInHeader = "/k/header";
+    /// <summary>
+    /// A route as an older build could have written it. Query placements were withdrawn, so this
+    /// one no longer builds into a route at all - kept to pin that, not to exercise forwarding.
+    /// </summary>
     private const string KeyInQuery = "/k/query";
     private const string KeyInBody = "/k/body";
     private const string KeyAndToken = "/k/key-and-token";
@@ -207,12 +212,19 @@ public class ApiKeyCredentialForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AStaticKeyIsForwardedInAQueryParameter()
+    public async Task AStaticKeyIsNeverForwardedInAQueryParameter()
     {
-        var seen = await GetAsync($"{KeyInQuery}/resource?page=2");
+        // A static API key is the placement's most tempting case - plenty of upstreams document
+        // "?api_key=" and nothing else. It leaks exactly like an OAuth token would: into the
+        // upstream's access log, and into every intermediary's. The route is dropped rather than
+        // served without its key.
+        var request = new HttpRequestMessage(HttpMethod.Get, $"{KeyInQuery}/resource?page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, RouteProxyKey);
 
-        Assert.Contains($"api_key={StaticKey}", seen.Query);
-        Assert.Contains("page=2", seen.Query);
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(_received);
     }
 
     [Fact]

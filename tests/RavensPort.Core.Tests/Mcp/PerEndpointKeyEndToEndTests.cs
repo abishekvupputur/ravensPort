@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
@@ -134,13 +134,24 @@ public class PerEndpointKeyEndToEndTests : IAsyncLifetime
     {
         // Per-endpoint keys must not have disturbed what the upstream actually receives: the
         // route's credential arrives, and the key that authenticated the caller to this proxy
-        // does not — in either the header or the query form.
-        Assert.Equal(HttpStatusCode.OK,
-            await PostAsync($"/api-one?{LocalAccessGuard.ApiKeyQueryName}={RouteOneKey}", presentedKey: null));
+        // does not.
+        Assert.Equal(HttpStatusCode.OK, await PostAsync("/api-one", RouteOneKey));
 
         var headers = Assert.Single(_upstream.ReceivedHeaders);
         Assert.Equal($"Bearer {Token}", headers["Authorization"]);
         Assert.False(headers.ContainsKey(LocalAccessGuard.ApiKeyHeaderName));
+    }
+
+    [Fact]
+    public async Task AKeyInTheQueryDoesNotOpenAnEndpointItWouldOtherwiseOpen()
+    {
+        // The right key for the right endpoint, in the wrong place. Accepted once, refused now:
+        // a URL is written down where a header is not, and this key is all that stands between a
+        // local caller and the user's grant.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            await PostAsync($"/api-one?{LocalAccessGuard.ApiKeyQueryName}={RouteOneKey}", presentedKey: null));
+
+        Assert.Empty(_upstream.ReceivedHeaders);
     }
 
     [Fact]

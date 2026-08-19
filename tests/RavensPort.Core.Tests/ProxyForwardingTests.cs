@@ -159,6 +159,8 @@ public class ProxyForwardingTests : IAsyncLifetime
             AddRoute("/app/echo", CredentialPlacement.Header, "Authorization", "Bearer ");
             AddRoute("/app/custom-header", CredentialPlacement.Header, "X-Api-Key", "");
             AddRoute("/app/prefixed-header", CredentialPlacement.Header, "X-Auth", "token ");
+            // Deliberately a placement the app no longer lets anyone choose: this is what a store
+            // written by an older build looks like, and the proxy has to refuse it at run time.
             AddRoute("/app/query", CredentialPlacement.Query, "access_token", "");
             AddRoute("/app/body", CredentialPlacement.Body, "access_token", "");
         });
@@ -197,10 +199,27 @@ public class ProxyForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task KeyInQuery_ReachesUpstreamStripped()
+    public async Task KeyInQuery_IsRefusedAndNothingIsForwarded()
     {
+        // The parameter is no longer a way to authenticate, so a request carrying only that is a
+        // request carrying no key: 403, and the upstream never hears about it.
         var response = await _client.GetAsync(
             $"/app/echo/resource?token=abc&{LocalAccessGuard.ApiKeyQueryName}={ApiKey}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        Assert.Empty(Received);
+    }
+
+    [Fact]
+    public async Task KeyInQueryAlongsideTheHeader_ReachesUpstreamStripped()
+    {
+        // Authenticated by the header, so it forwards - and the stray parameter still comes off
+        // on the way, which is the part that keeps the key out of the upstream's access log.
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, $"/app/echo/resource?token=abc&{LocalAccessGuard.ApiKeyQueryName}={ApiKey}");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
+
+        var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var seen = Assert.Single(Received);
@@ -277,22 +296,35 @@ public class ProxyForwardingTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task QueryPlacement_AddsTheParameterAndKeepsTheCallersOwn()
+    public async Task QueryPlacement_IsNotBuiltIntoARouteAtAll()
     {
-        var seen = await SendAsync(HttpMethod.Get, "/app/query/resource?page=2");
+        // /app/query stands in for a route stored before query placements were withdrawn. The
+        // config builder drops any route whose credential set cannot go on the wire as written,
+        // so the prefix resolves to nothing rather than forwarding without a token: a 404 the
+        // activity log names, not a route that quietly stopped authenticating.
+        var request = new HttpRequestMessage(HttpMethod.Get, "/app/query/resource?page=2");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
 
-        Assert.Contains($"access_token={Token}", seen.Query);
-        Assert.Contains("page=2", seen.Query);
-        Assert.Null(seen.Authorization);
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(Received);
     }
 
     [Fact]
-    public async Task QueryPlacement_OverwritesACallerSuppliedParameterOfTheSameName()
+    public async Task QueryPlacement_DoesNotReachTheUpstreamWithACallerSuppliedParameterEither()
     {
-        var seen = await SendAsync(HttpMethod.Get, "/app/query/resource?access_token=CALLER-SUPPLIED");
+        // The injector used to overwrite a same-named caller parameter with the real token. With
+        // the route gone there is nothing to overwrite and nothing forwarded, so the token cannot
+        // reach a URL by that path either.
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, "/app/query/resource?access_token=CALLER-SUPPLIED");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
 
-        Assert.DoesNotContain("CALLER-SUPPLIED", seen.Query);
-        Assert.Contains($"access_token={Token}", seen.Query);
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(Received);
     }
 
     [Fact]
