@@ -1,0 +1,150 @@
+name: Snyk
+
+# Snyk Open Source over every .NET project in the tree, including the test project.
+#
+# This exists because the Snyk SCM integration does not see all of them. Importing this repository
+# through Snyk's UI detects three manifests -- the two src csproj files and src/OnePasswordNative/
+# go.mod -- and silently omits tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj. The
+# importer skips directories whose names look like test directories, which is a sensible default
+# for a project whose tests pull in nothing the shipped code does not, and the wrong default here:
+# the test project restores xunit, Microsoft.AspNetCore.Mvc.Testing and the ASP.NET Core hosting
+# stack, none of which appear under src/, and an advisory against any of them is invisible to
+# every other scanner pointed at this repo.
+#
+# The exclusion is a property of Snyk's importer, not of anything in this repository, so it cannot
+# be fixed from here -- a .snyk policy file only excludes paths, it cannot un-exclude one. Running
+# the CLI is what makes the coverage explicit and reviewable: --all-projects walks the tree and
+# tests every project file it finds, with no opinion about what a directory is named.
+#
+# Overlap with the scanners already here is deliberate and is the point. OSV-Scanner asks OSV.dev,
+# dependency-scan.yml asks the GitHub Advisory Database through NuGet, and Snyk asks its own
+# curated database, which carries advisories the other two do not and grades severity differently.
+# Three databases over the same lock files is the coverage; one of them missing a whole project is
+# the gap this closes.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # The next contiguous slot: 01:30 CodeQL, 02:30 OSV-Scanner, 03:30 dependency-scan, 04:30
+    # zizmor, 05:30 DevSkim, 06:30 installer-scan, 07:30 here. Offset for the reason
+    # dependency-scan.yml gives -- simultaneous failures do not say which one moved.
+    #
+    # Weekly for the reason osv-scanner.yml gives: the tree does not change between runs, the
+    # advisory database does, and an advisory published against a long-pinned package is invisible
+    # until something re-asks.
+    - cron: "30 7 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  snyk:
+    name: Snyk Open Source (.NET)
+    # windows-latest for the reason dependency-scan.yml gives: the target framework is
+    # net10.0-windows10.0.19041.0, a restore on Linux cannot resolve the Windows SDK targeting
+    # packs, and Snyk's .NET scanning reads the restore output rather than the csproj alone.
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      # upload-sarif. Findings belong in the Security tab, where they have history and can be
+      # dismissed with a reason, rather than only in a log that ages out.
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so don't leave GITHUB_TOKEN sitting in
+          # .git/config where any later step or action could read it.
+          persist-credentials: false
+
+      # Named rather than left to fail somewhere inside the scan. Without the token the CLI exits
+      # with an authentication error several steps later, which reads as a broken workflow rather
+      # than as a repository that has never been given the secret.
+      - name: Check for SNYK_TOKEN
+        shell: pwsh
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SNYK_TOKEN)) {
+            Write-Host "::error::SNYK_TOKEN is not set. Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          }
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # Not --locked-mode, for the reason dependency-scan.yml gives: the lock files are the thing
+      # being audited, and a restore that refuses to run because one has drifted would report a
+      # lock-file problem as a security pass.
+      #
+      # The solution, so all three projects restore -- including the test project, which is the
+      # whole reason this workflow exists. Snyk reads obj/project.assets.json for the resolved
+      # transitive graph; without a restore it sees only what each csproj declares directly.
+      - name: Restore
+        run: dotnet restore RavensPort.slnx
+
+      # Deliberately not snyk/actions. That action is published only as a floating branch ref, and
+      # everything else in these workflows is pinned so that what runs changes when this file says
+      # so -- see the note in osv-scanner.yml. Installing the CLI directly is one fewer thing to
+      # trust, and makes the version visible here rather than inside somebody else's repo.
+      #
+      # Unpinned, unlike OSV-Scanner, and for the reason trivy.yml was left floating: Snyk's value
+      # is its curated vulnerability database, which is queried live at scan time and is current
+      # however old the binary is. What the version controls is which project formats it can parse
+      # -- and .slnx is new enough that an old CLI is a real risk here. Pin it once a version is
+      # known good; a floating scanner fails green far less often than a stale one does.
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      # Two passes over the same projects, for the reason osv-scanner.yml gives: this one reports
+      # to the Security tab and must never be the thing that fails the build, and the gate below is
+      # what enforces anything. `|| true` because the CLI exits non-zero on findings and the upload
+      # has to happen regardless.
+      #
+      # --all-projects is the fix. It walks the tree and tests every project file it finds, so the
+      # test project is scanned on the same terms as the two under src/ -- which is exactly what
+      # the SCM import does not do.
+      #
+      # --exclude drops src/OnePasswordNative from this run. Not because Go is out of scope, but
+      # because it is already covered better: dependency-scan.yml runs govulncheck over that
+      # module, which walks the call graph and reports an advisory only when the vulnerable symbol
+      # is reachable. Folding it in here would mean a Go toolchain problem could fail a job whose
+      # question is about NuGet.
+      - name: Run Snyk (SARIF, for code scanning)
+        shell: pwsh
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk test --all-projects --detection-depth=4 --exclude=OnePasswordNative --sarif-file-output=snyk.sarif
+          # Explicit, because GitHub's pwsh wrapper exits with $LASTEXITCODE and the CLI returns 1
+          # whenever it found anything. The gate below is what decides whether that matters.
+          exit 0
+
+      # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
+      # is what tells code scanning that a previously reported finding is gone, and skipping the
+      # upload leaves the old alert open forever.
+      - name: Upload Snyk SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: snyk.sarif
+          # Its own bucket, so an OSV-Scanner, CodeQL or dotnet-vulnerable run never looks like it
+          # resolved a Snyk finding or the other way round.
+          category: "snyk"
+
+      # The gate, threshold-matched to dependency-scan.yml rather than to osv-scanner.yml. Those
+      # two disagree on purpose: OSV-Scanner gates on any advisory because it reads pinned lock
+      # files and the tree is clean, while the NuGet pass gates on High and Critical because a
+      # Moderate advisory in a transitive package is worth seeing and is not worth blocking a merge
+      # on. This asks the same question of the same packages, so it takes the same answer --
+      # everything below High still appears in the Security tab from the pass above.
+      - name: Run Snyk (gate)
+        if: always()
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk test --all-projects --detection-depth=4 --exclude=OnePasswordNative --severity-threshold=high
