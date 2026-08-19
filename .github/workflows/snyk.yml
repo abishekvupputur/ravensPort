@@ -1,6 +1,6 @@
 name: Snyk
 
-# Snyk Open Source over every .NET project in the tree, including the test project.
+# Snyk Open Source over every project in the tree -- both .NET and Go, including the test project.
 #
 # This exists because the Snyk SCM integration does not see all of them. Importing this repository
 # through Snyk's UI detects three manifests -- the two src csproj files and src/OnePasswordNative/
@@ -21,6 +21,19 @@ name: Snyk
 # curated database, which carries advisories the other two do not and grades severity differently.
 # Three databases over the same lock files is the coverage; one of them missing a whole project is
 # the gap this closes.
+#
+# The Go module is scanned here too, alongside the govulncheck pass in dependency-scan.yml, and the
+# two answer different questions rather than the same one twice. govulncheck walks the call graph
+# and reports an advisory only when the vulnerable symbol is reachable from this build -- which is
+# why it stays silent about the five graph-only pins documented in src/OnePasswordNative/go.mod.
+# Snyk reports on the module graph and on the *standard library*, which govulncheck covers only for
+# reachable symbols and OSV-Scanner does not resolve at all. A Go stdlib advisory is a real finding
+# here: the DLL is built with whatever toolchain CI hands it.
+#
+# That last point makes the Go toolchain version load-bearing in this job. Snyk resolves std/* from
+# the toolchain that is installed, not from the `go` line in go.mod, so a runner one patch behind
+# reports stdlib advisories that go.mod has already raised past. setup-go below reads the version
+# out of go.mod for exactly that reason -- see the step's own note.
 
 on:
   push:
@@ -42,7 +55,7 @@ permissions:
 
 jobs:
   snyk:
-    name: Snyk Open Source (.NET)
+    name: Snyk Open Source (.NET + Go)
     # windows-latest for the reason dependency-scan.yml gives: the target framework is
     # net10.0-windows10.0.19041.0, a restore on Linux cannot resolve the Windows SDK targeting
     # packs, and Snyk's .NET scanning reads the restore output rather than the csproj alone.
@@ -78,6 +91,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # go-version-file rather than a pinned version here, matching dependency-scan.yml: go.mod is
+      # the only place the Go version is written down, and a second pin would drift and then fail.
+      #
+      # It matters more in this job than in that one. Snyk resolves standard-library advisories
+      # against the *installed* toolchain, so whatever setup-go puts on the runner is what gets
+      # graded -- a runner behind go.mod's `go` line reports stdlib CVEs that this repository has
+      # already moved past. Reading the version out of go.mod makes the two agree by construction.
+      # Confirmed against a local run: a machine on go1.26.5 reported three High stdlib advisories
+      # (std/net, std/net/http, std/net/url) that go 1.26.6, which go.mod requires, already fixes.
+      # Re-running the same command with GOTOOLCHAIN=go1.26.6 returned all seven projects clean.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          cache-dependency-path: src/OnePasswordNative/go.sum
+
       # Not --locked-mode, for the reason dependency-scan.yml gives: the lock files are the thing
       # being audited, and a restore that refuses to run because one has drifted would report a
       # lock-file problem as a security pass.
@@ -93,34 +121,67 @@ jobs:
       # so -- see the note in osv-scanner.yml. Installing the CLI directly is one fewer thing to
       # trust, and makes the version visible here rather than inside somebody else's repo.
       #
-      # Unpinned, unlike OSV-Scanner, and for the reason trivy.yml was left floating: Snyk's value
-      # is its curated vulnerability database, which is queried live at scan time and is current
-      # however old the binary is. What the version controls is which project formats it can parse
-      # -- and .slnx is new enough that an old CLI is a real risk here. Pin it once a version is
-      # known good; a floating scanner fails green far less often than a stale one does.
+      # The published binary rather than `npm install -g snyk`, following osv-scanner.yml exactly.
+      # zizmor's adhoc-packages audit flags an npm global install at high confidence, and pinning
+      # the version does not clear it -- the audit is about installing outside a lockfile at all,
+      # which is a fair description of what `npm -g` does: it resolves snyk's own dependency tree
+      # fresh at job time, so the pin covers one package out of the thirty-one that actually run.
+      # A single binary has no tree to resolve.
+      #
+      # Pinned by version *and* by digest, for the reason osv-scanner.yml gives: the version alone
+      # makes the run reproducible, the digest is what makes it verifiable, because a release asset
+      # on GitHub can be deleted and re-uploaded under the same tag by whoever holds the repo.
+      # Bumping the version without bumping the digest is a deliberate hard failure. The digest is
+      # Snyk's own published snyk-win.exe.sha256 for this tag, checked against the downloaded file.
+      #
+      # Pinned rather than floating, unlike the Trivy binary osv-scanner.yml replaced. Staleness is
+      # the trade and it is smaller than it looks: Snyk's value is its curated database, queried
+      # live at scan time and current however old the binary is. What the version controls is which
+      # project formats the CLI can parse -- .slnx is new enough for that to matter -- so bump this
+      # deliberately.
+      #
+      # 1.1306.4 verified against this tree: it resolves all three csproj files and go.mod, and
+      # reports the test project the SCM integration omits.
+      #
+      # Downloaded into the workspace rather than onto $PATH. This step runs under bash and the scan
+      # steps under pwsh, so anything written to $GITHUB_PATH would have to be a path both accept --
+      # and $RUNNER_TEMP is a Windows path that MSYS sha256sum would receive with mixed separators.
+      # Both shells already run with the workspace as their working directory, so a bare ./snyk.exe
+      # needs no conversion in either. Snyk reads manifests, so an extra exe sitting in the tree
+      # during the scan changes nothing it reports.
       - name: Install Snyk CLI
-        run: npm install -g snyk
+        shell: bash
+        env:
+          SNYK_VERSION: v1.1306.4
+          SNYK_SHA256: 45e0a8f6f451b471e86e7d94ed9622e53b66f92b7e2bcc1a0680d3306f256296
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output snyk.exe \
+            "https://github.com/snyk/cli/releases/download/${SNYK_VERSION}/snyk-win.exe"
+          echo "${SNYK_SHA256}  snyk.exe" | sha256sum --check --strict
+          ./snyk.exe --version
 
       # Two passes over the same projects, for the reason osv-scanner.yml gives: this one reports
       # to the Security tab and must never be the thing that fails the build, and the gate below is
       # what enforces anything. `|| true` because the CLI exits non-zero on findings and the upload
       # has to happen regardless.
       #
-      # --all-projects is the fix. It walks the tree and tests every project file it finds, so the
-      # test project is scanned on the same terms as the two under src/ -- which is exactly what
-      # the SCM import does not do.
+      # --all-projects is the fix. It walks the tree and tests every project file it finds -- three
+      # csproj files and go.mod -- so the test project is scanned on the same terms as the two
+      # under src/, which is exactly what the SCM import does not do.
       #
-      # --exclude drops src/OnePasswordNative from this run. Not because Go is out of scope, but
-      # because it is already covered better: dependency-scan.yml runs govulncheck over that
-      # module, which walks the call graph and reports an advisory only when the vulnerable symbol
-      # is reachable. Folding it in here would mean a Go toolchain problem could fail a job whose
-      # question is about NuGet.
+      # Nothing is excluded. An earlier draft dropped src/OnePasswordNative on the grounds that
+      # govulncheck already covers it; that was wrong twice over. govulncheck answers a narrower
+      # question by design (reachable symbols only), and it is not a Snyk database, which is the
+      # whole reason this job exists. The cost is accepted rather than unnoticed: a Go toolchain
+      # problem can now fail a job that also gates NuGet, and the log names which project failed.
       - name: Run Snyk (SARIF, for code scanning)
         shell: pwsh
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk test --all-projects --detection-depth=4 --exclude=OnePasswordNative --sarif-file-output=snyk.sarif
+          .\snyk.exe test --all-projects --detection-depth=4 --sarif-file-output=snyk.sarif
           # Explicit, because GitHub's pwsh wrapper exits with $LASTEXITCODE and the CLI returns 1
           # whenever it found anything. The gate below is what decides whether that matters.
           exit 0
@@ -143,8 +204,16 @@ jobs:
       # Moderate advisory in a transitive package is worth seeing and is not worth blocking a merge
       # on. This asks the same question of the same packages, so it takes the same answer --
       # everything below High still appears in the Security tab from the pass above.
+      #
+      # One threshold over both ecosystems, which is a real decision now that Go is in scope. The
+      # graph-only pins in go.mod exist because scanners read the module graph, so raising one is
+      # already the routine answer here; a High advisory against a module in that graph will fail
+      # this job even though govulncheck calls it unreachable, and the fix is the same `go get`
+      # the go.mod comment spells out. Setting a Go-specific threshold would mean maintaining two
+      # numbers to hide a case that has a one-line fix.
       - name: Run Snyk (gate)
         if: always()
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk test --all-projects --detection-depth=4 --exclude=OnePasswordNative --severity-threshold=high
+        shell: pwsh
+        run: .\snyk.exe test --all-projects --detection-depth=4 --severity-threshold=high

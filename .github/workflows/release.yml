@@ -59,9 +59,20 @@ jobs:
           # well drifts: setup-go v5 hid that by letting the toolchain download whatever
           # go.mod asked for, and v6 runs GOTOOLCHAIN=local, so a stale pin now fails.
           go-version-file: src/OnePasswordNative/go.mod
-          # The module lives under src/, so the default repository-root lookup finds no
-          # go.sum and the module cache is silently skipped.
-          cache-dependency-path: src/OnePasswordNative/go.sum
+          # Caching off, deliberately, and only in this workflow and installer-scan.yml.
+          #
+          # setup-go caches the module *and build* caches, keyed on go.sum, in a store that is
+          # shared across refs: a run on any branch or pull request can write an entry that a
+          # later run on a tag restores. This job builds onepassword.dll and the installer that
+          # ships it, and the release it uploads carries a build provenance attestation -- an
+          # attestation that a poisoned build cache would make into a signed statement about
+          # attacker-controlled output. That is zizmor's cache-poisoning audit, and it is right
+          # about this one.
+          #
+          # The cost is a full module download per release build. Releases are rare and the
+          # module has one direct dependency; correctness of what gets signed is worth more.
+          # Caching stays on in snyk.yml, which publishes nothing but SARIF.
+          cache: false
 
       # --locked-mode fails the build if a resolved package does not match packages.lock.json,
       # so a dependency (or a transitive one) changing content under a version we already
