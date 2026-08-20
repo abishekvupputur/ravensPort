@@ -677,11 +677,18 @@ The certificate is self-signed, so nothing trusts it until you say so. Install i
 on the machine that will be calling the proxy, and every client there verifies the listener the
 ordinary way from then on.
 
+Two things have to be true before a call succeeds, and they are easy to conflate because one file
+carries both. Your client must **trust** the certificate RavensPort serves (steps 1–2), and it must
+**present** that certificate back (step 3). Getting only the first right produces a handshake that
+fails after the trust check passes, which is a confusing place to land.
+
+Please execute the following powershell commands from the location where cert file (RavensPort_ClientCert.pfx) was downloaded.
+
 **1. Get the public half out of the export.** The `.pfx` carries the private key; a trust store only
 needs the certificate, and only the certificate should travel.
 
 ```powershell
-$cert = Get-PfxCertificate -FilePath cert.pfx          # prompts for the password
+$cert = Get-PfxCertificate -FilePath RavensPort_ClientCert.pfx          # prompts for the password
 Export-Certificate -Cert $cert -FilePath ravensport.cer
 certutil -encode ravensport.cer ravensport.pem         # PEM, for clients that want one
 ```
@@ -706,22 +713,131 @@ Get-ChildItem Cert:\CurrentUser\Root |
   Remove-Item
 ```
 
-**3. Call the proxy.**
+**3. Install the client certificate where the caller can find it.** Step 2 taught the machine to
+trust RavensPort; this is the other half of the handshake — the certificate your client *presents*
+back. Import the `.pfx` into your personal store:
+
+```powershell
+$client = Import-PfxCertificate `
+  -FilePath RavensPort_ClientCert.pfx `
+  -CertStoreLocation Cert:\CurrentUser\My `
+  -Password (Read-Host 'PFX password' -AsSecureString)
+
+$client.Thumbprint
+```
+
+Keep that thumbprint. It is how you name this certificate later, and the name matters: every
+certificate RavensPort mints carries the same `CN=RavensPort MCP Client`, and these certificates can be indistinguishable by subject alone.
+
+**4. Call the proxy.** In PowerShell, `curl` is an alias for `Invoke-WebRequest` and `\` is not a
+line continuation — write `curl.exe` and use a backtick, or the command silently becomes something
+else entirely.
+
+```powershell
+curl.exe --cert "CurrentUser\MY\<thumbprint from step 3>" `
+     -H "X-Proxy-Key: <this-route's-key>" `
+     https://127.0.0.1:5559/app/my-service/foo
+```
+
+**The certificate is named by store reference, not by file, and on Windows that is the only form
+that works.** The `curl.exe` in `System32` is built against Schannel, and Schannel cannot load a
+client certificate from a `.pfx` on disk: `--cert cert.pfx:<password> --cert-type P12` fails the
+handshake with `schannel: AcquireCredentialsHandle failed: SEC_E_UNKNOWN_CREDENTIALS`, which reads
+like a bad password and is not one. That P12 form belongs to an OpenSSL-backed curl — WSL, most
+Linux distributions — where the file and password are passed directly and no import is needed:
 
 ```bash
-curl --cert "cert.pfx:<your-password>" --cert-type P12 \
+curl --cert cert.pfx:<your-password> --cert-type P12 \
+     --cacert ravensport.pem \
      -H "X-Proxy-Key: <this-route's-key>" \
      https://127.0.0.1:5559/app/my-service/foo
 ```
 
-```jsonc
-https.request({
-  pfx: fs.readFileSync('cert.pfx'),
-  passphrase: '<your-password>',
-  ca: fs.readFileSync('ravensport.pem'),
-  rejectUnauthorized: true
-}, ...)
+Run `curl --version` if you are unsure which you have; the backend is named on the first line.
+
+PowerShell can also make the call natively, taking the `.pfx` directly and needing no import:
+
+```powershell
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 `
+  ((Resolve-Path RavensPort_ClientCert.pfx).Path, '<your-password>', 'PersistKeySet')
+
+Invoke-WebRequest -Uri https://127.0.0.1:5559/app/my-service/foo `
+  -Certificate $cert `
+  -Headers @{ 'X-Proxy-Key' = '<this-route''s-key>' } `
+  -UseBasicParsing
 ```
+
+`PersistKeySet` is load-bearing: without it the private key can be discarded after loading, and the
+handshake then fails on a certificate that appeared to read back perfectly.
+
+Neither form disables verification — no `--insecure` on the curl line, no `-SkipCertificateCheck`
+on the PowerShell one — and neither should. Step 2 is what makes ordinary verification succeed;
+reaching for those flags instead is the failure described below.
+
+Node needs both halves handed to it explicitly, since it carries its own OpenSSL and reads nothing
+from the Windows stores — steps 2 and 3 do nothing for it:
+
+```js
+const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
+
+// Resolved against this file, not the working directory: a bare 'cert.pfx' is looked up
+// wherever node happened to be started from, which is rarely where the file is.
+const here = (name) => path.join(__dirname, name);
+
+https.request({
+  host: '127.0.0.1',
+  port: 5559,
+  path: '/app/my-service/foo',
+  headers: { 'X-Proxy-Key': '<this-route\'s-key>' },
+
+  pfx: fs.readFileSync(here('RavensPort_ClientCert.pfx')),
+  passphrase: '<your-password>',
+  ca: fs.readFileSync(here('ravensport.pem')),
+  rejectUnauthorized: true
+}, (res) => {
+  // socket.authorized is the answer to "did verification actually happen", which the status
+  // code does not tell you.
+  console.log(res.statusCode, res.socket.authorized);
+}).end();
+```
+
+`ca:` **replaces** Node's trust store rather than adding to it, so this agent verifies RavensPort
+and nothing else. That is the right trade for a client that only ever calls the proxy; a process
+that also talks to ordinary HTTPS hosts wants `NODE_EXTRA_CA_CERTS=ravensport.pem` instead, which
+appends.
+
+### What each failure looks like
+
+Four ways to run that snippet, and what each one returns. The point of the table is the middle two:
+they are what proves the first row means anything.
+
+| Variant | Result |
+|---|---|
+| As written above | `HTTP 200`, `socket.authorized === true` |
+| `ca:` removed | `DEPTH_ZERO_SELF_SIGNED_CERT` — self-signed certificate |
+| `pfx:`/`passphrase:` removed | `ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN`, SSL alert 46 |
+| Wrong `passphrase:` | `Error: mac verify failure`, **thrown synchronously** |
+
+- **`DEPTH_ZERO_SELF_SIGNED_CERT`** means the trust anchor was doing real work. RavensPort's
+  certificate is its own root and Node trusts no root it was not given, so dropping `ca:` fails
+  rather than quietly succeeding — which is what tells you `rejectUnauthorized: true` is not
+  decorative here.
+- **SSL alert 46** is `certificate_unknown`, sent by **RavensPort**, and it is the reply to a client
+  that presented no certificate. It arrives as a TLS alert rather than an HTTP status because the
+  handshake never completed — the same reason an expired certificate shows up as a dropped
+  connection with nothing to read. Seeing it means mTLS is genuinely enforced on the listener, not
+  merely offered.
+- **`mac verify failure`** is thrown by `https.request` itself, before a socket is opened, when the
+  PFX cannot be decrypted. It is a `throw`, not an `'error'` event, so a `req.on('error', …)`
+  handler never sees it and an otherwise careful script dies with an unhandled exception. Wrap the
+  call in `try`/`catch` if a wrong password is a case you want to report.
+
+> **Testing these variants: pass `agent: false`.** Node's global agent reuses keep-alive sockets and
+> its cache key does not cover `passphrase`, so a failing variant run after a successful one can
+> ride the already-authenticated connection and return `HTTP 200`. A test that cannot fail is worse
+> than no test.
 
 **`rejectUnauthorized: true` is the most important line in that snippet.** What it prevents is worth
 being precise about.
@@ -755,12 +871,15 @@ Three things decide whether that works:
   — `localhost`, `127.0.0.1`, `::1` — and checking the hostname is part of what verification does.
   Any other name for the same machine is refused: Node says `ERR_TLS_CERT_ALTNAME_INVALID`.
 - **curl on Windows reads the Windows trust store.** Both the `curl.exe` in `System32` and the one
-  Git Bash ships are built against Schannel, so step 2 is all they need and no extra flag belongs on
-  the command line. A curl built against OpenSSL — WSL, most Linux distributions — reads its own CA
-  bundle instead: pass `--cacert ravensport.pem` there rather than installing a root.
-- **Node does not read the Windows trust store,** whatever step 2 did, because it carries its own
-  OpenSSL. Hand it the certificate explicitly the way the snippet does, or set
-  `NODE_EXTRA_CA_CERTS=ravensport.pem` for the whole process.
+  Git Bash ships are built against Schannel, so for *this* half step 2 is all they need and no
+  `--cacert` belongs on the command line. A curl built against OpenSSL — WSL, most Linux
+  distributions — reads its own CA bundle instead: pass `--cacert ravensport.pem` there rather than
+  installing a root. Being Schannel is also why those two need step 3 and the store reference; see
+  step 4.
+- **Node does not read the Windows stores at all,** whatever steps 2 and 3 did, because it carries
+  its own OpenSSL. Both halves have to be handed to it in the options object the way the snippet
+  does — `ca:` for the trust anchor, `pfx:` for the certificate it presents. `NODE_EXTRA_CA_CERTS`
+  covers the first for a whole process; there is no environment variable for the second.
 
 On RavensPort's side of the same handshake: it compares the thumbprint of what it was handed against
 its own and refuses anything else, it enforces the certificate's expiry date itself, and every request still needs the proxy key of the endpoint it is calling.
@@ -1126,7 +1245,19 @@ funnel. The activity log names which endpoint refused and why.
 TLS handshake, which is over before any HTTP exists to answer with. Either the client is presenting
 no certificate or the wrong one, it is still calling `http://` at a listener that now answers
 `https://`, or the certificate has expired — the Settings tab shows the date, and the activity log
-names which of these it was.
+names which of these it was. What the client reports depends on its TLS stack; the common ones are
+listed under [What each failure looks like](#what-each-failure-looks-like).
+
+**`schannel: AcquireCredentialsHandle failed: SEC_E_UNKNOWN_CREDENTIALS` from curl.** Not a wrong
+password, whatever it sounds like. Windows' own `curl.exe` is built against Schannel, which cannot
+load a client certificate from a `.pfx` file: name it by store reference instead. See
+[Pointing a client at it](#pointing-a-client-at-it), steps 3 and 4.
+
+**`mac verify failure` from Node.** The PFX password is wrong. Thrown by `https.request` before any
+connection is attempted, so an `'error'` handler does not catch it.
+
+**`DEPTH_ZERO_SELF_SIGNED_CERT` from Node.** The trust anchor never reached the client: no `ca:` in
+the options and no `NODE_EXTRA_CA_CERTS`. Installing the root into Windows does nothing for Node.
 
 **A path that used to work now 403s instead of 404ing.** A request to a path belonging to no route
 and no funnel has no key to check against and is refused rather than answered, so which prefixes
