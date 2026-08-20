@@ -5,7 +5,7 @@ every value written here describes an artifact that already exists and already p
 Runnable by hand for the same reason it is a script and not ten lines of inline YAML in the
 workflow: a submission that has to be repeated should not have to be repeated differently.
 
-    python packaging/update-winget-manifests.py --version 4.3.4 --sha256 E952E9...
+    python packaging/update-winget-manifests.py --version 4.4.0 --sha256 E952E9...
 
 Only the fields that move between releases are touched -- version, installer URL, hash, release
 date, release-notes link. Everything else in those files is hand-written prose explaining why a
@@ -40,7 +40,7 @@ SUBSTITUTIONS = [
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True, help="digits only, e.g. 4.3.4")
+    parser.add_argument("--version", required=True, help="digits only, e.g. 4.4.0")
     parser.add_argument("--sha256", required=True, help="SHA256 of the published installer asset")
     parser.add_argument("--repo", default="abishekvupputur/ravensPort")
     parser.add_argument("--dir", default="packaging/winget")
