@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Mcp;
@@ -90,7 +90,7 @@ public sealed partial class McpFunnelItemViewModel : ObservableObject
 
         Key.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName is nameof(ProxyKeyViewModel.Display)) OnPropertyChanged(nameof(LocalUrlWithKey));
+            if (args.PropertyName is nameof(ProxyKeyViewModel.Display)) OnPropertyChanged(nameof(ClientConfigSnippet));
         };
     }
 
@@ -105,11 +105,21 @@ public sealed partial class McpFunnelItemViewModel : ObservableObject
     public ProxyKeyViewModel Key { get; }
 
     /// <summary>
-    /// The endpoint with the key already in the query string, ready to paste into an MCP client
-    /// that cannot set headers — which is most of the ones driven by a JSON config file.
-    /// Follows the same masking as the key itself so it is not readable over a shoulder.
+    /// A ready-to-paste MCP client entry: the endpoint, plus the key as the header it now has to
+    /// travel in. This used to be the URL with <c>?proxy_key=</c> appended, which the guard no
+    /// longer accepts — handing that out produced a config that answered 403 with nothing on
+    /// screen explaining why.
+    ///
+    /// Follows the same masking as the key itself, so the panel is not readable over a shoulder
+    /// until Show is pressed.
     /// </summary>
-    public string LocalUrlWithKey => $"{LocalUrl}?{LocalAccessGuard.ApiKeyQueryName}={Key.Display}";
+    public string ClientConfigSnippet =>
+        $$"""
+          "{{Slug}}": {
+            "url": "{{LocalUrl}}",
+            "headers": { "{{LocalAccessGuard.ApiKeyHeaderName}}": "{{Key.Display}}" }
+          }
+          """;
 
     [ObservableProperty] private bool _enabled;
 

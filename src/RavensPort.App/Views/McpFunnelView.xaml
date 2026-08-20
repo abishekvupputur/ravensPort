@@ -203,15 +203,17 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <ContentControl Content="{Binding SelectedFunnel.Key}"
                                         ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
 
-                        <TextBlock Text="Endpoint URL with the key attached" Style="{StaticResource FieldLabelStyle}"
+                        <TextBlock Text="MCP client entry" Style="{StaticResource FieldLabelStyle}"
                                    Margin="0,10,0,0"
-                                   ToolTip="Most MCP clients are configured from a JSON file and cannot set a header. Paste this form instead."/>
-                        <TextBox Text="{Binding SelectedFunnel.LocalUrlWithKey, Mode=OneWay}" IsReadOnly="True"
+                                   ToolTip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
+                        <TextBox Text="{Binding SelectedFunnel.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                 AcceptsReturn="True" TextWrapping="NoWrap"
+                                 HorizontalScrollBarVisibility="Auto"
                                  Background="Transparent" BorderThickness="0" Padding="0"
                                  Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
-                                   Text="Press Show above to reveal the key inside this URL before copying it."/>
+                                   Text="Press Show above to reveal the key inside this snippet before copying it. A client that cannot set request headers cannot reach a funnel — the key is never read from the URL."/>
 
                         <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
                                 Margin="0,0,0,10"/>
