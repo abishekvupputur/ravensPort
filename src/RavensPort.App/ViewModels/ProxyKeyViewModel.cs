@@ -1,7 +1,8 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Models;
+using RavensPort.Core.Proxy;
 
 namespace RavensPort.App.ViewModels;
 
@@ -105,8 +106,8 @@ public sealed partial class ProxyKeyViewModel : ObservableObject
         try
         {
             System.Windows.Clipboard.SetText(Key.Value);
-            _onStatus($"Proxy key for {_owner} copied. Send it as the 'X-Proxy-Key' header, "
-                      + "or as '?proxy_key=' for clients that cannot set headers.");
+            _onStatus($"Proxy key for {_owner} copied. Send it as the '{LocalAccessGuard.ApiKeyHeaderName}' "
+                      + "header — it is not read from the URL.");
         }
         catch (Exception ex)
         {
