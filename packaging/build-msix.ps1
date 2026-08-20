@@ -29,7 +29,7 @@
 
 .EXAMPLE
     # The Store artifact, plus a copy to install and try on this machine.
-    ./packaging/build-msix.ps1 -Version 4.4.0 -Sign `
+    ./packaging/build-msix.ps1 -Version 4.4.1 -Sign `
       -PublishDir 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-msix'
 #>
 [CmdletBinding()]
