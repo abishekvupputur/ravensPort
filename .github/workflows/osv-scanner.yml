@@ -116,7 +116,7 @@ jobs:
       # upload leaves the old alert open forever.
       - name: Upload OSV-Scanner SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: osv-scanner.sarif
           # Its own bucket, so a CodeQL, DevSkim, zizmor or BinSkim run never looks like it
