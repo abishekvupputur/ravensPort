@@ -154,6 +154,41 @@ internal static class McpProtocolExtensions
     /// </summary>
     public const int MaxPages = 50;
 
+    /// <summary>
+    /// The freshness a funnel promises on its four list results: none.
+    ///
+    /// 2026-07-28 requires ttlMs and cacheScope on every result that implements CacheableResult,
+    /// and for the list endpoints the only honest answer here is zero. A funnel resolves its
+    /// sources and its tool selection from the config store on every request precisely so that an
+    /// edit in the GUI -- unticking a tool, disabling a source -- lands on the agent's very next
+    /// call. It holds no session and raises no listChanged notification, so nothing exists that
+    /// could invalidate a list a client had already cached. A non-zero ttl would let an agent go
+    /// on calling a tool the user had just unticked for as long as that ttl ran, which is the one
+    /// property this class is built to prevent.
+    /// </summary>
+    public static readonly TimeSpan ListFreshness = TimeSpan.Zero;
+
+    /// <summary>
+    /// Stamps the 2026-07-28 cacheability fields onto a result.
+    ///
+    /// cacheScope is always Private, on every result and without exception. A funnel's answer is
+    /// specific to that funnel's selection, and for ProxyRoute sources it was fetched with the
+    /// user's own credential attached on the way out by the route's transform. A shared
+    /// intermediary must never be free to hand one caller's view of a funnel to another.
+    ///
+    /// <paramref name="timeToLive"/> is left unset by the list endpoints, which take
+    /// <see cref="ListFreshness"/>. Only resources/read passes one: the bytes of a resource are
+    /// the upstream's business and its own ttl is the best available answer, whereas which
+    /// resources are visible through this funnel is not.
+    /// </summary>
+    public static T AsFunnelCacheable<T>(this T result, TimeSpan? timeToLive = null)
+        where T : ICacheableResult
+    {
+        result.TimeToLive = timeToLive ?? ListFreshness;
+        result.CacheScope = CacheScope.Private;
+        return result;
+    }
+
     public static Tool WithName(this Tool tool, string name) => new()
     {
         Name = name,
