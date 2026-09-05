@@ -32,6 +32,15 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // and x/sys to v0.46.0 on its own. Both are raised to exactly the fixed version rather than to the
 // latest release, because each step up drags a fresh set of requirements in behind it.
 //
+// And again. x/crypto moved to v0.55.0 for CVE-2026-56854 (the source-address critical option was
+// enforced only on the PublicKeyCallback and VerifiedPublicKeyCallback paths, so a restriction set
+// by PasswordCallback, KeyboardInteractiveCallback, NoClientAuthCallback or GSSAPI AllowLogin was
+// silently ignored -- an authorization bypass, and an extension of the CVE-2026-46595 fix) and grpc
+// to v1.83.1 for CVE-2026-84304 (internal/transport keeps every fragmented HTTP/2 DATA frame as its
+// own recvMsg, so millions of one-byte frames exhaust the heap while staying inside the flow-control
+// windows -- an unauthenticated remote DoS). Raising the two carried x/net to v0.57.0, x/sys to
+// v0.47.0, x/text to v0.41.0, otel/sdk to v1.44.0 and genproto/googleapis/rpc forward on their own.
+//
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
 // unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
 // statement about the package existing, not about a release. No version of x/crypto clears it, and
@@ -42,7 +51,7 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.56.0 golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 go.opentelemetry.io/otel/sdk@v1.43.0 golang.org/x/crypto@v0.53.0 go.opentelemetry.io/otel@v1.44.0
+//	go get golang.org/x/net@v0.57.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.1 go.opentelemetry.io/otel/sdk@v1.44.0 golang.org/x/crypto@v0.55.0 go.opentelemetry.io/otel@v1.44.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -56,14 +65,14 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/grpc v1.83.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
