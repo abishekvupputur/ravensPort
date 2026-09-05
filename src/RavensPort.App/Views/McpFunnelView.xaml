@@ -25,9 +25,9 @@ Prefixing is always on: a name that changed whenever an unrelated source was add
 
         <sys:String x:Key="TransportHelpText">How to speak to this server.
 
-Auto            — probe for streamable HTTP, fall back to legacy SSE. Right for almost everything.
+Auto            — probe for streamable HTTP, fall back to HTTP+SSE. Right for almost everything.
 Streamable HTTP — the current transport.
-SSE             — the older transport, for servers that only implement it.</sys:String>
+SSE             — deprecated by the MCP spec and scheduled for removal. Pick it only for a server that implements nothing else.</sys:String>
 
         <sys:String x:Key="SelectionModeHelpText">How the ticks below are read.
 

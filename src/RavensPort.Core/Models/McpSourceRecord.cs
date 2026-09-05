@@ -21,9 +21,24 @@ public enum McpSourceKind
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum McpTransportPreference
 {
-    /// <summary>Let the SDK probe for streamable HTTP and fall back to legacy SSE.</summary>
+    /// <summary>
+    /// Let the SDK probe for streamable HTTP and fall back to HTTP+SSE. Still the right default:
+    /// the fallback only ever fires against a server that offers nothing else.
+    /// </summary>
     Auto,
+
+    /// <summary>The current transport, and the one to prefer for anything new.</summary>
     StreamableHttp,
+
+    /// <summary>
+    /// The HTTP+SSE transport. Deprecated by the spec since 2025-03-26 and reclassified as
+    /// Deprecated proper under the feature lifecycle policy in 2026-07-28, which puts it on a
+    /// removal clock of at least twelve months.
+    ///
+    /// Kept, and deliberately not marked [Obsolete]: the setting exists precisely for servers
+    /// that implement nothing else, and a build warning on an enum member the user picked in the
+    /// GUI would land on us rather than on them. Pick it only when a source leaves no choice.
+    /// </summary>
     Sse,
 }
 

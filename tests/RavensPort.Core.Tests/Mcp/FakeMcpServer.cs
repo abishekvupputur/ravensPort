@@ -94,6 +94,26 @@ internal sealed class FakeMcpServer : IAsyncDisposable
     /// </summary>
     public volatile bool EnforceSessions = true;
 
+    /// <summary>
+    /// The name of the tool that answers with a 2026-07-28 input_required result the first time
+    /// it is called, and with a real result once the answers come back. Not in <see cref="Tools"/>
+    /// by default: a test that wants multi round-trip behaviour adds it, so the tools every other
+    /// test sees stay as they were.
+    /// </summary>
+    public const string MultiRoundTripTool = "needs_input";
+
+    /// <summary>The requestState this fake mints when it asks for input.</summary>
+    public const string MultiRoundTripState = "fake-state-1";
+
+    /// <summary>
+    /// requestState seen on each tools/call, in arrival order. The funnel is supposed to relay
+    /// the one the source minted back to it untouched, so the second entry is the assertion.
+    /// </summary>
+    public ConcurrentQueue<string?> ReceivedRequestState { get; } = new();
+
+    /// <summary>The inputResponses seen on each tools/call, serialised; null when absent.</summary>
+    public ConcurrentQueue<string?> ReceivedInputResponses { get; } = new();
+
     /// <summary>Released to let a "slow" tool call complete; a test controls the timing.</summary>
     public TaskCompletionSource SlowToolGate { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -310,6 +330,49 @@ internal sealed class FakeMcpServer : IAsyncDisposable
         CallsPerSession.AddOrUpdate(sessionId, 1, (_, count) => count + 1);
         CallsByTool.AddOrUpdate(name, 1, (_, count) => count + 1);
 
+        ReceivedRequestState.Enqueue(
+            parameters.TryGetProperty("requestState", out var stateElement) ? stateElement.GetString() : null);
+
+        var hasInputResponses = parameters.TryGetProperty("inputResponses", out var responsesElement)
+            && responsesElement.ValueKind == JsonValueKind.Object;
+
+        ReceivedInputResponses.Enqueue(hasInputResponses ? responsesElement.GetRawText() : null);
+
+        if (name == MultiRoundTripTool && !hasInputResponses)
+        {
+            // 2026-07-28 multi round-trip: not an error and not a result, but a request for more
+            // from the client, which retries the same call carrying inputResponses. Written out
+            // by hand rather than through the SDK for the reason the whole fake is hand-written --
+            // if both ends agreed on a misreading of the shape, the test would still pass.
+            await WriteResultAsync(context, id, new JsonObject
+            {
+                ["resultType"] = "input_required",
+                ["requestState"] = MultiRoundTripState,
+                ["inputRequests"] = new JsonObject
+                {
+                    // Each entry is a request in its own right and carries the method it stands
+                    // for; the SDK refuses one without it.
+                    ["confirm"] = new JsonObject
+                    {
+                        ["method"] = "elicitation/create",
+                        ["params"] = new JsonObject
+                        {
+                            ["message"] = "Confirm?",
+                            ["requestedSchema"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["ok"] = new JsonObject { ["type"] = "boolean" },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+            return;
+        }
+
         string text;
 
         switch (name)
@@ -333,6 +396,10 @@ internal sealed class FakeMcpServer : IAsyncDisposable
                 SlowCallsInFlight.Enqueue(label);
                 await SlowToolGate.Task.WaitAsync(TimeSpan.FromSeconds(30));
                 text = label;
+                break;
+
+            case MultiRoundTripTool:
+                text = "input accepted";
                 break;
 
             default:
