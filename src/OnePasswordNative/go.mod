@@ -41,6 +41,13 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // windows -- an unauthenticated remote DoS). Raising the two carried x/net to v0.57.0, x/sys to
 // v0.47.0, x/text to v0.41.0, otel/sdk to v1.44.0 and genproto/googleapis/rpc forward on their own.
 //
+// Twice in one day, and against the version that had just been raised. x/crypto v0.55.0 drew two
+// more ssh advisories -- CVE-2026-78662 (GO-2026-6354), where a channel in the mux's chanList was
+// not usable until established and a peer could flood its incomingRequests to deadlock the whole
+// connection, and CVE-2026-56855 (GO-2026-6355), where crafted messages on an already-established
+// channel deadlocked it the same way. Both are fixed in v0.56.0 and both are scoped to
+// golang.org/x/crypto/ssh, which nothing here imports. Raising it pulled nothing else in.
+//
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
 // unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
 // statement about the package existing, not about a release. No version of x/crypto clears it, and
@@ -51,7 +58,7 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.57.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.1 go.opentelemetry.io/otel/sdk@v1.44.0 golang.org/x/crypto@v0.55.0 go.opentelemetry.io/otel@v1.44.0
+//	go get golang.org/x/net@v0.57.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.1 go.opentelemetry.io/otel/sdk@v1.44.0 golang.org/x/crypto@v0.56.0 go.opentelemetry.io/otel@v1.44.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -68,7 +75,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
