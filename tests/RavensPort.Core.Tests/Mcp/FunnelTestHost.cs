@@ -225,7 +225,11 @@ internal sealed class FunnelTestHost : IAsyncDisposable
     /// presenting the client certificate when the host is running mTLS, which is the only way any
     /// caller gets past the handshake.
     /// </summary>
-    public async Task<McpClient> ConnectAsync(string slug, string? apiKey = ApiKey)
+    /// <param name="protocolVersion">
+    /// Pins the client to one revision instead of letting it negotiate the newest both ends know.
+    /// Only the backward-compatibility tests pass this; everything else wants the default.
+    /// </param>
+    public async Task<McpClient> ConnectAsync(string slug, string? apiKey = ApiKey, string? protocolVersion = null)
     {
         var headers = new Dictionary<string, string>();
         if (apiKey is not null) headers[LocalAccessGuard.ApiKeyHeaderName] = apiKey;
@@ -242,7 +246,11 @@ internal sealed class FunnelTestHost : IAsyncDisposable
             ? new HttpClientTransport(options, new HttpClient(handler), null, ownsHttpClient: true)
             : new HttpClientTransport(options);
 
-        var client = await McpClient.CreateAsync(transport);
+        var clientOptions = protocolVersion is null
+            ? null
+            : new McpClientOptions { ProtocolVersion = protocolVersion };
+
+        var client = await McpClient.CreateAsync(transport, clientOptions);
         _clients.Add(client);
 
         return client;

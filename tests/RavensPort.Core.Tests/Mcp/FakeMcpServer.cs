@@ -76,6 +76,14 @@ internal sealed class FakeMcpServer : IAsyncDisposable
     public volatile bool IsDown;
 
     /// <summary>
+    /// When set, initialize answers with this revision instead of echoing whatever the client
+    /// asked for -- a source that has not been updated and never will be. Combined with the
+    /// server/discover this fake has never implemented, that is a 2025-11-25 server exactly as
+    /// the funnel would meet one in the wild.
+    /// </summary>
+    public volatile string? PinnedProtocolVersion;
+
+    /// <summary>
     /// When cleared, prompts/list and resources/list answer "method not found", like the many
     /// real servers that implement tools and nothing else.
     /// </summary>
@@ -200,9 +208,10 @@ internal sealed class FakeMcpServer : IAsyncDisposable
 
             // Echo the client's protocol version rather than pinning one, so this fake keeps
             // working when the SDK moves to a newer revision.
-            var version = root.TryGetProperty("params", out var p) && p.TryGetProperty("protocolVersion", out var v)
-                ? v.GetString()
-                : "2024-11-05";
+            var version = PinnedProtocolVersion
+                ?? (root.TryGetProperty("params", out var p) && p.TryGetProperty("protocolVersion", out var v)
+                    ? v.GetString()
+                    : "2024-11-05");
 
             await WriteResultAsync(context, idElement, new JsonObject
             {
