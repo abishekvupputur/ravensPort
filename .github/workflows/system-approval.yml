@@ -60,8 +60,31 @@ jobs:
           # .git/config where any later step or action could read it.
           persist-credentials: false
 
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          # Off for the reason installer-scan.yml gives: a cache entry that changed what got built
+          # would have this pass against something other than what ships.
+          cache: false
+
       - name: Restore
         run: dotnet restore tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
+
+      # The 1Password SDK is a Go c-shared library, not a NuGet package, so nothing restores it.
+      # Without it the suite fails at the first vault call with "Unable to load DLL
+      # 'onepassword.dll'", which reads like a bad token and is not one -- this is the only test in
+      # the repository that reaches the native client at all, so it is the only one that needs this.
+      - name: Build Go DLL
+        shell: pwsh
+        run: |
+          cd src/OnePasswordNative
+          $env:CGO_ENABLED = "1"
+          go build -buildmode=c-shared -o onepassword.dll main.go
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       # Named rather than inherited from the job, so the token is on exactly one step. It is a
       # bearer credential for a whole 1Password account: the fewer steps that can see it, the fewer
