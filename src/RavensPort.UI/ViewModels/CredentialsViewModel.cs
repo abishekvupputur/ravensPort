@@ -16,6 +16,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     private readonly TokenRefreshService _tokenRefreshService;
     private readonly CredentialTestService _credentialTestService;
     private readonly ActivityLog _activityLog;
+    private readonly IClipboardService _clipboard;
 
     /// <summary>
     /// Held only so the timer is not collected out from under the view model. Never stopped — the
@@ -223,6 +224,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
         TokenRefreshService tokenRefreshService,
         CredentialTestService credentialTestService,
         ActivityLog activityLog,
+        IClipboardService clipboard,
         IUiTimerFactory uiTimerFactory)
     {
         _configStoreCache = configStoreCache;
@@ -230,6 +232,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
         _tokenRefreshService = tokenRefreshService;
         _credentialTestService = credentialTestService;
         _activityLog = activityLog;
+        _clipboard = clipboard;
         ApplyPresetDefaults(_selectedPreset);
 
         Reload();
@@ -961,15 +964,24 @@ public sealed partial class CredentialsViewModel : ObservableObject
             // clipboard removes it for the common case of approving on this same machine.
             // Best-effort: another process can hold the clipboard open, and losing a convenience
             // must not fail a sign-in that is otherwise proceeding.
-            try
-            {
-                System.Windows.Clipboard.SetText(prompt.UserCode);
-            }
-            catch (Exception ex)
-            {
-                _activityLog.LogError($"Could not copy the device code for '{item.Name}' to the clipboard", ex);
-            }
+            //
+            // Not awaited, because a progress callback cannot be. Avalonia's clipboard is
+            // asynchronous where WPF's was not, so the copy now outlives this callback; the
+            // sign-in does not depend on it and its failure is logged rather than surfaced.
+            _ = CopyDeviceCodeAsync(item, prompt.UserCode);
         });
+
+    private async Task CopyDeviceCodeAsync(CredentialItemViewModel item, string userCode)
+    {
+        try
+        {
+            await _clipboard.SetTextAsync(userCode);
+        }
+        catch (Exception ex)
+        {
+            _activityLog.LogError($"Could not copy the device code for '{item.Name}' to the clipboard", ex);
+        }
+    }
 
     [RelayCommand]
     private async Task DisconnectAsync(CredentialItemViewModel? item)

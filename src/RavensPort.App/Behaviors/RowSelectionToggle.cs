@@ -5,11 +5,12 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 
-// Named here rather than project-wide, unlike Application and UserControl: these four are the only
+// Named here rather than project-wide, unlike Application and UserControl: these five are the only
 // place any C# in this project says them, and the tray has a legitimate claim on the WinForms ones.
 using Button = Avalonia.Controls.Button;
 using CheckBox = Avalonia.Controls.CheckBox;
 using ComboBox = Avalonia.Controls.ComboBox;
+using DataGrid = Avalonia.Controls.DataGrid;
 using TextBox = Avalonia.Controls.TextBox;
 
 namespace RavensPort.Behaviors;
