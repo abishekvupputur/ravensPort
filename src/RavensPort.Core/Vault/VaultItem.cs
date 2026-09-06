@@ -83,7 +83,11 @@ public sealed record VaultItemSpec(
 }
 
 /// <summary>What a list returns: enough to match an item to a record without fetching secrets.</summary>
-public sealed record VaultItemSummary(string ItemId, string Title);
+/// <param name="UpdatedUtc">
+/// When the item last changed, when the backend reports it. Null where it does not: the Proton
+/// Pass CLI lists no timestamp, and the in-memory vault has none to give.
+/// </param>
+public sealed record VaultItemSummary(string ItemId, string Title, DateTimeOffset? UpdatedUtc = null);
 
 /// <summary>What a get returns.</summary>
 public sealed record VaultItemContents(string ItemId, string Title, IReadOnlyDictionary<string, string> Fields)

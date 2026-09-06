@@ -38,6 +38,28 @@ dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
 eventually be throttled. The closing sweep tolerates that and leaves the items for the next run's
 opening sweep; the opening sweep does not, because "empty at startup" has to mean it.
 
+### Spreading the load over more than one account
+
+The limit is per account, so a second one halves the rate either sees. Add it with a `_2` suffix —
+its own service account, its own vault:
+
+```powershell
+$env:OP_SERVICE_ACCOUNT_TOKEN_2 = "ops_..."
+$env:RAVENSPORT_SYSTEM_TEST_VAULT_2 = "RavensPort CI 2"
+```
+
+Before anything else, the suite asks each configured vault when it was last written and uses
+whichever has gone longest. That is read from the newest item's `updatedAt`, so choosing costs no
+write quota — it cannot consume the thing it exists to conserve. A vault holding nothing, or only
+the Config stamp, counts as never written and wins outright.
+
+Alternating blindly would be simpler and wrong: CI runners keep no state between runs, so there is
+nowhere to remember whose turn it is. The vaults themselves remember.
+
+Numbering must be contiguous. The suite stops at the first missing token, so a typo in
+`OP_SERVICE_ACCOUNT_TOKEN_3` means "there is no third account" rather than an error. An account that
+cannot be reached is skipped with a note and costs only its turn.
+
 The acknowledgement variable is deliberately long and deliberately not a boolean. A token alone is
 too easy to have sitting in a shell; nobody sets this one by reflex.
 

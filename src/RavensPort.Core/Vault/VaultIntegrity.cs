@@ -15,15 +15,22 @@ namespace RavensPort.Core.Vault;
 /// <param name="Role">Parsed from the title. <see cref="VaultItemRole.Config"/> for the note.</param>
 /// <param name="RecordId">Empty when the title carries no record id.</param>
 /// <param name="IsOwned">Whether the title parses as one of this app's items.</param>
+/// <param name="UpdatedUtc">
+/// When the item last changed, where the backend reports it, and null where it does not. Useful for
+/// the same reason a file's mtime is: it says when a vault was last written without reading
+/// anything out of it.
+/// </param>
 public sealed record VaultItemEntry(
-    string ItemId, string Title, VaultItemRole Role, Guid RecordId, bool IsOwned)
+    string ItemId, string Title, VaultItemRole Role, Guid RecordId, bool IsOwned,
+    DateTimeOffset? UpdatedUtc = null)
 {
     /// <summary>Reads what a title says about an item. One place, so both backends agree.</summary>
-    public static VaultItemEntry Classify(string itemId, string title)
+    public static VaultItemEntry Classify(string itemId, string title, DateTimeOffset? updatedUtc = null)
     {
         var owned = VaultItemNaming.TryParse(title, out var role, out var recordId);
 
-        return new VaultItemEntry(itemId, title, owned ? role : default, owned ? recordId : Guid.Empty, owned);
+        return new VaultItemEntry(
+            itemId, title, owned ? role : default, owned ? recordId : Guid.Empty, owned, updatedUtc);
     }
 }
 

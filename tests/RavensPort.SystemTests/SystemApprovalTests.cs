@@ -96,12 +96,19 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
     [RequiresServiceAccountFact]
     public async Task TheWholeProductFromAnEmptyVaultToMtlsAndBack()
     {
-        var token = SystemTestEnvironment.Token!;
+        var accounts = SystemTestEnvironment.Accounts;
+
+        // Whichever vault has gone longest without being written. With one account this is a no-op;
+        // with two it halves the write rate each account sees, which is what keeps consecutive runs
+        // off 1Password's per-account limit.
+        Stage($"0. choosing between {accounts.Count} configured account(s)");
+        var account = await SystemTestHost.ChooseLeastRecentlyUsedAsync(accounts, output.WriteLine);
+        output.WriteLine($"using {account.Label}, vault '{account.VaultName}'");
 
         // Purged before the store is ever read. An item the vault will not hand back -- archived,
         // or half-deleted by a sweep that hit the write rate limit -- fails the load, and a host
         // that cannot start cannot run the sweep that would have fixed it.
-        await using var host = await SystemTestHost.StartAsync(token, purgeBeforeLoading: true);
+        await using var host = await SystemTestHost.StartAsync(account, purgeBeforeLoading: true);
 
         // ---- 1. the vault starts empty -------------------------------------------------------
         Stage("1. empty vault at startup");

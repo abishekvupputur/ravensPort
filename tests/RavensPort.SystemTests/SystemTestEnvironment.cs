@@ -70,6 +70,45 @@ internal static class SystemTestEnvironment
         }
     }
 
+    /// <summary>
+    /// One service account and the vault it reaches. More than one may be configured.
+    /// </summary>
+    public sealed record Account(string Token, string VaultName, string Label);
+
+    /// <summary>
+    /// Every account configured, in the order they are numbered.
+    ///
+    /// The unsuffixed pair is the first; <c>_2</c>, <c>_3</c> and so on follow. Spreading runs over
+    /// more than one exists for a single reason: 1Password rate-limits vault writes per account,
+    /// and a pass of this suite spends a couple of dozen, so consecutive runs against one account
+    /// run out. Two accounts halve the rate any one of them sees.
+    /// </summary>
+    public static IReadOnlyList<Account> Accounts
+    {
+        get
+        {
+            var accounts = new List<Account>();
+
+            for (var index = 1; ; index++)
+            {
+                var suffix = index == 1 ? "" : $"_{index}";
+                var token = Get(TokenVariable + suffix);
+
+                // Numbering has to be contiguous. Stopping at the first gap is what keeps a typo in
+                // OP_SERVICE_ACCOUNT_TOKEN_3 from silently meaning "there is no third account".
+                if (string.IsNullOrWhiteSpace(token)) break;
+
+                var vault = Get(VaultNameVariable + suffix);
+                accounts.Add(new Account(
+                    token,
+                    string.IsNullOrWhiteSpace(vault) ? VaultConstants.VaultName : vault,
+                    $"account {index}"));
+            }
+
+            return accounts;
+        }
+    }
+
     public static string? Token => Get(TokenVariable);
 
     private static string? Acknowledgement => Get(AcknowledgementVariable);

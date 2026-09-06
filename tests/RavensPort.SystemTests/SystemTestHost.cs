@@ -53,13 +53,13 @@ internal sealed class SystemTestHost : IAsyncDisposable
     public static readonly string PfxPassword =
         Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
-    private readonly string _token;
+    private readonly SystemTestEnvironment.Account _account;
     private readonly List<McpClient> _clients = [];
     private WebApplication _proxy;
 
-    private SystemTestHost(string token, WebApplication proxy, string baseUrl)
+    private SystemTestHost(SystemTestEnvironment.Account account, WebApplication proxy, string baseUrl)
     {
-        _token = token;
+        _account = account;
         _proxy = proxy;
         BaseUrl = baseUrl;
     }
@@ -87,12 +87,112 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// puts the vault beyond the reach of the very sweep meant to clean it. Purging first breaks
     /// that: nothing has been read yet, so nothing can refuse to be read.
     /// </param>
+    /// <summary>
+    /// The configured account whose vault was written to longest ago, and how each was judged.
+    ///
+    /// The point is spreading writes. 1Password rate-limits them per account and a pass of this
+    /// suite spends a couple of dozen, so running twice against one account runs it out -- which is
+    /// exactly what happened while this suite was being written. Alternating blindly would be
+    /// simpler and wrong: CI runners keep no state between runs, so there is nowhere to remember
+    /// whose turn it is. The vault itself remembers, in the timestamps of the items already in it.
+    ///
+    /// Judged on the newest item in each vault, which is when that vault was last written. Reads
+    /// only -- listing costs no write quota, so choosing cannot itself consume the thing it is
+    /// trying to conserve. An empty vault has no timestamp at all and wins outright: nothing has
+    /// been written there, so its quota is untouched.
+    ///
+    /// A candidate that cannot be reached is skipped rather than fatal. One account being expired
+    /// or misconfigured should cost its turn, not the run.
+    /// </summary>
+    public static async Task<SystemTestEnvironment.Account> ChooseLeastRecentlyUsedAsync(
+        IReadOnlyList<SystemTestEnvironment.Account> accounts, Action<string> log)
+    {
+        if (accounts.Count == 1) return accounts[0];
+
+        SystemTestEnvironment.Account? best = null;
+        var bestWrittenAt = DateTimeOffset.MaxValue;
+
+        foreach (var account in accounts)
+        {
+            DateTimeOffset writtenAt;
+            try
+            {
+                writtenAt = await LastWrittenAtAsync(account);
+            }
+            catch (Exception ex)
+            {
+                log($"  {account.Label} ({account.VaultName}): unreachable, skipped -- {ex.Message}");
+                continue;
+            }
+
+            log(writtenAt == DateTimeOffset.MinValue
+                ? $"  {account.Label} ({account.VaultName}): empty, never written"
+                : $"  {account.Label} ({account.VaultName}): last written {writtenAt:u}");
+
+            if (writtenAt >= bestWrittenAt) continue;
+
+            best = account;
+            bestWrittenAt = writtenAt;
+        }
+
+        return best ?? throw new InvalidOperationException(
+            "None of the configured accounts could be reached. Check the tokens, and that each "
+            + "reaches a vault named by its RAVENSPORT_SYSTEM_TEST_VAULT entry.");
+    }
+
+    /// <summary>
+    /// When this account's vault was last written, from the newest item in it, or
+    /// <see cref="DateTimeOffset.MinValue"/> when it holds nothing.
+    ///
+    /// The host is built but never started: Kestrel binds in StartAsync, and none of this needs a
+    /// listener. Nothing is loaded either -- item titles and timestamps are all this reads, so no
+    /// item contents are fetched and nothing is decrypted.
+    /// </summary>
+    private static async Task<DateTimeOffset> LastWrittenAtAsync(SystemTestEnvironment.Account account)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.ClearProviders();
+        builder.Services.AddRavensPort();
+
+        await using var probe = builder.Build();
+
+        probe.Services.GetRequiredService<OnePasswordSession>().Unlock(account.Token);
+
+        var gate = probe.Services.GetRequiredService<VaultGateService>();
+        var status = await gate.ConnectAsync(VaultBackendKind.OnePassword);
+
+        if (!status.IsReady &&
+            status.For(VaultBackendKind.OnePassword)?.Availability is VaultAvailability.VaultMissing)
+        {
+            status = await gate.UseExistingVaultAsync(VaultBackendKind.OnePassword, account.VaultName);
+        }
+
+        if (!status.IsReady)
+        {
+            var detail = status.For(VaultBackendKind.OnePassword);
+            throw new InvalidOperationException(
+                $"availability={detail?.Availability.ToString() ?? "unknown"}, vault={account.VaultName}");
+        }
+
+        var items = await probe.Services.GetRequiredService<IConfigVault>().ListLiveItemsAsync();
+
+        // Config alone is not a written vault. It is the stamp adoption leaves behind, so a vault
+        // holding only that has had nothing done to it and should be preferred like an empty one.
+        var written = items
+            .Where(i => !(i.IsOwned && i.Role == VaultItemRole.Config))
+            .Select(i => i.UpdatedUtc)
+            .Where(t => t is not null)
+            .ToList();
+
+        return written.Count == 0 ? DateTimeOffset.MinValue : written.Max()!.Value;
+    }
+
     public static Task<SystemTestHost> StartAsync(
-        string token, bool mtls = false, bool purgeBeforeLoading = false) =>
-        StartInternalAsync(token, mtls, purgeBeforeLoading);
+        SystemTestEnvironment.Account account, bool mtls = false, bool purgeBeforeLoading = false) =>
+        StartInternalAsync(account, mtls, purgeBeforeLoading);
 
     private static async Task<SystemTestHost> StartInternalAsync(
-        string token, bool mtls, bool purgeBeforeLoading = false)
+        SystemTestEnvironment.Account account, bool mtls, bool purgeBeforeLoading = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls($"{(mtls ? "https" : "http")}://127.0.0.1:0");
@@ -119,7 +219,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         // The service-account path in full: the token goes into the session, and the gate connects
         // the 1Password backend with it. No desktop app, no integration channel, no Hello -- which
         // is what makes this runnable unattended at all.
-        proxy.Services.GetRequiredService<OnePasswordSession>().Unlock(token);
+        proxy.Services.GetRequiredService<OnePasswordSession>().Unlock(account.Token);
         var status = await proxy.Services.GetRequiredService<VaultGateService>()
             .ConnectAsync(VaultBackendKind.OnePassword);
 
@@ -131,7 +231,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
             status.For(VaultBackendKind.OnePassword)?.Availability is VaultAvailability.VaultMissing)
         {
             status = await proxy.Services.GetRequiredService<VaultGateService>()
-                .UseExistingVaultAsync(VaultBackendKind.OnePassword, SystemTestEnvironment.VaultName);
+                .UseExistingVaultAsync(VaultBackendKind.OnePassword, account.VaultName);
         }
 
         if (!status.IsReady)
@@ -142,7 +242,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
                 "Could not open the 1Password vault with the service-account token. "
                 + $"availability={detail?.Availability.ToString() ?? "unknown"}, "
                 + $"vault={detail?.VaultName ?? "<none>"}, detail={detail?.Detail ?? "<none>"}. "
-                + "The token must reach a vault named 'RavensPort' (VaultConstants.VaultName).");
+                + $"{account.Label} must reach a vault named '{account.VaultName}'.");
         }
 
         if (purgeBeforeLoading)
@@ -179,7 +279,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         var baseUrl = proxy.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!.Addresses.First();
 
-        var host = new SystemTestHost(token, proxy, baseUrl);
+        var host = new SystemTestHost(account, proxy, baseUrl);
 
         // A route-backed funnel source dials 127.0.0.1:{ListenPort}, so the stored port has to be
         // the one actually bound. In the app they agree by construction; here the port is ephemeral
@@ -204,7 +304,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
 
-        var replacement = await StartInternalAsync(_token, mtls, purgeBeforeLoading: false);
+        var replacement = await StartInternalAsync(_account, mtls, purgeBeforeLoading: false);
         _proxy = replacement._proxy;
         BaseUrl = replacement.BaseUrl;
     }
