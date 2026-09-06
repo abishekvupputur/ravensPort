@@ -98,7 +98,10 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
     {
         var token = SystemTestEnvironment.Token!;
 
-        await using var host = await SystemTestHost.StartAsync(token);
+        // Purged before the store is ever read. An item the vault will not hand back -- archived,
+        // or half-deleted by a sweep that hit the write rate limit -- fails the load, and a host
+        // that cannot start cannot run the sweep that would have fixed it.
+        await using var host = await SystemTestHost.StartAsync(token, purgeBeforeLoading: true);
 
         // ---- 1. the vault starts empty -------------------------------------------------------
         Stage("1. empty vault at startup");

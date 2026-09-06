@@ -97,6 +97,19 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           RAVENSPORT_SYSTEM_TEST_ACK: ${{ secrets.RAVENSPORT_SYSTEM_TEST_ACK }}
+
+          # A vault name and a mock endpoint: neither is sensitive, so both belong in Variables
+          # rather than Secrets, where they can be read back and corrected without being retyped
+          # blind. Read from secrets as well, because a name is an easy thing to have already put
+          # there, and an empty vars entry is falsy so the fallback costs nothing.
+          #
+          # Both are optional. Without the first the suite uses VaultConstants.VaultName, which is
+          # right until the vault's Config stamp goes missing; without the second it uses
+          # Beeceptor's shared sandbox.
+          RAVENSPORT_SYSTEM_TEST_VAULT: >-
+            ${{ vars.RAVENSPORT_SYSTEM_TEST_VAULT || secrets.RAVENSPORT_SYSTEM_TEST_VAULT }}
+          RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT: >-
+            ${{ vars.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT || secrets.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT }}
         run: >
           dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
           -c Release --no-restore --verbosity normal
