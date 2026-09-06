@@ -250,7 +250,7 @@ public class ApiKeyCredentialForwardingTests : IAsyncLifetime
     public async Task AKeyContainingALineBreakIsNeverPutOnTheWire()
     {
         // Request splitting, aimed at the upstream: the CR/LF would end the header line and the
-        // rest would be read as a further header. Refused rather than sanitized â€” a silently
+        // rest would be read as a further header. Refused rather than sanitized — a silently
         // trimmed key is a key that does not work, reported as one that does.
         var seen = await GetAsync($"{BrokenKey}/resource");
 
@@ -265,7 +265,7 @@ public class ApiKeyCredentialForwardingTests : IAsyncLifetime
     public async Task ACredentialWithAnEmptyKeyForwardsUnauthenticatedRatherThanSendingABlankHeader()
     {
         // A blank header would be rejected by the upstream with a 401 that says nothing about
-        // the real problem â€” that no key was ever stored.
+        // the real problem — that no key was ever stored.
         var seen = await GetAsync($"{EmptyKey}/resource");
 
         Assert.Null(seen.Header("X-Api-Key"));
