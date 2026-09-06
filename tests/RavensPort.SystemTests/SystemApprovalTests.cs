@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using RavensPort.Core.Models;
+using RavensPort.Core.Auth;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Tests.Mcp;
 using Xunit.Abstractions;
@@ -139,6 +140,61 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
 
         var upstream = new UpstreamRecord { Name = "mock-upstream", BaseUrl = RouteUpstreamUrl };
 
+        // A real OAuth2 exchange, against a mock authorization server. Client credentials is the
+        // only grant that can run here: the browser flow needs a person at a consent screen and the
+        // device flow needs one at a second device, while this one is the app signing in as itself.
+        var clientCredentials = new CredentialRecord
+        {
+            Name = "mock client credentials",
+            Kind = CredentialKind.ClientCredentials,
+            ClientId = "ravensport-approval",
+            ClientSecret = "mock-client-secret", // gitleaks:allow
+            TokenEndpoint = SystemTestEnvironment.OAuthTokenEndpoint,
+        };
+
+        var outcome = await host.Service<ClientCredentialsService>().AcquireAsync(clientCredentials);
+
+        Assert.True(outcome.Success,
+            $"the token endpoint {SystemTestEnvironment.OAuthTokenEndpoint} refused the grant: "
+            + $"{outcome.Error} {outcome.ErrorDescription}");
+
+        var issuedToken = clientCredentials.Token?.AccessToken;
+        Assert.False(string.IsNullOrWhiteSpace(issuedToken));
+        output.WriteLine(
+            $"client credentials grant -> token of {issuedToken!.Length} chars from "
+            + SystemTestEnvironment.OAuthTokenEndpoint);
+
+        // An MCP server reached the way a real one is: through one of this proxy's own routes, so
+        // the route's credential transform attaches the token on the way out. This is the only
+        // arrangement that shows an OAuth token reaching an MCP server rather than just an
+        // ordinary upstream.
+        var secured = await StartMcpServerAsync();
+        var securedUpstream = new UpstreamRecord { Name = "mcp-secured", BaseUrl = secured.Url };
+
+        var securedRoute = new RouteMapping
+        {
+            PathPrefix = "/mcpsecured",
+            UpstreamId = securedUpstream.Id,
+            StripPrefix = true,
+            Key = new ProxyKey { Value = SystemTestHost.ApiKey },
+            Credentials =
+            [
+                new RouteCredential
+                {
+                    CredentialId = clientCredentials.Id,
+                    Placement = CredentialPlacement.Header,
+                    ParameterName = "Authorization",
+                    ValuePrefix = "Bearer ",
+                },
+            ],
+        };
+
+        var securedSource = new McpSourceRecord
+        {
+            Name = "secured", Alias = "secured", Kind = McpSourceKind.ProxyRoute,
+            RouteId = securedRoute.Id, Transport = McpTransportPreference.StreamableHttp,
+        };
+
         var sourceAlpha = new McpSourceRecord
         {
             Name = "alpha", Alias = "alpha", Kind = McpSourceKind.RemoteUrl,
@@ -155,9 +211,13 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
             store.Settings.McpFunnelEnabled = true;
             store.Credentials.Add(oauth);
             store.Credentials.Add(apiKey);
+            store.Credentials.Add(clientCredentials);
             store.Upstreams.Add(upstream);
+            store.Upstreams.Add(securedUpstream);
+            store.Routes.Add(securedRoute);
             store.McpSources.Add(sourceAlpha);
             store.McpSources.Add(sourceBeta);
+            store.McpSources.Add(securedSource);
 
             foreach (var route in BuildRouteMatrix(upstream.Id, oauth.Id, apiKey.Id))
             {
@@ -180,16 +240,23 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
                 Key = new ProxyKey { Value = SystemTestHost.ApiKey },
                 Sources = [new McpFunnelSource { SourceId = sourceAlpha.Id }],
             });
+            store.McpFunnels.Add(new McpFunnelRecord
+            {
+                Name = "oauth", Slug = "oauth",
+                Key = new ProxyKey { Value = SystemTestHost.ApiKey },
+                Sources = [new McpFunnelSource { SourceId = securedSource.Id }],
+            });
         });
 
         host.RebuildProxyConfig();
-        output.WriteLine("seeded: 2 credentials, 7 routes, 2 MCP sources, 2 funnels");
+        output.WriteLine("seeded: 3 credentials, 8 routes, 3 MCP sources, 3 funnels");
 
         // ---- 3. everything works over plain HTTP ---------------------------------------------
         Stage("3. credential matrix and funnels over http");
 
         await AssertCredentialMatrixAsync(host, "before mTLS");
         await AssertFunnelsWorkAsync(host, "before mTLS");
+        await AssertOAuthTokenReachesTheMcpServerAsync(host, secured, issuedToken, "before mTLS");
 
         // ---- 4. mTLS on, certificate exported --------------------------------------------------
         Stage("4. enabling mTLS and exporting the certificate");
@@ -218,10 +285,16 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         Assert.StartsWith("https://", host.BaseUrl, StringComparison.Ordinal);
 
         var reloaded = host.Cache.Current;
-        Assert.Equal(7, reloaded.Routes.Count);
-        Assert.Equal(2, reloaded.McpFunnels.Count);
-        Assert.Equal(2, reloaded.McpSources.Count);
-        Assert.Equal(2, reloaded.Credentials.Count);
+        Assert.Equal(8, reloaded.Routes.Count);
+        Assert.Equal(3, reloaded.McpFunnels.Count);
+        Assert.Equal(3, reloaded.McpSources.Count);
+        Assert.Equal(3, reloaded.Credentials.Count);
+
+        // The token survived too, which is what lets the OAuth check below run against a host that
+        // never performed the exchange.
+        var restoredToken = reloaded.Credentials
+            .Single(c => c.Kind == CredentialKind.ClientCredentials).Token?.AccessToken;
+        Assert.Equal(issuedToken, restoredToken);
         Assert.True(reloaded.Settings.MtlsEnabled);
         output.WriteLine($"listener is {host.BaseUrl}, config survived the restart");
 
@@ -230,6 +303,10 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
 
         await AssertCredentialMatrixAsync(host, "after restart, over mTLS");
         await AssertFunnelsWorkAsync(host, "after restart, over mTLS");
+
+        // The same token, after the restart. It came back out of 1Password rather than out of the
+        // exchange, which is the half a token acquisition on its own never shows.
+        await AssertOAuthTokenReachesTheMcpServerAsync(host, secured, issuedToken, "after restart, over mTLS");
 
         // ---- 7. the listener actually refuses the wrong caller ----------------------------------
         Stage("7. mTLS refusals");
@@ -240,7 +317,7 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         Stage("8. clearing the vault");
 
         await ClearVaultAsync(host);
-        var swept = await host.PurgeVaultAsync();
+        var swept = await host.PurgeVaultAsync(tolerateFailures: true);
         output.WriteLine($"store cleared and {swept} vault item(s) deleted; approval run complete");
     }
 
@@ -431,6 +508,60 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
     {
         while (ex.InnerException is { } inner) ex = inner;
         return $"{ex.GetType().Name}: {ex.Message}";
+    }
+
+    // ---- the OAuth token, all the way to an MCP server -------------------------------------------
+
+    /// <summary>
+    /// The token the authorization server issued, arriving at an MCP server.
+    ///
+    /// This is the arrangement the product exists for and the one nothing else here covers. The
+    /// funnel's source is a ProxyRoute, so reaching it means dialling one of this proxy's own routes
+    /// through the loopback listener, which puts the route's credential transform in the path. The
+    /// fake records the Authorization of every request it is sent, so what is asserted is the header
+    /// that actually arrived rather than the configuration that should have produced it.
+    ///
+    /// Run before mTLS and again after the restart. The second time the host never performed an
+    /// exchange -- the token came back out of 1Password -- which is the half a token acquisition on
+    /// its own can never show.
+    /// </summary>
+    private async Task AssertOAuthTokenReachesTheMcpServerAsync(
+        SystemTestHost host, FakeMcpServer secured, string expectedToken, string phase)
+    {
+        secured.ReceivedAuthorization.Clear();
+        secured.ReceivedHeaders.Clear();
+
+        var client = await host.ConnectMcpAsync("oauth");
+
+        var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
+        Assert.Contains("secured__echo", tools);
+
+        var call = await client.CallToolAsync(
+            "secured__echo",
+            new Dictionary<string, object?> { ["value"] = "through oauth" }!);
+        Assert.Equal("through oauth", call.Content.OfType<TextContentBlock>().First().Text);
+
+        var authorizations = secured.ReceivedAuthorization
+            .Where(a => !string.IsNullOrEmpty(a))
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(authorizations);
+
+        // Every request, not merely one of them. A funnel makes several -- discovery, the list, the
+        // call -- and a transform that attached the token to only some would still satisfy a
+        // "contains" check while leaving real calls unauthenticated.
+        Assert.All(authorizations, a => Assert.Equal($"Bearer {expectedToken}", a));
+
+        // And this proxy's own key is not among what it forwarded. It authenticates a caller to
+        // RavensPort and has no business at the far end, where the upstream would log it.
+        Assert.All(
+            secured.ReceivedHeaders,
+            headers => Assert.False(headers.ContainsKey(LocalAccessGuard.ApiKeyHeaderName)));
+
+        output.WriteLine(
+            $"oauth funnel -> MCP server saw 'Bearer <issued token>' on all "
+            + $"{authorizations.Count} distinct authorization(s), proxy key stripped ({phase})");
     }
 
     // ---- funnels --------------------------------------------------------------------------------

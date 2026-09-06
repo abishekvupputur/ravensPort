@@ -1,3 +1,5 @@
+using RavensPort.Core.Vault;
+
 namespace RavensPort.SystemTests;
 
 /// <summary>
@@ -26,6 +28,47 @@ internal static class SystemTestEnvironment
     public const string AcknowledgementVariable = "RAVENSPORT_SYSTEM_TEST_ACK";
 
     public const string AcknowledgementValue = "i-understand-this-erases-the-ravensport-vault";
+
+    /// <summary>
+    /// Where the client-credentials grant goes. Beeceptor's shared OAuth sandbox by default, which
+    /// needs no signup and answers a real token response.
+    ///
+    /// Overridable because it is the one thing in this suite that reaches outside the machine. A
+    /// shared public sandbox can rate-limit, change, or be down, and none of those are this
+    /// product being broken -- pointing this at a local stub is how a run stops depending on it.
+    /// </summary>
+    public const string OAuthEndpointVariable = "RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT";
+
+    public const string DefaultOAuthTokenEndpoint =
+        "https://oauth-mock.mock.beeceptor.com/oauth/token/github";
+
+    public static string OAuthTokenEndpoint
+    {
+        get
+        {
+            var configured = Get(OAuthEndpointVariable);
+            return string.IsNullOrWhiteSpace(configured) ? DefaultOAuthTokenEndpoint : configured;
+        }
+    }
+
+    /// <summary>
+    /// The vault to use, when it is not called <see cref="VaultConstants.VaultName"/>.
+    ///
+    /// Only consulted to re-stamp a vault that has lost its Config item. In normal operation the
+    /// provider finds its vault by that stamp rather than by name -- which is why a vault called
+    /// anything at all works until the stamp goes, and why the failure then reads "there is no
+    /// vault called 'RavensPort'" on an account whose vault is called something else.
+    /// </summary>
+    public const string VaultNameVariable = "RAVENSPORT_SYSTEM_TEST_VAULT";
+
+    public static string VaultName
+    {
+        get
+        {
+            var configured = Get(VaultNameVariable);
+            return string.IsNullOrWhiteSpace(configured) ? VaultConstants.VaultName : configured;
+        }
+    }
 
     public static string? Token => Get(TokenVariable);
 

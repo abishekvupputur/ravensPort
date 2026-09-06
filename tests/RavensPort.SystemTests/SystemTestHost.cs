@@ -72,6 +72,12 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
     public bool IsMtls => _proxy.Services.GetRequiredService<KestrelMtlsState>().IsEnabled;
 
+    /// <summary>
+    /// One of the app's own services, so the suite drives the real thing rather than reimplementing
+    /// it. The OAuth stage uses this to run the actual token exchange the app would run.
+    /// </summary>
+    public T Service<T>() where T : notnull => _proxy.Services.GetRequiredService<T>();
+
     public static Task<SystemTestHost> StartAsync(string token, bool mtls = false) =>
         StartInternalAsync(token, mtls);
 
@@ -105,6 +111,17 @@ internal sealed class SystemTestHost : IAsyncDisposable
         proxy.Services.GetRequiredService<OnePasswordSession>().Unlock(token);
         var status = await proxy.Services.GetRequiredService<VaultGateService>()
             .ConnectAsync(VaultBackendKind.OnePassword);
+
+        // A vault that has lost its stamp -- cleared by hand, or by an older version of the purge
+        // here that deleted the Config item -- is present but unrecognised. Adoption is what puts
+        // the stamp back, and it accepts an empty vault for exactly this case. Tried once, and only
+        // for that one availability.
+        if (!status.IsReady &&
+            status.For(VaultBackendKind.OnePassword)?.Availability is VaultAvailability.VaultMissing)
+        {
+            status = await proxy.Services.GetRequiredService<VaultGateService>()
+                .UseExistingVaultAsync(VaultBackendKind.OnePassword, SystemTestEnvironment.VaultName);
+        }
 
         if (!status.IsReady)
         {
@@ -255,23 +272,46 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// added by hand while testing. Those accumulate, and the next run's "the vault is empty at
     /// startup" then asserts against a vault that is nothing of the kind.
     ///
-    /// Everything ListLiveItemsAsync returns, not only the prefixed ones. The product deliberately
+    /// Everything ListLiveItemsAsync returns except the Config item. The product deliberately
     /// touches nothing it does not own -- that is what makes a shared vault safe -- but this suite
     /// is pointed at a throwaway account by an acknowledgement variable that says so, and "empty"
-    /// there means empty. The Config item goes with the rest; the next save writes a new one, which
-    /// is how an adopted empty vault gets stamped in the first place.
+    /// there means empty.
+    ///
+    /// The Config item is the exception, and it is not data. It is the stamp that identifies the
+    /// vault as RavensPort's, and connecting reads it long before anything is saved -- so deleting
+    /// it does not leave an empty vault, it leaves an unrecognisable one, and the next run fails at
+    /// startup with VaultMissing. Learned by doing exactly that.
     /// </summary>
-    public async Task<int> PurgeVaultAsync()
+    /// <param name="tolerateFailures">
+    /// True for the cleanup at the end, false for the sweep at the start, and the asymmetry is
+    /// deliberate. 1Password rate-limits vault writes, and this suite spends a couple of dozen of
+    /// them per run; when the run is over the verdict is already decided and an item left behind
+    /// costs nothing, because the next run's opening sweep takes it. Before the run it costs
+    /// everything -- "the vault is empty at startup" would be asserting against a vault that is
+    /// not, so a failure there has to stop the run rather than be reported and passed over.
+    /// </param>
+    public async Task<int> PurgeVaultAsync(bool tolerateFailures = false)
     {
         var vault = _proxy.Services.GetRequiredService<IConfigVault>();
 
         var items = await vault.ListLiveItemsAsync();
-        foreach (var item in items)
+        var deletable = items.Where(i => !(i.IsOwned && i.Role == VaultItemRole.Config)).ToList();
+
+        var deleted = 0;
+        foreach (var item in deletable)
         {
-            await vault.DeleteItemAsync(item.ItemId);
+            try
+            {
+                await vault.DeleteItemAsync(item.ItemId);
+                deleted++;
+            }
+            catch (VaultSaveException) when (tolerateFailures)
+            {
+                // Almost always the rate limit. Left for the next run's opening sweep.
+            }
         }
 
-        return items.Count;
+        return deleted;
     }
 
     /// <summary>
