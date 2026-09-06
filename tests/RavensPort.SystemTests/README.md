@@ -30,19 +30,50 @@ too easy to have sitting in a shell; nobody sets this one by reflex.
 
 ## What it covers
 
-1. The vault is empty at startup.
-2. Seeds a credential, two mock MCP servers, an upstream, a route with the credential attached, and
-   two funnels — one pooling both sources, one exposing a single source.
-3. The route forwards **and the credential arrives at the upstream** — asserted on what the upstream
-   received, because a status code alone would pass for a route that forwarded nothing.
+1. **The vault is empty at startup** — every item is deleted one by one, not just the ones the store
+   knows about. A save only reconciles what it loaded, so items from a run that failed before its
+   cleanup, or anything added by hand while testing, would otherwise survive and make "empty at
+   startup" assert against a vault that is nothing of the kind.
+2. Seeds two credentials (an OAuth grant and a static project key), two mock MCP servers, an
+   upstream, **seven routes covering every credential placement**, and two funnels — one pooling
+   both sources, one exposing a single source.
+3. **The credential matrix**, checked on what the upstream actually received rather than on a status
+   code, because a 200 would pass for a route that forwarded nothing:
+
+   | Route | What must arrive |
+   |---|---|
+   | `/app/none` | nothing — and the caller's own `Authorization` is stripped, not passed through |
+   | `/app/one` | `Authorization: Bearer <token>` |
+   | `/app/two-headers` | `Authorization: Bearer <A>` + `X-Project-Key: <B>` |
+   | `/app/several-headers` | `Authorization: Bearer <A>` + `X-Api-Key: <B>` + `PRIVATE-TOKEN: token <B>` |
+   | `/app/header-body` | `Authorization: Bearer <A>` + `{"auth_token": "<B>"}` |
+   | `/app/two-body` | `{"access_token": "<A>", "project_token": "<B>"}` — in one rewrite |
+   | `/app/oauth-plus-key` | `Authorization: Bearer <token>` + `X-Api-Key: <key>` |
+
+   There is no query row. `CredentialPlacement.Query` is no longer permitted: a secret in a URL is
+   written to the upstream's access log, every intermediary's, and browser history.
 4. Both funnels answer on the current revision **and** on `2025-11-25`, with the negotiated version
    asserted first so a pin that quietly failed cannot make the old-protocol half decorative.
 5. mTLS is switched on, a certificate minted and stored, and the PFX written to disk as the Settings
    tab's download would.
 6. The host is torn down and rebuilt from nothing but the token — so anything the second host knows
    came back out of 1Password.
-7. Every check in 3 and 4 runs again over https with the client certificate.
-8. The vault is emptied again.
+7. Everything in 3 and 4 runs **again** over https with the client certificate.
+8. **The listener refuses the wrong caller**, which is the only thing that shows mTLS is enforced
+   rather than merely switched on:
+
+   | Caller | Result |
+   |---|---|
+   | as configured | HTTP 200 |
+   | no client certificate | refused in the handshake — `Win32Exception`, no request ever sent |
+   | listener not trusted | refused by the caller — `AuthenticationException … UntrustedRoot` |
+   | wrong PFX passphrase | refused before any connection — `CryptographicException` |
+
+   Asserted by kind, not by message. A Node client sees `DEPTH_ZERO_SELF_SIGNED_CERT`,
+   `ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN` and `mac verify failure` for these same three; those
+   are OpenSSL's strings surfaced by Node, and .NET words them differently. Pinning them would pin
+   the client library rather than this product, so the actual message is logged instead.
+9. The vault is emptied again, item by item.
 
 ## What it does not cover, and why
 

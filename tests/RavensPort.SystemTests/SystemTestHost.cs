@@ -183,20 +183,43 @@ internal sealed class SystemTestHost : IAsyncDisposable
     public void RebuildProxyConfig() =>
         _proxy.Services.GetRequiredService<ProxyConfigChangeNotifier>().Rebuild();
 
-    /// <summary>An HTTP client that satisfies the listener, client certificate included when mTLS is on.</summary>
-    public HttpClient CreateHttpClient()
+    /// <summary>
+    /// An HTTP client for this listener.
+    ///
+    /// The two switches exist to build callers that are deliberately wrong, which is the only way to
+    /// show mTLS is enforced rather than merely configured. A run where every client is correct
+    /// cannot tell a listener that demands a certificate from one that ignores it.
+    /// </summary>
+    /// <param name="presentClientCertificate">
+    /// False omits the client certificate. The listener asks for one on every connection, so this
+    /// is refused at the handshake -- before any request, which is why it fails as a transport
+    /// error rather than a 403.
+    /// </param>
+    /// <param name="trustTheListener">
+    /// False drops the thumbprint check and leaves .NET's default chain validation, which a
+    /// self-signed certificate cannot satisfy. The client-side half of the same handshake: this is
+    /// the caller refusing the server, not the server refusing the caller.
+    /// </param>
+    public HttpClient CreateHttpClient(bool presentClientCertificate = true, bool trustTheListener = true)
     {
         var handler = new SocketsHttpHandler();
 
         if (_proxy.Services.GetRequiredService<KestrelMtlsState>().Certificate is { } certificate)
         {
-            handler.SslOptions.ClientCertificates = [certificate];
-            // The pair is pinned and self-signed, so there is no chain to build and nothing a CA
-            // check could consult. Thumbprint equality is what the listener enforces in the other
-            // direction too.
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, presented, _, _) =>
-                presented is X509Certificate2 c &&
-                string.Equals(c.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase);
+            if (presentClientCertificate)
+            {
+                handler.SslOptions.ClientCertificates = [certificate];
+            }
+
+            if (trustTheListener)
+            {
+                // The pair is pinned and self-signed, so there is no chain to build and nothing a
+                // CA check could consult. Thumbprint equality is what the listener enforces in the
+                // other direction too.
+                handler.SslOptions.RemoteCertificateValidationCallback = (_, presented, _, _) =>
+                    presented is X509Certificate2 c &&
+                    string.Equals(c.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         return new HttpClient(handler) { BaseAddress = new Uri(BaseUrl) };
@@ -221,6 +244,34 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
         _clients.Add(client);
         return client;
+    }
+
+    /// <summary>
+    /// Deletes every item in the vault, item by item, and reports how many went.
+    ///
+    /// Clearing the store's collections and saving is not the same thing and is not enough. A save
+    /// reconciles only what the store knows about, so anything the store never loaded survives it:
+    /// items left by a run that failed before its cleanup, items from an older schema, and anything
+    /// added by hand while testing. Those accumulate, and the next run's "the vault is empty at
+    /// startup" then asserts against a vault that is nothing of the kind.
+    ///
+    /// Everything ListLiveItemsAsync returns, not only the prefixed ones. The product deliberately
+    /// touches nothing it does not own -- that is what makes a shared vault safe -- but this suite
+    /// is pointed at a throwaway account by an acknowledgement variable that says so, and "empty"
+    /// there means empty. The Config item goes with the rest; the next save writes a new one, which
+    /// is how an adopted empty vault gets stamped in the first place.
+    /// </summary>
+    public async Task<int> PurgeVaultAsync()
+    {
+        var vault = _proxy.Services.GetRequiredService<IConfigVault>();
+
+        var items = await vault.ListLiveItemsAsync();
+        foreach (var item in items)
+        {
+            await vault.DeleteItemAsync(item.ItemId);
+        }
+
+        return items.Count;
     }
 
     /// <summary>

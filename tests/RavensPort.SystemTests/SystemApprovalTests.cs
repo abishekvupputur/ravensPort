@@ -1,3 +1,7 @@
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -9,7 +13,6 @@ using ModelContextProtocol.Protocol;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Tests.Mcp;
-using RavensPort.Core.Vault;
 using Xunit.Abstractions;
 
 namespace RavensPort.SystemTests;
@@ -25,39 +28,53 @@ namespace RavensPort.SystemTests;
 ///
 /// Assertions are direct rather than snapshots. Golden files are the better tool when the output is
 /// large, stable and hard to predict; here it is small, and full of ephemeral ports, fresh GUIDs and
-/// timestamps that would have to be scrubbed before every comparison. What is worth pinning is
-/// behaviour, and behaviour is what is asserted.
+/// timestamps that would have to be scrubbed before every comparison.
+///
+/// The credential matrix and the mTLS refusals overlap MultiCredentialForwardingTests and
+/// McpFunnelMtlsTests deliberately. Those prove the transform and the listener are right; this
+/// proves they are still right when every record came out of a real 1Password vault and survived a
+/// restart, which is the one thing no other suite can show.
 ///
 /// What this does not cover, said plainly: the installer and the GUI. Both are unreachable
 /// unattended -- see SystemTestHost for why a service-account token cannot be handed to an installed
-/// RavensPort.exe without a human. Everything between the vault and the wire is covered here.
+/// RavensPort.exe without a human.
 /// </summary>
 public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifetime
 {
-    private const string RouteUpstreamHeader = "X-Api-Key";
-    private const string StaticApiKey = "MOCK-UPSTREAM-API-KEY"; // gitleaks:allow
+    // Fixtures, not credentials.
+    private const string OAuthToken = "MOCK-OAUTH-ACCESS-TOKEN";  // gitleaks:allow
+    private const string ProjectKey = "MOCK-PROJECT-KEY";         // gitleaks:allow
 
     private WebApplication _routeUpstream = null!;
     private readonly List<FakeMcpServer> _mcpServers = [];
 
-    /// <summary>Where the exported certificate lands, as the Settings tab's Download button would put it.</summary>
     private readonly string _certDirectory =
         Path.Combine(Path.GetTempPath(), $"ravensport-approval-{Guid.NewGuid():n}");
+
+    /// <summary>What the upstream saw. The only way to prove a credential reached the wire.</summary>
+    private sealed record Seen(Dictionary<string, string> Headers, string Body)
+    {
+        public string? Header(string name) => Headers.TryGetValue(name, out var v) ? v : null;
+    }
 
     public async Task InitializeAsync()
     {
         Directory.CreateDirectory(_certDirectory);
 
-        // The thing a route forwards to. Echoes back what it was sent, which is the only way to
-        // prove the credential transform actually put the key on the wire.
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
         _routeUpstream = builder.Build();
         _routeUpstream.Run(async context =>
         {
-            var key = context.Request.Headers.TryGetValue(RouteUpstreamHeader, out var v) ? v.ToString() : "";
-            await context.Response.WriteAsync($"upstream-saw:{key}");
+            using var reader = new StreamReader(context.Request.Body);
+            var body = await reader.ReadToEndAsync();
+
+            var headers = context.Request.Headers
+                .ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase);
+
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new { headers, body }));
         });
         await _routeUpstream.StartAsync();
     }
@@ -85,49 +102,42 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         // ---- 1. the vault starts empty -------------------------------------------------------
         Stage("1. empty vault at startup");
 
+        var purged = await host.PurgeVaultAsync();
         await ClearVaultAsync(host);
 
         Assert.Empty(host.Cache.Current.Credentials);
         Assert.Empty(host.Cache.Current.Routes);
         Assert.Empty(host.Cache.Current.McpFunnels);
         Assert.Empty(host.Cache.Current.McpSources);
-        output.WriteLine("vault holds no credentials, routes, sources or funnels");
+        output.WriteLine($"deleted {purged} pre-existing vault item(s); store holds nothing");
 
-        // ---- 2. mock servers, credentials, routes, funnels ------------------------------------
-        Stage("2. seeding credentials, mock MCP servers, a route and two funnels");
+        // ---- 2. seeding ------------------------------------------------------------------------
+        Stage("2. seeding credentials, mock MCP servers, routes and two funnels");
 
         var alpha = await StartMcpServerAsync();
         var beta = await StartMcpServerAsync();
 
+        // An OAuth grant and a static project key: the two kinds a route can carry, and the pair
+        // plenty of APIs demand together.
+        var oauth = new CredentialRecord
+        {
+            Name = "mock oauth2",
+            ClientId = "id",
+            ClientSecret = "secret",
+            Token = new TokenSet(OAuthToken, "refresh", DateTimeOffset.UtcNow.AddHours(1), "Bearer", DateTimeOffset.UtcNow),
+        };
+
         var apiKey = new CredentialRecord
         {
-            Name = "mock-upstream-key",
+            Name = "mock project key",
             Kind = CredentialKind.ApiKey,
-            ApiKey = StaticApiKey,
+            ApiKey = ProjectKey,
             DefaultPlacement = CredentialPlacement.Header,
-            DefaultParameterName = RouteUpstreamHeader,
+            DefaultParameterName = "X-Api-Key",
             DefaultValuePrefix = "",
         };
 
         var upstream = new UpstreamRecord { Name = "mock-upstream", BaseUrl = RouteUpstreamUrl };
-
-        var route = new RouteMapping
-        {
-            PathPrefix = "/app/mock",
-            UpstreamId = upstream.Id,
-            StripPrefix = true,
-            Key = new ProxyKey { Value = SystemTestHost.ApiKey },
-            Credentials =
-            [
-                new RouteCredential
-                {
-                    CredentialId = apiKey.Id,
-                    Placement = CredentialPlacement.Header,
-                    ParameterName = RouteUpstreamHeader,
-                    ValuePrefix = "",
-                },
-            ],
-        };
 
         var sourceAlpha = new McpSourceRecord
         {
@@ -143,14 +153,17 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         await host.Cache.MutateAsync(store =>
         {
             store.Settings.McpFunnelEnabled = true;
+            store.Credentials.Add(oauth);
             store.Credentials.Add(apiKey);
             store.Upstreams.Add(upstream);
-            store.Routes.Add(route);
             store.McpSources.Add(sourceAlpha);
             store.McpSources.Add(sourceBeta);
 
-            // Two funnels: one pooling both sources, one exposing a single source. The pair is what
-            // proves a key opens its own endpoint and no other.
+            foreach (var route in BuildRouteMatrix(upstream.Id, oauth.Id, apiKey.Id))
+            {
+                store.Routes.Add(route);
+            }
+
             store.McpFunnels.Add(new McpFunnelRecord
             {
                 Name = "both", Slug = "both",
@@ -170,12 +183,12 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         });
 
         host.RebuildProxyConfig();
-        output.WriteLine("seeded: 1 credential, 1 route, 2 MCP sources, 2 funnels");
+        output.WriteLine("seeded: 2 credentials, 7 routes, 2 MCP sources, 2 funnels");
 
         // ---- 3. everything works over plain HTTP ---------------------------------------------
-        Stage("3. route and funnels over http");
+        Stage("3. credential matrix and funnels over http");
 
-        await AssertRouteForwardsTheCredentialAsync(host);
+        await AssertCredentialMatrixAsync(host, "before mTLS");
         await AssertFunnelsWorkAsync(host, "before mTLS");
 
         // ---- 4. mTLS on, certificate exported --------------------------------------------------
@@ -190,7 +203,6 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
             store.Settings.MtlsClientCertificatePassword = SystemTestHost.PfxPassword;
         });
 
-        // What the Settings tab's download does: the PFX to disk, for a client to present.
         var pfxPath = Path.Combine(_certDirectory, "RavensPort_ClientCert.pfx");
         await File.WriteAllBytesAsync(pfxPath, Convert.FromBase64String(pfx));
 
@@ -205,53 +217,224 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         Assert.True(host.IsMtls);
         Assert.StartsWith("https://", host.BaseUrl, StringComparison.Ordinal);
 
-        // The proof that the restart was real: this host was built from nothing but the token.
         var reloaded = host.Cache.Current;
-        Assert.Single(reloaded.Routes);
+        Assert.Equal(7, reloaded.Routes.Count);
         Assert.Equal(2, reloaded.McpFunnels.Count);
         Assert.Equal(2, reloaded.McpSources.Count);
-        Assert.Single(reloaded.Credentials);
+        Assert.Equal(2, reloaded.Credentials.Count);
         Assert.True(reloaded.Settings.MtlsEnabled);
         output.WriteLine($"listener is {host.BaseUrl}, config survived the restart");
 
         // ---- 6. everything works again, now over mTLS -------------------------------------------
-        Stage("6. route and funnels over https with the client certificate");
+        Stage("6. credential matrix and funnels over https with the client certificate");
 
-        await AssertRouteForwardsTheCredentialAsync(host);
+        await AssertCredentialMatrixAsync(host, "after restart, over mTLS");
         await AssertFunnelsWorkAsync(host, "after restart, over mTLS");
 
-        // ---- 7. leave the vault as it was found -------------------------------------------------
-        Stage("7. clearing the vault");
+        // ---- 7. the listener actually refuses the wrong caller ----------------------------------
+        Stage("7. mTLS refusals");
+
+        await AssertMtlsRefusalsAsync(host, pfxPath);
+
+        // ---- 8. leave the vault empty -----------------------------------------------------------
+        Stage("8. clearing the vault");
 
         await ClearVaultAsync(host);
-        Assert.Empty(host.Cache.Current.McpFunnels);
-        output.WriteLine("vault emptied; approval run complete");
+        var swept = await host.PurgeVaultAsync();
+        output.WriteLine($"store cleared and {swept} vault item(s) deleted; approval run complete");
     }
 
-    // ---- the checks, run identically before and after the restart ------------------------------
+    // ---- the credential matrix -----------------------------------------------------------------
 
     /// <summary>
-    /// The route forwards, and the credential is on the request when it lands. Asserting the status
-    /// alone would pass for a route that forwarded nothing at all.
+    /// Every shape a route can attach, one route each. The upstream echoes what it received, so
+    /// each row is checked on what actually reached the wire rather than on a status code.
+    ///
+    /// No query placement, and that is not an omission: CredentialPlacement.Query is no longer
+    /// permitted, because a secret in a URL is written to the upstream's access log, every
+    /// intermediary's, and browser history.
     /// </summary>
-    private async Task AssertRouteForwardsTheCredentialAsync(SystemTestHost host)
+    private static IEnumerable<RouteMapping> BuildRouteMatrix(Guid upstreamId, Guid oauthId, Guid keyId)
+    {
+        RouteMapping Route(string prefix, params RouteCredential[] credentials) => new()
+        {
+            PathPrefix = prefix,
+            UpstreamId = upstreamId,
+            StripPrefix = true,
+            Key = new ProxyKey { Value = SystemTestHost.ApiKey },
+            Credentials = [.. credentials],
+        };
+
+        RouteCredential Header(Guid id, string name, string prefix) =>
+            new() { CredentialId = id, Placement = CredentialPlacement.Header, ParameterName = name, ValuePrefix = prefix };
+
+        RouteCredential Body(Guid id, string field) =>
+            new() { CredentialId = id, Placement = CredentialPlacement.Body, ParameterName = field, ValuePrefix = "" };
+
+        // Nothing: a plain forwarding hop to an upstream that needs no token.
+        yield return Route("/app/none");
+
+        // One credential: the usual case.
+        yield return Route("/app/one", Header(oauthId, "Authorization", "Bearer "));
+
+        // Two headers.
+        yield return Route("/app/two-headers",
+            Header(oauthId, "Authorization", "Bearer "),
+            Header(keyId, "X-Project-Key", ""));
+
+        // Several headers, one of them with a prefix that is not "Bearer ".
+        yield return Route("/app/several-headers",
+            Header(oauthId, "Authorization", "Bearer "),
+            Header(keyId, "X-Api-Key", ""),
+            Header(keyId, "PRIVATE-TOKEN", "token "));
+
+        // Header plus body.
+        yield return Route("/app/header-body",
+            Header(oauthId, "Authorization", "Bearer "),
+            Body(keyId, "auth_token"));
+
+        // Two body fields, which have to arrive in one rewrite rather than two.
+        yield return Route("/app/two-body",
+            Body(oauthId, "access_token"),
+            Body(keyId, "project_token"));
+
+        // An OAuth user grant plus a project key, which plenty of APIs demand together.
+        yield return Route("/app/oauth-plus-key",
+            Header(oauthId, "Authorization", "Bearer "),
+            Header(keyId, "X-Api-Key", ""));
+    }
+
+    private async Task AssertCredentialMatrixAsync(SystemTestHost host, string phase)
+    {
+        // Nothing attached: the hop still forwards, and the caller's own Authorization is stripped
+        // rather than passed through -- a route with no credential must not become a way to smuggle
+        // one to the upstream.
+        var none = await PostAsync(host, "/app/none");
+        Assert.Null(none.Header("Authorization"));
+
+        var one = await PostAsync(host, "/app/one");
+        Assert.Equal($"Bearer {OAuthToken}", one.Header("Authorization"));
+
+        var two = await PostAsync(host, "/app/two-headers");
+        Assert.Equal($"Bearer {OAuthToken}", two.Header("Authorization"));
+        Assert.Equal(ProjectKey, two.Header("X-Project-Key"));
+
+        var several = await PostAsync(host, "/app/several-headers");
+        Assert.Equal($"Bearer {OAuthToken}", several.Header("Authorization"));
+        Assert.Equal(ProjectKey, several.Header("X-Api-Key"));
+        Assert.Equal($"token {ProjectKey}", several.Header("PRIVATE-TOKEN"));
+
+        var headerBody = await PostAsync(host, "/app/header-body");
+        Assert.Equal($"Bearer {OAuthToken}", headerBody.Header("Authorization"));
+        Assert.Equal(ProjectKey, FieldOf(headerBody.Body, "auth_token"));
+
+        // Both fields in one rewrite: two separate rewrites would each start from the original body
+        // and the second would drop the first.
+        var twoBody = await PostAsync(host, "/app/two-body");
+        Assert.Equal(OAuthToken, FieldOf(twoBody.Body, "access_token"));
+        Assert.Equal(ProjectKey, FieldOf(twoBody.Body, "project_token"));
+
+        var both = await PostAsync(host, "/app/oauth-plus-key");
+        Assert.Equal($"Bearer {OAuthToken}", both.Header("Authorization"));
+        Assert.Equal(ProjectKey, both.Header("X-Api-Key"));
+
+        output.WriteLine($"credential matrix: 7 routes, every placement arrived as configured ({phase})");
+    }
+
+    /// <summary>
+    /// POSTs a small JSON object, because body placements need something to rewrite.
+    ///
+    /// The caller sends an Authorization of its own every time. It must never survive: the
+    /// transform replaces it where a credential is configured and strips it where none is.
+    /// </summary>
+    private static async Task<Seen> PostAsync(SystemTestHost host, string path)
     {
         using var client = host.CreateHttpClient();
         client.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, SystemTestHost.ApiKey);
+        client.DefaultRequestHeaders.Add("Authorization", "Bearer CALLER-SUPPLIED-VALUE");
 
-        var response = await client.GetAsync("/app/mock/anything");
-        var body = await response.Content.ReadAsStringAsync();
+        var response = await client.PostAsJsonAsync(path + "/anything", new { hello = "world" });
+        var payload = await response.Content.ReadAsStringAsync();
 
-        Assert.True(response.IsSuccessStatusCode, $"route returned {(int)response.StatusCode}: {body}");
-        Assert.Equal($"upstream-saw:{StaticApiKey}", body);
-        output.WriteLine($"route /app/mock -> {(int)response.StatusCode}, upstream received the API key");
+        Assert.True(response.IsSuccessStatusCode, $"{path} returned {(int)response.StatusCode}: {payload}");
+
+        using var doc = JsonDocument.Parse(payload);
+        var headers = doc.RootElement.GetProperty("headers").EnumerateObject()
+            .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase);
+
+        return new Seen(headers, doc.RootElement.GetProperty("body").GetString() ?? "");
     }
 
+    private static string? FieldOf(string json, string field)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.TryGetProperty(field, out var v) ? v.GetString() : null;
+    }
+
+    // ---- mTLS refusals -------------------------------------------------------------------------
+
     /// <summary>
-    /// Both funnels, on both protocol revisions. The revision is asserted before anything else: a
-    /// pin that quietly failed would leave the client on the current one and every check below would
-    /// still pass, which would make the old-protocol half of this suite decorative.
+    /// The listener refusing the wrong caller, which is the only thing that shows mTLS is enforced
+    /// rather than merely switched on. A run where every client is correct cannot tell a listener
+    /// that demands a certificate from one that ignores it.
+    ///
+    /// Failures are asserted by kind, not by message. A Node client sees
+    /// DEPTH_ZERO_SELF_SIGNED_CERT, ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN and "mac verify
+    /// failure" -- those are OpenSSL's strings surfaced by Node, and .NET's stack words the same
+    /// three refusals differently. Pinning them would pin the client library rather than this
+    /// product, so what is asserted is that each wrong caller is refused, and the actual message is
+    /// written to the log where it can be read.
     /// </summary>
+    private async Task AssertMtlsRefusalsAsync(SystemTestHost host, string pfxPath)
+    {
+        // As configured: accepted.
+        using (var good = host.CreateHttpClient())
+        {
+            good.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, SystemTestHost.ApiKey);
+            var ok = await good.GetAsync("/app/none/anything");
+            Assert.True(ok.IsSuccessStatusCode);
+            output.WriteLine($"correct client                 -> {(int)ok.StatusCode}");
+        }
+
+        // No client certificate. The listener demands one on every connection, so this dies in the
+        // handshake -- a transport failure, not a 403, because no request is ever sent.
+        using (var noCert = host.CreateHttpClient(presentClientCertificate: false))
+        {
+            noCert.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, SystemTestHost.ApiKey);
+            var raised = await Assert.ThrowsAnyAsync<HttpRequestException>(
+                () => noCert.GetAsync("/app/none/anything"));
+            output.WriteLine($"no client certificate          -> refused: {Innermost(raised)}");
+        }
+
+        // Not trusting the listener: the same handshake from the other side. A self-signed
+        // certificate cannot satisfy default chain validation, so the caller refuses the server.
+        using (var noTrust = host.CreateHttpClient(trustTheListener: false))
+        {
+            noTrust.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, SystemTestHost.ApiKey);
+            var raised = await Assert.ThrowsAnyAsync<HttpRequestException>(
+                () => noTrust.GetAsync("/app/none/anything"));
+            output.WriteLine($"listener not trusted           -> refused: {Innermost(raised)}");
+        }
+
+        // A wrong passphrase never reaches a socket at all: opening the PFX fails first, which is
+        // why a client with a bad password reports something about the file rather than about TLS.
+        var wrongPassword = Assert.ThrowsAny<CryptographicException>(
+            () => X509CertificateLoader.LoadPkcs12FromFile(pfxPath, "not-the-password"));
+        output.WriteLine($"wrong PFX passphrase           -> refused before connecting: {wrongPassword.GetType().Name}");
+
+        // And the right one still opens it, so the failure above was the password and not the file.
+        using var opened = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, SystemTestHost.PfxPassword);
+        Assert.False(string.IsNullOrEmpty(opened.Thumbprint));
+    }
+
+    private static string Innermost(Exception ex)
+    {
+        while (ex.InnerException is { } inner) ex = inner;
+        return $"{ex.GetType().Name}: {ex.Message}";
+    }
+
+    // ---- funnels --------------------------------------------------------------------------------
+
     private async Task AssertFunnelsWorkAsync(SystemTestHost host, string phase)
     {
         foreach (var version in new string?[] { null, "2025-11-25" })
@@ -265,15 +448,11 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
             Assert.Contains("alpha__echo", tools);
             Assert.Contains("beta__echo", tools);
 
-            // The name/arguments overload rather than CallToolRequestParams: it serialises the
-            // dictionary for us, and the protocol revision under test is a property of the client
-            // above, not of the call.
             var call = await both.CallToolAsync(
                 "alpha__echo",
                 new Dictionary<string, object?> { ["value"] = "hello" }!);
             Assert.Equal("hello", call.Content.OfType<TextContentBlock>().First().Text);
 
-            // The single-source funnel must not expose the other source, whatever the revision.
             var solo = await host.ConnectMcpAsync("solo", version);
             var soloTools = (await solo.ListToolsAsync()).Select(t => t.Name).ToList();
             Assert.Contains("alpha__echo", soloTools);
@@ -294,11 +473,6 @@ public sealed class SystemApprovalTests(ITestOutputHelper output) : IAsyncLifeti
         return server;
     }
 
-    /// <summary>
-    /// Empties the vault through the product's own store, not by deleting 1Password items directly:
-    /// what is being asserted is that RavensPort sees an empty vault, and going around the mapper
-    /// would prove something weaker.
-    /// </summary>
     private static Task ClearVaultAsync(SystemTestHost host) => host.Cache.MutateAsync(store =>
     {
         store.McpFunnels.Clear();
