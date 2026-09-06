@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The system approval suite. Separate from RavensPort.Core.Tests on purpose, and the separation is
+    the safety mechanism rather than tidiness.
+
+    Everything in Core.Tests runs against an InMemoryVault and a temp directory, so `dotnet test` is
+    free of side effects and CI runs it on every push. This project does the opposite: it talks to a
+    real 1Password vault with a real service-account token, and it deletes what it finds there. That
+    must never be something a routine `dotnet test` can trigger by accident.
+
+    Three things keep it out of the way:
+
+      - It is its own project, and pr.yml names tests/RavensPort.Core.Tests explicitly rather than
+        testing the solution, so CI does not pick this up by adding it here.
+      - Every test is gated behind RequiresServiceAccountFact, which reports Skipped, not passed,
+        when the environment is not set up. A system test that silently passes because it never ran
+        is worse than no system test.
+      - It refuses to run without an explicit acknowledgement variable as well as the token. See
+        SystemTestEnvironment.
+  -->
+  <PropertyGroup>
+    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RavensPort.Core\RavensPort.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Linked rather than copied. FakeMcpServer is a few hundred lines of hand-written MCP server whose
+    whole value is that it is not the SDK — if both ends of a funnel test were the same library, a
+    shared misreading of the protocol would pass unnoticed. That argument holds here too, and having
+    two copies drift apart would quietly destroy it.
+  -->
+  <ItemGroup>
+    <Compile Include="..\RavensPort.Core.Tests\Mcp\FakeMcpServer.cs" Link="FakeMcpServer.cs" />
+  </ItemGroup>
+
+  <!--
+    mTLS is not in the Microsoft Store build, and this suite enables it. Nothing to assert without
+    it, and MtlsCertificateFactory.GenerateClientCertificatePfx is not compiled there at all.
+  -->
+  <ItemGroup Condition="'$(StoreBuild)' == 'true'">
+    <Compile Remove="SystemApprovalTests.cs" />
+    <Compile Remove="SystemTestHost.cs" />
+  </ItemGroup>
+
+</Project>
