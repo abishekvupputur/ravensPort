@@ -108,6 +108,17 @@ jobs:
           # Beeceptor's shared sandbox.
           RAVENSPORT_SYSTEM_TEST_VAULT: >-
             ${{ vars.RAVENSPORT_SYSTEM_TEST_VAULT || secrets.RAVENSPORT_SYSTEM_TEST_VAULT }}
+
+          # A second service account, on its own vault, and optional. 1Password rate-limits vault
+          # writes per account and a pass spends a couple of dozen, so consecutive runs against one
+          # account run it out. With two, the suite picks whichever vault has gone longest without
+          # being written, which halves the rate either account sees. Leave both blank for one.
+          #
+          # Numbering must be contiguous: the suite stops at the first missing token, so a typo in
+          # the second would silently mean "there is no second account" rather than failing.
+          OP_SERVICE_ACCOUNT_TOKEN_2: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN_2 }}
+          RAVENSPORT_SYSTEM_TEST_VAULT_2: >-
+            ${{ vars.RAVENSPORT_SYSTEM_TEST_VAULT_2 || secrets.RAVENSPORT_SYSTEM_TEST_VAULT_2 }}
           RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT: >-
             ${{ vars.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT || secrets.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT }}
         run: >

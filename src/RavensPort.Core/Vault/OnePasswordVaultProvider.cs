@@ -479,7 +479,7 @@ public sealed class OnePasswordVaultProvider(
 
         var items = await ListItemsAsync(_vaultId!, _vaultName, ct);
 
-        return [.. items.Select(item => VaultItemEntry.Classify(item.ItemId, item.Title))];
+        return [.. items.Select(item => VaultItemEntry.Classify(item.ItemId, item.Title, item.UpdatedUtc))];
     }
 
     public async Task DeleteItemAsync(string itemId, CancellationToken ct = default)
@@ -660,7 +660,14 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             var state = ReadString(node, "state");
             if (state is { Length: > 0 } && !string.Equals(state, "active", StringComparison.OrdinalIgnoreCase)) continue;
 
-            if (id is not null && title is not null) items.Add(new VaultItemSummary(id, title));
+            // Reported by both paths -- the CLI prints it and the SDK's ItemOverview carries it --
+            // and the cheapest answer to "when was this vault last written", since it needs no item
+            // contents and therefore no decryption.
+            var updated = DateTimeOffset.TryParse(ReadString(node, "updatedAt"), out var parsed)
+                ? parsed.ToUniversalTime()
+                : (DateTimeOffset?)null;
+
+            if (id is not null && title is not null) items.Add(new VaultItemSummary(id, title, updated));
         }
 
         return items;
