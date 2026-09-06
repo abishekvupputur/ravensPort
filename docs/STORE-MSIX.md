@@ -72,8 +72,8 @@ There is no separate tag and no separate workflow. The Store package is built by
 release pipeline, from the same tag as everything else:
 
 ```
-git tag v4.5.0
-git push origin v4.5.0
+git tag v5.0.0
+git push origin v5.0.0
 ```
 
 `release.yml` runs the test suite first and stops on failure, then publishes twice — once raw for
@@ -82,12 +82,12 @@ the release:
 
 | Asset | For |
 |---|---|
-| `RavensPort-Setup-4.5.0.exe` | installing outside the Store |
-| `RavensPort-4.5.0.msix` | uploading to Partner Center |
+| `RavensPort-Setup-5.0.0.exe` | installing outside the Store |
+| `RavensPort-5.0.0.msix` | uploading to Partner Center |
 
 Download the `.msix` from the release and upload it in Partner Center.
 
-The version comes off the tag, so `v4.5.0` produces a `4.5.0.0` package. MSIX wants four parts and
+The version comes off the tag, so `v5.0.0` produces a `5.0.0.0` package. MSIX wants four parts and
 the Store reserves the fourth, so `build-msix.ps1` pads it rather than letting you set it.
 
 Because both artifacts come off one tag, a Store resubmission means cutting a release — there is no
@@ -99,7 +99,7 @@ that cannot drift.
 Both assets are attested, so either can be checked against the build that produced it:
 
 ```bash
-gh attestation verify RavensPort-4.5.0.msix --repo abishekvupputur/ravensPort
+gh attestation verify RavensPort-5.0.0.msix --repo abishekvupputur/ravensPort
 ```
 
 ## Building locally
@@ -109,7 +109,7 @@ dotnet publish src/RavensPort.App/RavensPort.App.csproj `
   -p:PublishProfile=win-x64-msix -p:StoreBuild=true `
   -p:TargetFramework=net10.0-windows10.0.19041.0 -c Release
 
-./packaging/build-msix.ps1 -Version 4.5.0 -Sign `
+./packaging/build-msix.ps1 -Version 5.0.0 -Sign `
   -PublishDir 'src/RavensPort.App/bin/Release/net10.0-windows/publish/win-x64-msix'
 ```
 
@@ -142,9 +142,9 @@ exactly that subject in `Cert:\CurrentUser\My`, valid a year. Pass
 Installing, from an **elevated** PowerShell:
 
 ```powershell
-Import-Certificate -FilePath packaging/obj/RavensPort-4.5.0-signed.cer `
+Import-Certificate -FilePath packaging/obj/RavensPort-5.0.0-signed.cer `
   -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-Add-AppxPackage -Path packaging/obj/RavensPort-4.5.0-signed.msix
+Add-AppxPackage -Path packaging/obj/RavensPort-5.0.0-signed.msix
 ```
 
 The certificate import is once per machine. Uninstall with
