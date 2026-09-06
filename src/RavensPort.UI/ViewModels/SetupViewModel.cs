@@ -26,7 +26,6 @@ public sealed partial class SetupViewModel(
     OnePasswordSession onePasswordSession,
     IServiceTokenProtector tokenProtector,
     IClipboardService clipboard,
-    IPlatformLauncher launcher,
     IHelloConsentPrompt helloConsent) : ObservableObject
 {
     public ObservableCollection<ManagerCardViewModel> Managers { get; } = [];
