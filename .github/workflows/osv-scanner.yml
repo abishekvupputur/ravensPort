@@ -1,12 +1,18 @@
 name: OSV-Scanner
 
-# Dependency vulnerability scanning against OSV.dev, replacing trivy.yml.
+# Dependency vulnerability scanning against OSV.dev. This replaced trivy.yml and is the primary
+# gate on dependency advisories; trivy.yml has since come back alongside it, for the two gaps
+# below that turned out to be worth covering rather than accepting. The supply-chain reasoning
+# that moved the gate here is unchanged -- see that file's header for what it does and does not
+# take back.
 #
 # It reads the lock files -- packages.lock.json for the three .NET projects, go.mod for the native
 # module -- resolves what is actually pinned, and asks OSV.dev whether any of it has a known
 # advisory. Same question Trivy answered, different database and a much smaller thing to trust.
 #
-# What this does *not* inherit from trivy.yml, said plainly rather than left for someone to notice:
+# What this does *not* inherit from trivy.yml, said plainly rather than left for someone to notice.
+# The first two are now covered again by trivy.yml; they are kept here because they say why this
+# scanner alone is not enough:
 #
 #   Secrets. GitHub's own secret scanning and push protection are enabled on this repository, and
 #   push protection is strictly better than a CI scan -- it refuses the push rather than reporting

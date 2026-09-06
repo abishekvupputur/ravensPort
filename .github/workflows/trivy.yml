@@ -1,0 +1,220 @@
+name: Trivy Security Scan
+
+# Filesystem scanning with Trivy, alongside OSV-Scanner rather than instead of it.
+#
+# Trivy was removed in f49f05c and replaced by osv-scanner.yml, over supply chain concerns: a
+# single pinned binary querying a live database is a smaller thing to trust than an action that
+# fetches a scanner which then pulls its own database. That reasoning has not changed, and it is
+# why OSV-Scanner stays the primary gate on dependency advisories.
+#
+# What brings Trivy back is the list osv-scanner.yml writes down as what it does *not* inherit.
+# Two of those three are real gaps rather than acceptable losses:
+#
+#   Secrets. GitHub push protection refuses a push carrying a provider-recognised credential, and
+#   is better than any CI scan because it acts before the secret is in the history. Its gap is
+#   generic and entropy-based patterns -- GitHub calls them non-provider patterns, they are off by
+#   default, and they are exactly the shape a hand-rolled proxy key or a pasted PFX password takes.
+#   Trivy covers those. gitleaks.yml also runs, so this is a second opinion rather than the only
+#   one.
+#
+#   Licences of the whole tree. OSV-Scanner takes an allowlist, which is unusable here because
+#   deps.dev cannot classify 81 of this tree's packages and returns them as non-standard.
+#   dependency-review.yml gates licences only on what a pull request adds. Neither sweeps what is
+#   already in the tree; Trivy's classification into forbidden/restricted classes does.
+#
+#   Misconfiguration. Still no loss -- this repository contains no Terraform, Kubernetes,
+#   Dockerfile or Helm for it to read -- and still kept, for the reason the step below gives.
+#
+# Vulnerabilities are the deliberate overlap. Both scanners read the same lock files against
+# different databases, so a CVE in one and not the other is worth knowing about. The cost is that
+# a single advisory can fail two workflows; see the gate step for why that was accepted.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # 08:30, the first free slot. The offsets are deliberate and contiguous -- 01:30 CodeQL,
+    # 02:30 OSV-Scanner, 03:30 dependency-scan, 04:30 zizmor, 05:30 DevSkim, 06:30 installer-scan,
+    # 07:30 gitleaks and Snyk -- for the reason dependency-scan.yml gives: simultaneous failures do
+    # not say which one moved. Trivy's old 02:30 belongs to OSV-Scanner now and is not taken back.
+    - cron: "30 8 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  trivy_scan:
+    name: Run Trivy Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # upload-sarif. Findings belong in the Security tab, where they have history and can be
+      # dismissed with a reason, rather than only in a log that ages out.
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so don't leave GITHUB_TOKEN sitting in
+          # .git/config where any later step or action could read it.
+          persist-credentials: false
+
+      # One pass over all three scanners, written to SARIF and uploaded to the Security tab; the
+      # gating steps below re-run them for the log. The split is the point.
+      #
+      # Before this existed, every Trivy finding was text in a job log: no history, no way to
+      # dismiss a reviewed finding with a reason, no inline annotation on the pull request that
+      # introduced it, and nothing at all once the log aged out. The table steps also stop at the
+      # first scanner that fails, so a secret could hide a misconfiguration for a whole run.
+      #
+      # No severity filter here, unlike the gates. A MEDIUM is not worth blocking a merge on and is
+      # worth being able to look at; the Security tab is where the full picture belongs, and
+      # exit-code 0 keeps this step from ever being the thing that fails the build.
+      #
+      # The action is pinned to a commit SHA, not a tag: a tag is mutable, and whoever controls the
+      # action's repository can repoint it at code that then runs in this job holding
+      # security-events: write. The trailing comment records which version the SHA was.
+      #
+      # The Trivy *binary* is the deliberate exception, and it is a different kind of dependency
+      # from the action that fetches it. A scanner's value is its database and its detection logic,
+      # both of which only move forward; a pinned Trivy quietly stops recognising package formats
+      # and advisory sources that shipped after it, and the failure mode is a green check rather
+      # than an error. That is the opposite of the call osv-scanner.yml makes, and for a stated
+      # reason: OSV-Scanner queries its database live at scan time, so its binary version controls
+      # only which lock-file formats it parses. Trivy ships detection logic with the binary.
+      - name: Run Trivy (SARIF, for code scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: "latest"
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "vuln,secret,misconfig"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          # Matches the gate below. An advisory with no fixed version upstream is not something a
+          # pull request here can act on, and filing it as an alert only trains people to ignore
+          # the tab.
+          ignore-unfixed: true
+          exit-code: "0"
+
+      # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
+      # is what tells code scanning that a previously reported finding is gone, and skipping the
+      # upload leaves the old alert open forever. The scan step cannot fail (exit-code 0), but a
+      # cache or network fault can, and uploading whatever was produced beats losing the run.
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: "trivy-results.sarif"
+          # Its own bucket, so a CodeQL, OSV-Scanner, DevSkim, zizmor or BinSkim run never looks
+          # like it resolved a Trivy finding or the other way round.
+          category: "trivy"
+
+      # Every severity, not just CRITICAL and HIGH, matching what osv-scanner.yml settled on: a LOW
+      # advisory in a dependency of a thing that holds credentials is still a known way in, and the
+      # fix for one is the same as the fix for a CRITICAL, which is to bump the package.
+      #
+      # This gate overlaps OSV-Scanner's, and the overlap is accepted rather than overlooked. The
+      # two read the same lock files against different databases, so either can see an advisory the
+      # other has not published yet; that is the whole reason for running both. The cost is that one
+      # CVE can fail two workflows, which is noise but is noise pointing at a real finding. Drop
+      # this step, not the SARIF pass above, if that ever stops being worth it -- the Security tab
+      # entry is the part that is genuinely additive.
+      #
+      # ignore-unfixed stays, and here it is a real difference from OSV-Scanner rather than a
+      # preference. An advisory with no fixed version upstream cannot be acted on from here, and
+      # failing the build on one leaves no way forward except switching the gate off. OSV-Scanner
+      # does not need the setting because osv-scanner.toml can set aside one advisory at a time,
+      # with a written reason and an expiry date, reviewed in a diff.
+      - name: Run Trivy Vulnerability Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: "latest"
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "vuln"
+          format: "table"
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # No severity filter, deliberately. Trivy grades secrets, but a committed credential is not
+      # less leaked for being graded MEDIUM -- the fix is the same and it is always urgent.
+      # Filtering to CRITICAL,HIGH meant anything below that was found, discarded, and never
+      # printed.
+      #
+      # This is one of the two steps that are the reason this workflow exists at all. Nothing else
+      # in CI reads generic entropy-based patterns: push protection covers provider-recognised
+      # credentials, gitleaks covers its own rule set, and OSV-Scanner does not scan for secrets.
+      - name: Run Trivy Secret Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: "latest"
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "secret"
+          format: "table"
+          exit-code: "1"
+
+      # Licences, gated at CRITICAL and HIGH -- which for this scanner means Trivy's "forbidden" and
+      # "restricted" classes, the copyleft terms an MIT binary shipped as an installer cannot
+      # absorb.
+      #
+      # The one step here not gated on every severity, and the reason is that Trivy's licence
+      # severities are not risk grades at all: they are the classification itself. MIT, BSD and
+      # Apache come back as LOW/notice, so a gate at LOW fails the build on correctly-licensed
+      # permissive dependencies and would have to be switched off within a day. CRITICAL and HIGH
+      # are the two classes that actually mean "this licence is a problem for this project".
+      #
+      # TRIVY_LICENSE_FULL is not optional here, and this is the part worth knowing. Without it
+      # Trivy reads licence metadata out of the lock files, and neither packages.lock.json nor
+      # go.sum carries any: a scan without the flag reports "-" against every target and passes,
+      # which looks exactly like a clean result. With it, Trivy reads the licence texts and headers
+      # themselves. The action has no input for the flag, so it goes through the environment, which
+      # is how every Trivy flag can be set.
+      #
+      # No SARIF from this one, unlike the scanners above. Every finding it has today is a
+      # permissive licence correctly detected, and filing those as security alerts is the noise the
+      # severity thresholds here exist to avoid. If a restricted licence ever does land, this step
+      # fails the build, which is louder than an alert.
+      - name: Run Trivy License Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_LICENSE_FULL: "true"
+        with:
+          version: "latest"
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "license"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      # This step reports "-" (not scanned) against every target, and that is correct rather than
+      # broken: Trivy's misconfiguration scanner covers Terraform, CloudFormation, Kubernetes,
+      # Dockerfile, Helm and Azure ARM, and this repository contains none of them -- the log says
+      # "Detected config files num=0". GitHub Actions workflows are not in that set, so nothing here
+      # lints them; that is what zizmor.yml is for.
+      #
+      # Kept anyway. It costs seconds, and the day a Dockerfile or a Helm chart lands in this repo
+      # is the day it starts earning its place, with nobody having to remember to add it.
+      - name: Run Trivy Misconfiguration Scanner
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: "latest"
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "misconfig"
+          format: "table"
+          # Every severity, matching the vulnerability gate above. Currently academic -- this
+          # scanner finds no config files to grade at all -- but it means the thresholds do not
+          # disagree with each other the day one of those files appears.
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+          exit-code: "1"
