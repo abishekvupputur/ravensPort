@@ -26,6 +26,14 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+
+    <!--
+      CS0649 — "field is never assigned to". FakeMcpServer is linked from Core.Tests, where every
+      one of its misbehaviour switches is set by some test; this suite uses only a few of them, so
+      the compiler reports the rest against this project. Suppressed here and nowhere else: the
+      fields are assigned, just not by these tests, and the repository otherwise builds clean.
+    -->
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

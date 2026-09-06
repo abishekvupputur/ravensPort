@@ -22,8 +22,21 @@ account gets touched.
 $env:OP_SERVICE_ACCOUNT_TOKEN = "ops_..."       # never commit this, never paste it in a PR
 $env:RAVENSPORT_SYSTEM_TEST_ACK = "i-understand-this-erases-the-ravensport-vault"
 
+# Only needed if the vault is not called "RavensPort". The provider normally finds its vault by the
+# Config item stamped inside it rather than by name, so any name works -- until that stamp is gone,
+# which is the one case this is consulted for.
+$env:RAVENSPORT_SYSTEM_TEST_VAULT = "RavensPort CI"
+
+# Optional. Defaults to Beeceptor's shared OAuth sandbox; point it at a local stub to stop the run
+# depending on anything outside the machine.
+$env:RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT = "https://oauth-mock.mock.beeceptor.com/oauth/token/github"
+
 dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
 ```
+
+**1Password rate-limits vault writes**, and one pass spends a couple of dozen. Runs back to back will
+eventually be throttled. The closing sweep tolerates that and leaves the items for the next run's
+opening sweep; the opening sweep does not, because "empty at startup" has to mean it.
 
 The acknowledgement variable is deliberately long and deliberately not a boolean. A token alone is
 too easy to have sitting in a shell; nobody sets this one by reflex.
@@ -73,7 +86,21 @@ too easy to have sitting in a shell; nobody sets this one by reflex.
    `ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN` and `mac verify failure` for these same three; those
    are OpenSSL's strings surfaced by Node, and .NET words them differently. Pinning them would pin
    the client library rather than this product, so the actual message is logged instead.
-9. The vault is emptied again, item by item.
+9. **A real OAuth2 exchange**, and the token followed to an MCP server. A client-credentials grant
+   runs against a mock authorization server — the only grant that works unattended, since the
+   browser flow needs someone at a consent screen and the device flow someone at a second device.
+   The issued token is then attached to a route whose upstream *is* an MCP server, and the funnel
+   reaches it as a `ProxyRoute` source, so the credential transform sits in the path. The fake
+   records the `Authorization` of every request it receives, and every one must carry the issued
+   token — a transform that attached it to some requests but not others would still satisfy a
+   "contains" check while leaving real calls unauthenticated. The proxy's own key must not be
+   among what was forwarded.
+
+   Run before mTLS and again after the restart, where the host never performed an exchange at all
+   and the token came back out of 1Password.
+10. The vault is emptied again, item by item — except the Config item, which is the stamp that
+    identifies the vault rather than data in it. Deleting that does not leave an empty vault, it
+    leaves an unrecognisable one.
 
 ## What it does not cover, and why
 
