@@ -167,6 +167,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         foreach (var client in _clients) await client.DisposeAsync();
         _clients.Clear();
 
+        await FlushVaultAsync();
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
 
@@ -222,12 +223,40 @@ internal sealed class SystemTestHost : IAsyncDisposable
         return client;
     }
 
+    /// <summary>
+    /// Waits for the vault to catch up, which is what App.ShutDown does before the process ends.
+    ///
+    /// Not optional, and the first run of this suite is what proved it. MutateAsync changes the
+    /// store in memory and only wakes the sync queue -- the write to 1Password is asynchronous. A
+    /// restart that did not wait tore the host down mid-write and the replacement read an empty
+    /// vault, which looked exactly like "configuration does not survive a restart" and was in fact
+    /// this harness being unfaithful to the shutdown it was meant to simulate.
+    /// </summary>
+    private async Task FlushVaultAsync()
+    {
+        if (_proxy.Services.GetService<VaultSyncQueue>() is { } queue)
+        {
+            // The app allows 15 seconds and carries on regardless. Longer here, and asserted:
+            // a system test that quietly continued past a half-written vault would go on to blame
+            // whatever failed next.
+            var flushed = await queue.FlushAsync(TimeSpan.FromSeconds(30));
+            if (!flushed)
+            {
+                throw new InvalidOperationException(
+                    "The vault sync queue did not drain within 30 seconds, so anything asserted "
+                    + "after this point would be racing an unfinished write.");
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var client in _clients)
         {
             try { await client.DisposeAsync(); } catch { /* a torn-down host takes its clients with it */ }
         }
+
+        try { await FlushVaultAsync(); } catch { /* teardown: the run's verdict is already decided */ }
 
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
