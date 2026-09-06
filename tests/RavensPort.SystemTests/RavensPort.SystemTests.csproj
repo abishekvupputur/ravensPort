@@ -43,6 +43,25 @@
   </ItemGroup>
 
   <!--
+    The 1Password SDK native, beside the test assembly so DllImport can find it. RavensPort.App
+    carries the same item for the same reason; Core does not, because nothing in Core.Tests reaches
+    the native client — they all run against fakes or an InMemoryVault. This suite is the only one
+    that opens a real vault, so it is the only test project that needs it.
+
+    Conditioned on the file existing. It is built by Go, not restored by NuGet, and is gitignored,
+    so a clean checkout has no copy until someone runs the build. Without the condition every
+    `dotnet build` on a fresh clone would fail on a missing item; with it, the suite instead fails
+    at the first vault call with a message naming the DLL.
+  -->
+  <ItemGroup>
+    <Content Include="..\..\src\OnePasswordNative\onepassword.dll"
+             Condition="Exists('..\..\src\OnePasswordNative\onepassword.dll')">
+      <Link>onepassword.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!--
     Linked rather than copied. FakeMcpServer is a few hundred lines of hand-written MCP server whose
     whole value is that it is not the SDK — if both ends of a funnel test were the same library, a
     shared misreading of the protocol would pass unnoticed. That argument holds here too, and having
