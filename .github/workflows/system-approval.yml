@@ -1,0 +1,79 @@
+name: System Approval
+
+# The one suite that touches a real 1Password vault.
+#
+# Everything in pr.yml runs against an InMemoryVault and is free of side effects, which is why it
+# can run on every push with nothing to coordinate. This cannot: it opens an actual vault with a
+# service-account token and erases every RavensPort item it finds, because "the vault is empty at
+# startup" is the first thing it asserts. Three consequences shape this file.
+#
+#   It is its own workflow, not a step in pr.yml. The job below needs a concurrency group and a
+#   secret; bolting that onto the build-and-test job would put both on work that neither needs.
+#
+#   It is serialised globally. The concurrency group has no ref in it deliberately -- two pull
+#   requests running at once would clear and seed the same vault at the same time and produce
+#   failures that belong to neither of them. One run at a time, repository-wide.
+#
+#   It degrades to skipped rather than failing when the secret is absent. Pull requests from forks
+#   get no secrets, so the token is empty, so RequiresServiceAccountFact skips and the job passes
+#   green having proved nothing. That is the correct outcome for a fork: the alternative is a red
+#   check on every outside contribution for a credential they were never going to have.
+#
+# The vault the token reaches must be a throwaway. VaultConstants.VaultName is the constant
+# "RavensPort", so the token is what decides which account is touched -- there is no setting for it.
+# See tests/RavensPort.SystemTests/README.md.
+#
+# No schedule, unlike every scanner in this directory, and the difference is the point. Those run
+# weekly because what they check lives outside the repository: the tree does not change between
+# runs, the advisory database does, and an advisory published on Tuesday against a year-old pin is
+# invisible until something re-asks. This suite has no such input. It exercises this code against
+# this vault, so a weekly run would re-prove what the last push already proved and erase the vault
+# to do it. Push, pull request, and a manual dispatch when someone wants one.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# No ref in the group, on purpose: this serialises every run in the repository, not every run on a
+# branch. cancel-in-progress stays false because a cancelled run leaves the vault half-seeded, and
+# the next run would then be asserting against someone else's wreckage rather than a clean start.
+concurrency:
+  group: system-approval-vault
+  cancel-in-progress: false
+
+jobs:
+  approval:
+    name: System Approval
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so don't leave GITHUB_TOKEN sitting in
+          # .git/config where any later step or action could read it.
+          persist-credentials: false
+
+      - name: Restore
+        run: dotnet restore tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
+
+      # Named rather than inherited from the job, so the token is on exactly one step. It is a
+      # bearer credential for a whole 1Password account: the fewer steps that can see it, the fewer
+      # places it can be printed from.
+      #
+      # The acknowledgement is a repository secret rather than a literal here for one reason -- it
+      # is the switch that lets this erase a vault, and it should be revocable from the same place
+      # the token is. Clearing it turns this workflow into a skip without touching the file.
+      - name: Run the system approval suite
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          RAVENSPORT_SYSTEM_TEST_ACK: ${{ secrets.RAVENSPORT_SYSTEM_TEST_ACK }}
+        run: >
+          dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
+          -c Release --no-restore --verbosity normal
