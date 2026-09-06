@@ -59,7 +59,7 @@ jobs:
           $publishArgs = @(
             'publish', 'src/RavensPort.App/RavensPort.App.csproj',
             '-p:PublishProfile=win-x64-selfcontained',
-            '-p:TargetFramework=net8.0-windows10.0.19041.0',
+            '-p:TargetFramework=net10.0-windows10.0.19041.0',
             '-c', 'Release'
           )
           & dotnet @publishArgs
@@ -152,7 +152,7 @@ jobs:
       - name: Test
         env:
           DOTNET_USE_POLLING_FILE_WATCHER: "1"
-        run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net8.0 -c Release --no-restore --verbosity normal
+        run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
 
       # The counterpart to "Validate installer script" on Windows, and it earns its ~90 seconds
       # twice over. It is the only step that publishes self-contained linux-x64 — so the only one
