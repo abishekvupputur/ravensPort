@@ -78,10 +78,21 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// </summary>
     public T Service<T>() where T : notnull => _proxy.Services.GetRequiredService<T>();
 
-    public static Task<SystemTestHost> StartAsync(string token, bool mtls = false) =>
-        StartInternalAsync(token, mtls);
+    /// <param name="purgeBeforeLoading">
+    /// Empties the vault before the store is read, rather than after.
+    ///
+    /// The order matters and the wrong one is not merely inelegant. Loading maps every item in the
+    /// vault, so a single unreadable one -- archived, or left in a half-deleted state by a purge
+    /// that hit 1Password's write rate limit -- fails the load and the host never starts, which
+    /// puts the vault beyond the reach of the very sweep meant to clean it. Purging first breaks
+    /// that: nothing has been read yet, so nothing can refuse to be read.
+    /// </param>
+    public static Task<SystemTestHost> StartAsync(
+        string token, bool mtls = false, bool purgeBeforeLoading = false) =>
+        StartInternalAsync(token, mtls, purgeBeforeLoading);
 
-    private static async Task<SystemTestHost> StartInternalAsync(string token, bool mtls)
+    private static async Task<SystemTestHost> StartInternalAsync(
+        string token, bool mtls, bool purgeBeforeLoading = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls($"{(mtls ? "https" : "http")}://127.0.0.1:0");
@@ -132,6 +143,11 @@ internal sealed class SystemTestHost : IAsyncDisposable
                 + $"availability={detail?.Availability.ToString() ?? "unknown"}, "
                 + $"vault={detail?.VaultName ?? "<none>"}, detail={detail?.Detail ?? "<none>"}. "
                 + "The token must reach a vault named 'RavensPort' (VaultConstants.VaultName).");
+        }
+
+        if (purgeBeforeLoading)
+        {
+            await PurgeAsync(proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures: false);
         }
 
         // Normally the hosted service does this at startup. Called here because the mTLS decision
@@ -188,7 +204,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
 
-        var replacement = await StartInternalAsync(_token, mtls);
+        var replacement = await StartInternalAsync(_token, mtls, purgeBeforeLoading: false);
         _proxy = replacement._proxy;
         BaseUrl = replacement.BaseUrl;
     }
@@ -290,10 +306,11 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// everything -- "the vault is empty at startup" would be asserting against a vault that is
     /// not, so a failure there has to stop the run rather than be reported and passed over.
     /// </param>
-    public async Task<int> PurgeVaultAsync(bool tolerateFailures = false)
-    {
-        var vault = _proxy.Services.GetRequiredService<IConfigVault>();
+    public Task<int> PurgeVaultAsync(bool tolerateFailures = false) =>
+        PurgeAsync(_proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures);
 
+    private static async Task<int> PurgeAsync(IConfigVault vault, bool tolerateFailures)
+    {
         var items = await vault.ListLiveItemsAsync();
         var deletable = items.Where(i => !(i.IsOwned && i.Role == VaultItemRole.Config)).ToList();
 
@@ -308,6 +325,19 @@ internal sealed class SystemTestHost : IAsyncDisposable
             catch (VaultSaveException) when (tolerateFailures)
             {
                 // Almost always the rate limit. Left for the next run's opening sweep.
+            }
+            catch (VaultSaveException ex) when (ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase))
+            {
+                // The opening sweep, throttled. Reported as itself rather than as the raw CLI
+                // error, because the raw one reads like a broken product and this is a quota:
+                // 1Password limits vault writes, and a pass of this suite spends a couple of dozen
+                // of them, so runs in quick succession run out.
+                throw new InvalidOperationException(
+                    $"1Password is rate-limiting vault writes, with {deleted} of {deletable.Count} "
+                    + "item(s) deleted. The suite cannot assert an empty vault against a vault it "
+                    + "was not allowed to empty. Wait for the quota to reset and run again; the "
+                    + "next opening sweep takes what this one left.",
+                    ex);
             }
         }
 
