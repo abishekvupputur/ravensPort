@@ -131,19 +131,9 @@ public sealed class ApprovalRun : IAsyncLifetime
         try { Directory.Delete(CertDirectory, recursive: true); } catch { /* best effort */ }
     }
 
-    /// <summary>
-    /// Empties the store in memory. The vault items themselves are left for the next run's opening
-    /// sweep — see the note on stage 1.
-    /// </summary>
-    internal static Task ClearStoreAsync(SystemTestHost host) => host.Cache.MutateAsync(store =>
-    {
-        store.McpFunnels.Clear();
-        store.McpSources.Clear();
-        store.Routes.Clear();
-        store.Upstreams.Clear();
-        store.Credentials.Clear();
-        store.Settings.MtlsEnabled = false;
-        store.Settings.MtlsClientCertificatePfx = "";
-        store.Settings.MtlsClientCertificatePassword = "";
-    });
+    // ClearStoreAsync used to live here, emptying the store in memory at the top of stage 1. It was
+    // removed rather than left unused: the opening sweep now rewrites the note to index nothing, so
+    // the store loads empty on its own, and calling this afterwards spent a vault write restating
+    // that. This suite's ceiling is 1Password's hundred writes an hour, so a write that asserts
+    // something already true is one the next run does not get to make.
 }
