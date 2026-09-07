@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
+using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
@@ -448,6 +449,11 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// vault as RavensPort's, and connecting reads it long before anything is saved -- so deleting
     /// it does not leave an empty vault, it leaves an unrecognisable one, and the next run fails at
     /// startup with VaultMissing. Learned by doing exactly that.
+    ///
+    /// It is emptied rather than deleted, though: its index is rewritten to reference nothing, so
+    /// the load that follows has no item ids to chase. Deleting items is not enough on its own,
+    /// because an archived item is not in the listing this sweeps and is still in the note. See the
+    /// comment on the rewrite below.
     /// </summary>
     /// <param name="tolerateFailures">
     /// True for the cleanup at the end, false for the sweep at the start, and the asymmetry is
@@ -490,6 +496,40 @@ internal sealed class SystemTestHost : IAsyncDisposable
                     + "next opening sweep takes what this one left.",
                     ex);
             }
+        }
+
+        // The note's index is cleared as well, and this is the half of the sweep that deleting
+        // items cannot do.
+        //
+        // ListLiveItemsAsync returns active items only, so an item that has been archived rather
+        // than deleted -- by a hand-run cleanup in the 1Password UI, or by a sweep that died
+        // partway -- is invisible here and cannot be deleted. It is not invisible to the loader:
+        // the Config note still indexes it, and the load that follows this sweep fetches every id
+        // the note names. 1Password answers that fetch with "item is not in an active state",
+        // which is not one of the phrasings GetItemAsync reads as "gone", so it throws rather than
+        // shrugging -- correctly, because a product that treated an unreadable item as a deleted
+        // one would erase a user's credential over a transient fault.
+        //
+        // The result was a run that purged the vault successfully and then failed Stage01 anyway,
+        // on a reference the purge had no way to reach, and stayed failing until someone emptied
+        // the archive by hand. Rewriting the note with an empty store drops every reference, so
+        // the load that follows fetches nothing and finds nothing.
+        //
+        // The stamp survives, which is the point of doing it this way rather than deleting the
+        // Config item: an unstamped vault is an unrecognisable one, and the adoption path that
+        // repairs it costs a round trip and a write on every subsequent run.
+        //
+        // Safe to call here despite what ReconcileDeletionsAsync does with an emptied store: that
+        // sweep only ever deletes ids that are both in the previous index and in the live listing,
+        // and it declines entirely until a session has completed a full read -- which, at the point
+        // this runs, it has not.
+        try
+        {
+            await vault.RewriteAllAsync(new ConfigStore());
+        }
+        catch (VaultSaveException) when (tolerateFailures)
+        {
+            // The rate limit again. The next run's opening sweep rewrites it.
         }
 
         return deleted;
