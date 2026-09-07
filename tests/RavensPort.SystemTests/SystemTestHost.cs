@@ -114,6 +114,10 @@ internal sealed class SystemTestHost : IAsyncDisposable
         var bestWrittenAt = DateTimeOffset.MaxValue;
         var seenVaults = new Dictionary<string, string>(StringComparer.Ordinal);
 
+        // Why each account was passed over, kept so the failure at the bottom can name them rather
+        // than summarising every possible cause into one guess.
+        var unreachable = new List<string>();
+
         foreach (var account in accounts)
         {
             DateTimeOffset writtenAt;
@@ -125,6 +129,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
             catch (Exception ex)
             {
                 log($"  {account.Label} ({account.VaultName}): unreachable, skipped -- {ex.Message}");
+                unreachable.Add($"{account.Label}: {ex.Message}");
                 continue;
             }
 
@@ -160,9 +165,35 @@ internal sealed class SystemTestHost : IAsyncDisposable
             bestWrittenAt = writtenAt;
         }
 
-        return best ?? throw new InvalidOperationException(
-            "None of the configured accounts could be reached. Check the tokens, and that each "
-            + "reaches a vault named by its RAVENSPORT_SYSTEM_TEST_VAULT entry.");
+        if (best is not null) return best;
+
+        // Every account's own reason, rather than one sentence guessing at all of them.
+        //
+        // This used to say "check the tokens", which is the wrong advice for the failure it
+        // actually reports most often. A service account that has been run three times in half an
+        // hour is rate-limited, not misconfigured: 1Password refuses the vault listing, the gate
+        // cannot resolve a backend, and the status is NotSignedIn -- indistinguishable from a bad
+        // token unless the detail comes with it, which is why it now does.
+        //
+        // Named explicitly when every account failed that way, because "wait" and "fix your
+        // configuration" are different instructions and a run that gives the second when it means
+        // the first costs somebody an afternoon.
+        var reasons = string.Join("; ", unreachable);
+        var throttled = unreachable.Count > 0
+                        && unreachable.All(r => r.Contains("rate", StringComparison.OrdinalIgnoreCase)
+                                                || r.Contains("429", StringComparison.Ordinal)
+                                                || r.Contains("too many", StringComparison.OrdinalIgnoreCase));
+
+        throw new InvalidOperationException(
+            throttled
+                ? "Every configured account is being rate-limited by 1Password, so none of them "
+                  + "could be reached. This is a quota, not a misconfiguration: a pass of this suite "
+                  + "spends a couple of dozen vault writes and the limit is per account per hour, so "
+                  + "runs in quick succession run out. Wait for it to reset rather than changing "
+                  + $"anything. Reasons: {reasons}"
+                : "None of the configured accounts could be reached. Check the tokens, and that each "
+                  + "reaches a vault named by its RAVENSPORT_SYSTEM_TEST_VAULT entry. Reasons: "
+                  + reasons);
     }
 
     /// <summary>
@@ -208,8 +239,19 @@ internal sealed class SystemTestHost : IAsyncDisposable
         if (!status.IsReady)
         {
             var detail = status.For(VaultBackendKind.OnePassword);
+
+            // Detail carried through, and it is the whole point of this message. The availability
+            // is a category and the detail is the reason, and here the two disagree in a way that
+            // sends a reader somewhere useless: 1Password answers a throttled `vault list` with an
+            // error like any other, the probe cannot sign in, and the status comes back
+            // NotSignedIn -- which reads as a bad token, and the message this used to raise then
+            // told people to go and check the tokens.
+            //
+            // The tokens were fine. Both accounts were rate-limited from three runs inside half an
+            // hour, which is a wait rather than a fix, and nothing on screen said so.
             throw new InvalidOperationException(
-                $"availability={detail?.Availability.ToString() ?? "unknown"}, vault={account.VaultName}");
+                $"availability={detail?.Availability.ToString() ?? "unknown"}, vault={account.VaultName}, "
+                + $"detail={detail?.Detail ?? "<none>"}");
         }
 
         var items = await probe.Services.GetRequiredService<IConfigVault>().ListLiveItemsAsync();
@@ -299,7 +341,8 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
         if (purgeBeforeLoading)
         {
-            await PurgeAsync(proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures: false);
+            await PurgeAsync(
+                proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures: false, resetIndex: true);
         }
 
         // Normally the hosted service does this at startup. Called here because the mTLS decision
@@ -464,9 +507,16 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// not, so a failure there has to stop the run rather than be reported and passed over.
     /// </param>
     public Task<int> PurgeVaultAsync(bool tolerateFailures = false) =>
-        PurgeAsync(_proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures);
+        PurgeAsync(_proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures, resetIndex: false);
 
-    private static async Task<int> PurgeAsync(IConfigVault vault, bool tolerateFailures)
+    /// <param name="resetIndex">
+    /// True only for the sweep that runs before the store is read. That is the one that has to
+    /// leave the note pointing at nothing, and it is also the only one that can: after the load,
+    /// the store in memory is the note, and clearing it goes through the cache like any other
+    /// change. Rewriting here as well would spend a vault write to say what the next save says
+    /// anyway, and this suite's failures are usually the write quota.
+    /// </param>
+    private static async Task<int> PurgeAsync(IConfigVault vault, bool tolerateFailures, bool resetIndex)
     {
         var items = await vault.ListLiveItemsAsync();
         var deletable = items.Where(i => !(i.IsOwned && i.Role == VaultItemRole.Config)).ToList();
@@ -523,13 +573,21 @@ internal sealed class SystemTestHost : IAsyncDisposable
         // sweep only ever deletes ids that are both in the previous index and in the live listing,
         // and it declines entirely until a session has completed a full read -- which, at the point
         // this runs, it has not.
-        try
+        //
+        // Skipped when there is no note, which is the case on a vault nothing has adopted yet.
+        // There is nothing to point at nothing, and the write would be spent saying so.
+        var hasNote = items.Any(i => i.IsOwned && i.Role == VaultItemRole.Config);
+
+        if (resetIndex && hasNote)
         {
-            await vault.RewriteAllAsync(new ConfigStore());
-        }
-        catch (VaultSaveException) when (tolerateFailures)
-        {
-            // The rate limit again. The next run's opening sweep rewrites it.
+            try
+            {
+                await vault.RewriteAllAsync(new ConfigStore());
+            }
+            catch (VaultSaveException) when (tolerateFailures)
+            {
+                // The rate limit again. The next run's opening sweep rewrites it.
+            }
         }
 
         return deleted;
@@ -554,9 +612,25 @@ internal sealed class SystemTestHost : IAsyncDisposable
             var flushed = await queue.FlushAsync(TimeSpan.FromSeconds(30));
             if (!flushed)
             {
+                // The state, because "false" here has two quite different meanings and the message
+                // used to assert the wrong one.
+                //
+                // FlushAsync returns false both when it ran out of time and when it declined to
+                // write at all -- the gate has no backend, the store in memory came from another
+                // vault, authorization was refused, or the save itself failed. Those refusals are
+                // immediate, so the run would report "did not drain within 30 seconds" two seconds
+                // after asking, and the number sent every reader looking for something slow.
+                //
+                // Seen in CI: a stage failed this way in two seconds while 1Password was
+                // rate-limiting the account's writes, and nothing in the message pointed at the
+                // quota.
+                var pending = Cache.HasPendingChanges;
                 throw new InvalidOperationException(
-                    "The vault sync queue did not drain within 30 seconds, so anything asserted "
-                    + "after this point would be racing an unfinished write.");
+                    $"The vault sync queue would not drain: state={queue.State}, pendingChanges={pending}, "
+                    + $"storeIsFromAnotherVault={Cache.IsFromAnotherVault}. "
+                    + "Anything asserted after this point would be racing an unfinished write. "
+                    + "A state of Failed or a refusal within a second or two is usually 1Password "
+                    + "rate-limiting the account's writes rather than anything slow.");
             }
         }
     }
