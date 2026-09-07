@@ -181,6 +181,12 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
         await using var probe = builder.Build();
 
+        // Without this the probe reads the wrong vault, and silently. NativeCliRunner guards
+        // initialisation with a *static* flag, so the first token to reach the SDK in this process
+        // is the only one that ever does: every later Unlock is accepted, every later
+        // EnsureInitialized returns early, and the SDK keeps answering as whoever went first. Two
+        // accounts then report the same vault, which is exactly what it looked like.
+        NativeCliRunner.ResetInitialization();
         probe.Services.GetRequiredService<OnePasswordSession>().Unlock(account.Token);
 
         var gate = probe.Services.GetRequiredService<VaultGateService>();
@@ -261,6 +267,9 @@ internal sealed class SystemTestHost : IAsyncDisposable
         // The service-account path in full: the token goes into the session, and the gate connects
         // the 1Password backend with it. No desktop app, no integration channel, no Hello -- which
         // is what makes this runnable unattended at all.
+        // As in the probe: the static initialisation guard has to be cleared, or this host talks
+        // to whichever account happened to initialise the SDK first.
+        NativeCliRunner.ResetInitialization();
         proxy.Services.GetRequiredService<OnePasswordSession>().Unlock(account.Token);
         var status = await proxy.Services.GetRequiredService<VaultGateService>()
             .ConnectAsync(VaultBackendKind.OnePassword);
