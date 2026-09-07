@@ -323,7 +323,12 @@ public sealed class OnePasswordVaultProvider(
 
         // Case-insensitive, because the user is typing a name they read in the 1Password UI and
         // being told "no such vault" over capitalisation would be a poor way to spend their time.
-        var match = vaults.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase))
+        //
+        // Both sides trimmed, for the same reason. The typed name already is, so a vault whose own
+        // name carries a trailing space -- which 1Password accepts and shows indistinguishably from
+        // one without -- could never be matched by anything a user could type. Seen in the wild:
+        // 'RavensPort CI 2 ' was unreachable, and the error named the two as though they differed.
+        var match = vaults.FirstOrDefault(v => string.Equals(v.Name.Trim(), name, StringComparison.OrdinalIgnoreCase))
                     ?? throw VaultAdoption.NoSuchVault(name, vaults.Select(v => v.Name));
 
         var items = await ListItemsAsync(match.VaultId, match.Name, ct);
