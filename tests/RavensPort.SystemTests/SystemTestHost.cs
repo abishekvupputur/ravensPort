@@ -111,13 +111,15 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
         SystemTestEnvironment.Account? best = null;
         var bestWrittenAt = DateTimeOffset.MaxValue;
+        var seenVaults = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var account in accounts)
         {
             DateTimeOffset writtenAt;
+            string resolved;
             try
             {
-                writtenAt = await LastWrittenAtAsync(account);
+                (writtenAt, resolved) = await LastWrittenAtAsync(account);
             }
             catch (Exception ex)
             {
@@ -126,8 +128,22 @@ internal sealed class SystemTestHost : IAsyncDisposable
             }
 
             log(writtenAt == DateTimeOffset.MinValue
-                ? $"  {account.Label} ({account.VaultName}): empty, never written"
-                : $"  {account.Label} ({account.VaultName}): last written {writtenAt:u}");
+                ? $"  {account.Label}: {resolved} -- never written"
+                : $"  {account.Label}: {resolved} -- last written {writtenAt:u}");
+
+            // Two accounts on one vault spread nothing that this can see. Their timestamps are the
+            // same by construction, so every comparison ties and the first always wins -- which
+            // looks like the selection being broken and is really the vaults being one. Said out
+            // loud, because the alternative is a mechanism that quietly does nothing.
+            if (seenVaults.TryGetValue(resolved, out var already))
+            {
+                log($"  WARNING: {account.Label} and {already} resolve to the SAME vault. Grant each "
+                    + "service account its own, or this cannot spread anything.");
+            }
+            else
+            {
+                seenVaults[resolved] = account.Label;
+            }
 
             if (writtenAt >= bestWrittenAt) continue;
 
@@ -148,7 +164,8 @@ internal sealed class SystemTestHost : IAsyncDisposable
     /// listener. Nothing is loaded either -- item titles and timestamps are all this reads, so no
     /// item contents are fetched and nothing is decrypted.
     /// </summary>
-    private static async Task<DateTimeOffset> LastWrittenAtAsync(SystemTestEnvironment.Account account)
+    private static async Task<(DateTimeOffset WrittenAt, string Resolved)> LastWrittenAtAsync(
+        SystemTestEnvironment.Account account)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
@@ -161,10 +178,16 @@ internal sealed class SystemTestHost : IAsyncDisposable
         var gate = probe.Services.GetRequiredService<VaultGateService>();
         var status = await gate.ConnectAsync(VaultBackendKind.OnePassword);
 
+        // Deliberately no adoption here, unlike the real host. Adoption writes the Config stamp,
+        // and a probe that writes is not a probe: it spends the quota it exists to conserve, and it
+        // set both vaults' timestamps to the same instant, which made every comparison a tie that
+        // the first account won. An unstamped vault is not a problem to fix while choosing -- it is
+        // the answer. Nothing has ever been written there, so it is first in line, and the host that
+        // is actually chosen does the adopting.
         if (!status.IsReady &&
             status.For(VaultBackendKind.OnePassword)?.Availability is VaultAvailability.VaultMissing)
         {
-            status = await gate.UseExistingVaultAsync(VaultBackendKind.OnePassword, account.VaultName);
+            return (DateTimeOffset.MinValue, "unadopted");
         }
 
         if (!status.IsReady)
@@ -176,15 +199,26 @@ internal sealed class SystemTestHost : IAsyncDisposable
 
         var items = await probe.Services.GetRequiredService<IConfigVault>().ListLiveItemsAsync();
 
-        // Config alone is not a written vault. It is the stamp adoption leaves behind, so a vault
-        // holding only that has had nothing done to it and should be preferred like an empty one.
-        var written = items
-            .Where(i => !(i.IsOwned && i.Role == VaultItemRole.Config))
-            .Select(i => i.UpdatedUtc)
-            .Where(t => t is not null)
-            .ToList();
+        // Every item, Config included, and Config is the one that matters. An earlier version of
+        // this excluded it, reasoning that a stamp is not data -- which made the whole mechanism a
+        // no-op: this suite empties the vault before it finishes, so the timestamps it was judging
+        // by were precisely the ones it had just deleted. Both vaults then looked untouched, the
+        // tie broke to the first every time, and the second account was never chosen.
+        //
+        // Config survives the purge and is rewritten by every save, so it records when a vault was
+        // last used rather than what happens to be sitting in it. A vault with no Config at all has
+        // never been adopted, which is genuinely untouched and genuinely first in line.
+        var written = items.Select(i => i.UpdatedUtc).Where(t => t is not null).ToList();
 
-        return written.Count == 0 ? DateTimeOffset.MinValue : written.Max()!.Value;
+        // The name the provider settled on, and the id behind it. Reported rather than assumed
+        // because the provider finds its vault by the Config stamp rather than by name, so two
+        // accounts can be configured with different names and still resolve to the same vault --
+        // which looks exactly like a broken comparison and is not one.
+        var resolved = status.For(VaultBackendKind.OnePassword) is { } s
+            ? $"{s.VaultName ?? "?"} [{s.VaultId ?? "?"}]"
+            : "?";
+
+        return (written.Count == 0 ? DateTimeOffset.MinValue : written.Max()!.Value, resolved);
     }
 
     public static Task<SystemTestHost> StartAsync(
