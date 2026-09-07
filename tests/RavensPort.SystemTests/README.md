@@ -5,8 +5,15 @@ and back. Everything else in `tests/` runs against an in-memory vault; this is t
 exercises the vault, and it is the only thing in the repository with side effects outside its own
 temp directory.
 
-It does not run in CI and does not run during `dotnet test` unless you set it up deliberately.
-Without the environment below it reports **Skipped**, never passed.
+It runs in CI from `.github/workflows/system-approval.yml`, where the token and vault names come from
+repository secrets. Locally it does nothing during `dotnet test` unless you set it up deliberately:
+without the environment below every stage reports **Skipped**, never passed.
+
+The pass is **eleven ordered tests**, not one. Each names what it proves, so a CI log lists the
+stages whether or not anything failed, and a failure says which stage — the earlier version ran the
+same sequence as a single method and reported `Total tests: 1`. The order is enforced by
+`StageOrderer` and the state is carried by `ApprovalRun`; when a stage fails, the ones after it say
+which prerequisite they were waiting on instead of failing on its wreckage.
 
 ## Before you run it
 
@@ -34,9 +41,14 @@ $env:RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT = "https://oauth-mock.mock.beec
 dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
 ```
 
-**1Password rate-limits vault writes**, and one pass spends a couple of dozen. Runs back to back will
-eventually be throttled. The closing sweep tolerates that and leaves the items for the next run's
-opening sweep; the opening sweep does not, because "empty at startup" has to mean it.
+**1Password rate-limits vault writes** — 100 an hour per service account — and one pass spends a
+couple of dozen. Runs back to back will eventually be throttled.
+
+There is exactly one sweep, at the start. A run leaves its records behind and the *next* run deletes
+them, which is why the first thing asserted is that the vault is empty. Cleaning up at the end as
+well would write a cleared store and then delete every item a second time, spending quota on work the
+opening sweep does anyway — and nothing between two runs reads the vault, so there is nobody for the
+tidier ending to be tidy for.
 
 ### Spreading the load over more than one account
 
@@ -65,15 +77,23 @@ too easy to have sitting in a shell; nobody sets this one by reflex.
 
 ## What it covers
 
-1. **The vault is empty at startup** — every item is deleted one by one, not just the ones the store
-   knows about. A save only reconciles what it loaded, so items from a run that failed before its
-   cleanup, or anything added by hand while testing, would otherwise survive and make "empty at
-   startup" assert against a vault that is nothing of the kind.
-2. Seeds two credentials (an OAuth grant and a static project key), two mock MCP servers, an
-   upstream, **seven routes covering every credential placement**, and two funnels — one pooling
-   both sources, one exposing a single source.
-3. **The credential matrix**, checked on what the upstream actually received rather than on a status
-   code, because a 200 would pass for a route that forwarded nothing:
+The numbers below are the stage numbers in the test names.
+
+1. `Stage01_TheVaultStartsEmpty` — **the vault is empty at startup**. Every item is deleted one by
+   one, not just the ones the store knows about: a save only reconciles what it loaded, so records
+   left by the previous run, or anything added by hand while testing, would otherwise survive and
+   make "empty at startup" assert against a vault that is nothing of the kind. The sweep runs
+   *before* the store is read, because an item the vault will not hand back fails the load and a host
+   that cannot start cannot run the sweep that would have fixed it. The Config item is spared — it is
+   the stamp that identifies the vault rather than data in it, and deleting it leaves not an empty
+   vault but an unrecognisable one.
+2. `Stage02_CredentialsRoutesAndFunnelsAreSeeded` — three credentials (an OAuth grant, a static
+   project key and a client-credentials grant), three mock MCP servers, two upstreams, **eight routes
+   covering every credential placement**, and three funnels: one pooling two sources, one exposing a
+   single source, one reaching an MCP server through a credentialed route.
+3. `Stage03_EveryCredentialPlacementReachesTheUpstream` — **the credential matrix**, checked on what
+   the upstream actually received rather than on a status code, because a 200 would pass for a route
+   that forwarded nothing:
 
    | Route | What must arrive |
    |---|---|
@@ -87,15 +107,27 @@ too easy to have sitting in a shell; nobody sets this one by reflex.
 
    There is no query row. `CredentialPlacement.Query` is no longer permitted: a secret in a URL is
    written to the upstream's access log, every intermediary's, and browser history.
-4. Both funnels answer on the current revision **and** on `2025-11-25`, with the negotiated version
-   asserted first so a pin that quietly failed cannot make the old-protocol half decorative.
-5. mTLS is switched on, a certificate minted and stored, and the PFX written to disk as the Settings
-   tab's download would.
-6. The host is torn down and rebuilt from nothing but the token — so anything the second host knows
-   came back out of 1Password.
-7. Everything in 3 and 4 runs **again** over https with the client certificate.
-8. **The listener refuses the wrong caller**, which is the only thing that shows mTLS is enforced
-   rather than merely switched on:
+4. `Stage04_BothFunnelsAnswerOnBothProtocolRevisions` — both funnels answer on the current revision
+   **and** on `2025-11-25`, with the negotiated version asserted first so a pin that quietly failed
+   cannot make the old-protocol half decorative.
+5. `Stage05_TheIssuedOAuthTokenReachesTheMcpServer` — **a real OAuth2 exchange**, and the token
+   followed to an MCP server. A client-credentials grant runs against a mock authorization server —
+   the only grant that works unattended, since the browser flow needs someone at a consent screen and
+   the device flow someone at a second device. The issued token is attached to a route whose upstream
+   *is* an MCP server, and the funnel reaches it as a `ProxyRoute` source, so the credential
+   transform sits in the path. The fake records the `Authorization` of every request it receives, and
+   every one must carry the issued token — a transform that attached it to some requests but not
+   others would still satisfy a "contains" check while leaving real calls unauthenticated. The
+   proxy's own key must not be among what was forwarded.
+6. `Stage06_MtlsIsEnabledAndTheCertificateExported` — mTLS is switched on, a certificate minted and
+   stored, and the PFX written to disk as the Settings tab's download would.
+7. `Stage07_TheConfigurationSurvivesARestart` — the host is torn down and rebuilt from nothing but
+   the token, so everything the second host knows came back out of 1Password: eight routes, three
+   funnels, three sources, three credentials, the mTLS setting and the issued access token.
+8. `Stage08_…`, `Stage09_…`, `Stage10_…` — 3, 4 and 9 run **again** over https with the client
+   certificate, against records that survived the restart.
+9. `Stage11_TheListenerRefusesTheWrongCaller` — **the listener refuses the wrong caller**, which is
+   the only thing that shows mTLS is enforced rather than merely switched on:
 
    | Caller | Result |
    |---|---|
