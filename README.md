@@ -1173,6 +1173,46 @@ was sent, the refusal of query-string credentials and of a proxy key sent in a U
 pre-2.0 store, and end-to-end funnel behaviour — including that two funnels over one upstream stay
 isolated, run in parallel, and never cross-deliver a response.
 
+### Coverage
+
+```
+./coverage.ps1 -SkipSystemTests -Open
+```
+
+Runs the unit suite with coverage collection, merges the result, and opens an HTML report under
+`TestResults/coverage-report/`. Around 84% of lines in `RavensPort.Core`.
+
+The figure worth quoting is the union of both suites, because they reach the same assembly from
+opposite ends — `RavensPort.Core.Tests` through an `InMemoryVault`, `RavensPort.SystemTests` through
+a real 1Password account. Drop `-SkipSystemTests` to get it, with the system suite's environment set
+up first:
+
+```
+$env:OP_SERVICE_ACCOUNT_TOKEN  = '<token for a throwaway account>'
+$env:RAVENSPORT_SYSTEM_TEST_ACK = 'i-understand-this-erases-the-ravensport-vault'
+./coverage.ps1
+```
+
+Read [tests/RavensPort.SystemTests/README.md](tests/RavensPort.SystemTests/README.md) before doing
+that — the system suite erases every RavensPort item in the vault the token reaches. Without both
+variables the script skips it and says so, rather than reporting half a figure as the whole one.
+
+Only `RavensPort.Core` is measured. `RavensPort.App` is WPF that no test project references, so
+including it would add a fixed block of zeroes that hides real movement in `Core`; the reasoning is
+written out in [coverlet.runsettings](coverlet.runsettings), which both runs share so the two halves
+can legitimately be merged.
+
+In CI, [.github/workflows/coverage.yml](.github/workflows/coverage.yml) does the same thing across
+two workflows: it runs the unit suite itself, waits for `system-approval.yml` to finish on the same
+commit, merges both, and publishes the percentage as a job summary and to
+[SonarCloud](https://sonarcloud.io/project/overview?id=abishekvupputur_ravensPort). The summary
+always says which halves went into the number — a pull request from a fork gets no vault
+credentials, so there the system half is honestly absent rather than quietly counted as zero.
+
+Analysis needs a `SONAR_TOKEN` repository secret; without it the coverage still runs and publishes,
+only the upload is skipped. `SONAR_ORGANIZATION` is a repository variable, defaulting to the
+organisation implied by the project key.
+
 ### Publishing a standalone exe
 
 ```
@@ -1205,7 +1245,8 @@ Every other command on this page builds the full app, unchanged.
 src/RavensPort.Core/            OAuth flows, password-manager storage, YARP proxy config, MCP funnel,
                                 activity log — no WPF dependency, just the engine
 src/RavensPort.App/             WPF tray app: hosts Kestrel + YARP in-process, tray icon, UI
-tests/RavensPort.Core.Tests/    xunit tests for Core
+tests/RavensPort.Core.Tests/    xunit tests for Core — InMemoryVault, no side effects
+tests/RavensPort.SystemTests/   the approval suite: one real 1Password vault, end to end
 ```
 
 `RavensPort.App` owns the process. It starts the Kestrel/YARP host on a thread-pool task rather

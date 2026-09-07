@@ -86,6 +86,31 @@ jobs:
           go build -buildmode=c-shared -o onepassword.dll main.go
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      # Whether the suite is about to run for real, decided before it runs and recorded as an
+      # output rather than inferred afterwards.
+      #
+      # This matters because of how this workflow degrades. On a fork PR the secrets are empty,
+      # every test reports Skipped, and the job passes green -- which is the right outcome for a
+      # fork, but it means "the job succeeded" says nothing about whether any vault code executed.
+      # A skipped run still emits a Cobertura report; it is simply all zeroes. Merging that into the
+      # combined figure would be harmless arithmetic (a union with nothing is unchanged) and
+      # thoroughly misleading presentation, because the summary would claim the system half was
+      # included when it contributed no lines at all.
+      #
+      # So the upload below is conditioned on this, and coverage.yml reports "system suite did not
+      # run" when the artifact is absent. Neither variable is echoed; only whether both are set.
+      - name: Check whether the suite can run
+        id: gate
+        shell: pwsh
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          RAVENSPORT_SYSTEM_TEST_ACK: ${{ secrets.RAVENSPORT_SYSTEM_TEST_ACK }}
+        run: |
+          $ready = -not ([string]::IsNullOrWhiteSpace($env:OP_SERVICE_ACCOUNT_TOKEN) -or
+                         [string]::IsNullOrWhiteSpace($env:RAVENSPORT_SYSTEM_TEST_ACK))
+          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "System suite will run: $ready"
+
       # Named rather than inherited from the job, so the token is on exactly one step. It is a
       # bearer credential for a whole 1Password account: the fewer steps that can see it, the fewer
       # places it can be printed from.
@@ -121,6 +146,24 @@ jobs:
             ${{ vars.RAVENSPORT_SYSTEM_TEST_VAULT_2 || secrets.RAVENSPORT_SYSTEM_TEST_VAULT_2 }}
           RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT: >-
             ${{ vars.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT || secrets.RAVENSPORT_SYSTEM_TEST_OAUTH_TOKEN_ENDPOINT }}
+        # Coverage settings come from coverlet.runsettings, the same file pr.yml points its run at.
+        # The two suites cover one assembly from opposite ends and coverage.yml merges them, which
+        # only produces a meaningful union if both halves were instrumented under identical rules.
         run: >
           dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
           -c Release --no-restore --verbosity normal
+          --settings coverlet.runsettings
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults/coverage-system
+
+      # Uploaded only when the suite actually opened a vault, and then even if it failed: a failing
+      # approval run still executed real vault code on the way to failing, and that is exactly the
+      # coverage someone reading the failure wants to see.
+      - name: Upload system coverage
+        if: always() && steps.gate.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-system
+          path: TestResults/coverage-system/**/*.cobertura.xml
+          retention-days: 7
+          if-no-files-found: error

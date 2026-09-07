@@ -51,3 +51,7 @@ Thumbs.db
 # Go generated files
 onepassword.dll
 onepassword.h
+
+# SonarScanner working directory, written by `dotnet sonarscanner begin` during a local
+# analysis run. Build state, not source.
+.sonarqube/

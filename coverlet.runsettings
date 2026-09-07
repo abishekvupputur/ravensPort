@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One coverage configuration for both test suites, and that is the whole reason it is a file rather
+  than a pile of switches repeated on each `dotnet test` invocation.
+
+  RavensPort.Core.Tests and RavensPort.SystemTests exercise the same assembly from opposite ends —
+  one against an InMemoryVault, the other against a real 1Password account — and the number that
+  matters is the union of the two. Merging two Cobertura reports only produces a meaningful union
+  if both were collected with identical include/exclude rules; if one counted a namespace the other
+  filtered out, the merged line count would move for reasons that have nothing to do with the tests.
+  Pointing both `dotnet test` runs at this one settings file is what guarantees that.
+
+  Instrumenting RavensPort.Core and nothing else is deliberate, not an oversight:
+
+    - RavensPort.App is WPF. 239 files of windows, view models and tray plumbing that no test
+      references — neither test project has a ProjectReference to it, so it cannot be reached from
+      a test at all. Including it would not report a gap anybody could close; it would add a fixed
+      block of zeroes that halves the headline percentage and makes a real regression in Core
+      invisible inside the noise.
+
+    - The test assemblies themselves are excluded for the obvious reason, and the 1Password native
+      client is Go, so it is outside this tool's reach entirely (it has its own `go test`).
+
+  So the figure this produces answers one question: how much of the logic that both suites are
+  pointed at did they actually execute.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <!--
+            Cobertura because it is the one format every consumer here reads: ReportGenerator merges
+            it, GitHub's summary renders from it, and it is plain XML that survives being stored as
+            a build artifact and diffed by hand.
+          -->
+          <Format>cobertura</Format>
+
+          <!--
+            An include list rather than a pile of excludes. The difference matters when a project is
+            added later: an exclude list silently starts measuring it, an include list silently does
+            not, and "a new assembly is not counted until someone says so" is the safer default for
+            a number people read as a quality gate.
+          -->
+          <Include>[RavensPort.Core]*</Include>
+          <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[xunit.*]*</Exclude>
+
+          <!--
+            Generated code is not code anybody wrote or can test. GeneratedCodeAttribute covers the
+            XAML and source-generator output, CompilerGeneratedAttribute the closures and iterator
+            state machines the compiler emits behind async and LINQ, and ExcludeFromCodeCoverage the
+            handful of places the source opts out on purpose.
+          -->
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/obj/**/*.cs,**/*.g.cs,**/*.g.i.cs</ExcludeByFile>
+
+          <!-- Trivial get/set bodies are noise in both directions: they inflate a passing number and
+               they never contain the bug. -->
+          <SkipAutoProps>true</SkipAutoProps>
+
+          <!-- Without this, coverlet reports the ASP.NET Core and WinRT assemblies that Core links
+               against, which nothing in this repository can influence. -->
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+          <UseSourceLink>false</UseSourceLink>
+
+          <!--
+            Cobertura writes source paths as they were on the machine that produced the report. Both
+            suites are collected from the same checkout in the same job or on the same developer
+            box, so the paths line up and the merge overlays the same files rather than reporting
+            each one twice under two spellings. Deterministic report keeps that true when the two
+            halves come from different jobs, which is what happens in CI.
+          -->
+          <DeterministicReport>false</DeterministicReport>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

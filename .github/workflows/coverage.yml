@@ -1,0 +1,349 @@
+name: Coverage
+
+# One coverage figure for RavensPort.Core, built from both suites that point at it, and the
+# SonarCloud analysis that consumes it.
+#
+# The number worth reading is the union of two runs that cannot share a job. RavensPort.Core.Tests
+# drives Core against an InMemoryVault, needs no secrets, and is safe on any pull request including
+# a fork's. RavensPort.SystemTests drives the same assembly against a real 1Password account, holds
+# a bearer token, and is serialised repository-wide because it erases the vault it opens. Those
+# constraints are why they are separate workflows -- see the header of system-approval.yml -- and
+# folding them together to make one percentage would trade a real safety property for a reporting
+# convenience.
+#
+# This workflow therefore runs the unit half itself and waits for the system half.
+#
+# Why it waits rather than being triggered by the other workflow finishing
+#
+#   The obvious mechanism is workflow_run, and it is rejected here on purpose: zizmor.yml gates
+#   merges on `zizmor --min-severity medium`, and workflow_run is a high-severity finding under its
+#   dangerous-triggers audit. That audit is right about the general case -- a workflow_run job runs
+#   with the base repository's permissions in response to a fork's code -- and buying a coverage
+#   percentage with a suppression on the repository's own workflow security gate is a bad trade.
+#
+#   So this job polls instead. It runs in the ordinary pull_request context with a read-only token,
+#   asks the API for the system-approval run on the same commit, and waits up to
+#   SYSTEM_COVERAGE_WAIT_MINUTES for it to finish. The cost is idle runner time; the benefit is that
+#   nothing here has any privilege a pull request did not already have.
+#
+#   That wait genuinely does time out sometimes. system-approval.yml is serialised across the whole
+#   repository, so a run can sit queued behind another pull request's for longer than this is
+#   willing to wait. When that happens the job still publishes -- clearly labelled as the unit suite
+#   alone, never as the combined figure.
+#
+# Why it re-runs the unit suite instead of taking pr.yml's word for it
+#
+#   pr.yml does not run on pushes to main, and SonarCloud needs the main branch analysed or there is
+#   no baseline for any pull request to be compared against. A workflow that collected coverage one
+#   way on a pull request and another way on a push would be two mechanisms wearing one name. The
+#   duplicated unit run costs well under a minute, and this job has to build the solution for the
+#   scanner regardless.
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Reading the system-approval run's status and downloading its artifact. Nothing here writes.
+  actions: read
+
+concurrency:
+  group: coverage-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+env:
+  # How long to wait for system-approval.yml to finish before publishing the unit half alone.
+  #
+  # Chosen against what that workflow actually does rather than how long it takes: a pass is a few
+  # minutes, but it is serialised repository-wide, so the wait is mostly queueing behind other pull
+  # requests. Fifteen minutes covers one run ahead in the queue and gives up rather than holding a
+  # runner for an afternoon when several are.
+  SYSTEM_COVERAGE_WAIT_MINUTES: "15"
+
+  # SonarCloud. The key is the project at
+  # https://sonarcloud.io/project/overview?id=abishekvupputur_ravensPort and is not a secret --
+  # it appears in the URL. The organisation is read from a repository variable so it can be
+  # corrected without editing this file, defaulting to the one implied by that key.
+  SONAR_PROJECT_KEY: abishekvupputur_ravensPort
+  SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION || 'abishekvupputur' }}
+
+jobs:
+  coverage:
+    name: Combined coverage
+    runs-on: windows-latest
+
+    # The wait above plus a full solution build and two test runs. A cap well clear of that, so a
+    # hung scanner is killed rather than burning the six-hour default.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history, because SonarCloud attributes issues to commits and dates. With the
+          # default shallow clone every line looks like it was written in one commit, and "new code"
+          # -- the thing its quality gate actually measures -- becomes the entire codebase.
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          cache-dependency-path: src/OnePasswordNative/go.sum
+
+      # RavensPort.App carries onepassword.dll as an unconditional Content item, so the solution
+      # does not build without it. This job builds the whole solution for the scanner -- analysing
+      # Core while leaving the 239 files of WPF unanalysed would hide most of the code from the
+      # thing whose job is to look at it -- so the DLL has to exist here too.
+      - name: Build Go DLL
+        shell: pwsh
+        run: |
+          cd src/OnePasswordNative
+          $env:CGO_ENABLED = "1"
+          go build -buildmode=c-shared -o onepassword.dll main.go
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # The scanner runs on the JVM. The Windows images ship several JDKs and point JAVA_HOME at
+      # whichever is default, which has historically been older than the 17 that SonarScanner for
+      # .NET 11 requires; JAVA_HOME_17_X64 and JAVA_HOME_21_X64 name the ones that are actually
+      # installed. Selected here and written to the environment so both the begin and end steps see
+      # it, rather than adding a fourth third-party action to the job for something the image
+      # already provides.
+      - name: Select a JDK for the scanner
+        shell: pwsh
+        run: |
+          $jdk = $env:JAVA_HOME_21_X64
+          if ([string]::IsNullOrWhiteSpace($jdk)) { $jdk = $env:JAVA_HOME_17_X64 }
+          if ([string]::IsNullOrWhiteSpace($jdk)) {
+            Write-Host "No JDK 17 or 21 on this image; leaving JAVA_HOME as it is ($env:JAVA_HOME)."
+            exit 0
+          }
+          "JAVA_HOME=$jdk" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "Scanner JDK: $jdk"
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dotnet restore RavensPort.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # Whether SonarCloud analysis can happen at all, decided before anything depends on it.
+      # A pull request from a fork gets no secrets, so SONAR_TOKEN is empty there. That must not
+      # fail the job: the coverage half of this workflow works perfectly well without it, and a red
+      # check on every outside contribution for a credential they were never going to have is the
+      # same mistake system-approval.yml already declined to make.
+      - name: Check whether SonarCloud analysis can run
+        id: sonar_gate
+        shell: pwsh
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          $ready = -not [string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)
+          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Append
+          if (-not $ready) {
+            Write-Host "SONAR_TOKEN is not set; coverage will still be collected and published as a job summary."
+          }
+
+      # begin must precede the build: the scanner works by injecting the Roslyn analysers into
+      # MSBuild, so a build that has already happened is invisible to it.
+      #
+      # Every value that could come from a pull request is passed through env rather than
+      # interpolated into the script. github.head_ref is a branch name chosen by whoever opened the
+      # pull request, and `${{ }}` inside a run block is textual substitution -- a branch named with
+      # a quote and a semicolon would be executing commands in this shell, which is the finding
+      # zizmor's template-injection audit exists to catch.
+      - name: SonarCloud begin
+        if: steps.sonar_gate.outputs.ready == 'true'
+        shell: pwsh
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BRANCH: ${{ github.head_ref }}
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          $sonarArgs = @(
+            'sonarscanner', 'begin',
+            "/k:$env:SONAR_PROJECT_KEY",
+            "/o:$env:SONAR_ORGANIZATION",
+            '/d:sonar.host.url=https://sonarcloud.io',
+            "/d:sonar.token=$env:SONAR_TOKEN",
+
+            # The generic coverage format, written by ReportGenerator from the merged Cobertura
+            # further down. Deliberately not sonar.cs.opencover.reportsPaths: that one takes a
+            # single suite's raw OpenCover output, and the whole point here is that the figure is
+            # the union of two suites merged after the fact.
+            '/d:sonar.coverageReportPaths=TestResults/coverage-report/SonarQube.xml',
+
+            # The same scope decision coverlet.runsettings makes, restated for Sonar because it
+            # measures coverage over everything it analyses. RavensPort.App is 239 files of WPF that
+            # no test project even references, so counting it would bury a real regression in Core
+            # under a fixed block of zeroes. Excluded from the coverage metric only -- Sonar still
+            # analyses those files for bugs and smells, which is why the build below is the whole
+            # solution rather than just Core.
+            '/d:sonar.coverage.exclusions=src/RavensPort.App/**,tests/**,src/OnePasswordNative/**',
+
+            # The Go client has its own `go test` and is not built by MSBuild; without this the
+            # scanner reports it as unanalysed source on every run.
+            '/d:sonar.exclusions=src/OnePasswordNative/**,**/obj/**,**/bin/**'
+          )
+
+          # Pull request analysis is decorated against the base branch; a push to main is what
+          # establishes the baseline that decoration compares to. Passed explicitly rather than left
+          # to autodetection, so a run that is analysing the wrong thing says so in its own log.
+          if ($env:PR_NUMBER) {
+            $sonarArgs += "/d:sonar.pullrequest.key=$env:PR_NUMBER"
+            $sonarArgs += "/d:sonar.pullrequest.branch=$env:PR_BRANCH"
+            $sonarArgs += "/d:sonar.pullrequest.base=$env:PR_BASE"
+          }
+
+          & dotnet @sonarArgs
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet build RavensPort.slnx -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # --no-build, so this is the assembly the scanner just watched being compiled rather than a
+      # second one built with different inputs. Coverage settings come from coverlet.runsettings,
+      # the same file the system suite is run with, because two halves instrumented under different
+      # include rules do not merge into a meaningful union.
+      - name: Unit suite with coverage
+        shell: pwsh
+        run: |
+          dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj `
+            -c Release --no-build --verbosity normal `
+            --settings coverlet.runsettings `
+            --collect:"XPlat Code Coverage" `
+            --results-directory TestResults/coverage-raw/unit
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # Waits for system-approval.yml on this same commit, then takes its coverage artifact.
+      #
+      # Matched by head SHA, not by run id: this job is not what triggered that one, so its run has
+      # to be found. On a pull request github.sha is the merge commit that no other workflow ever
+      # saw, which is why the head SHA is passed in explicitly below.
+      #
+      # Three outcomes, all of them normal, and the summary distinguishes them:
+      #   - the run finished and uploaded  -> the combined figure
+      #   - the run finished with no artifact -> it had no vault credentials (a fork), unit only
+      #   - the wait ran out              -> it is still queued, unit only
+      - name: Wait for the system suite's coverage
+        id: system
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          $deadline = (Get-Date).AddMinutes([int]$env:SYSTEM_COVERAGE_WAIT_MINUTES)
+          $runId = $null
+          $reason = 'timed out waiting for the system suite'
+
+          while ((Get-Date) -lt $deadline) {
+            $json = gh api "repos/$env:REPO/actions/workflows/system-approval.yml/runs?head_sha=$env:HEAD_SHA&per_page=100" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $json) {
+              # Newest first, which is what the API returns, so a re-run supersedes the run it replaced.
+              $run = ($json | ConvertFrom-Json).workflow_runs | Select-Object -First 1
+              if ($run) {
+                Write-Host "system-approval run $($run.id): $($run.status)"
+                if ($run.status -eq 'completed') { $runId = $run.id; break }
+              } else {
+                Write-Host "No system-approval run for $env:HEAD_SHA yet."
+              }
+            } else {
+              Write-Host "Could not query workflow runs; will retry."
+            }
+            Start-Sleep -Seconds 30
+          }
+
+          $have = $false
+          if ($runId) {
+            # Absence is not an error. system-approval.yml uploads only when it had the credentials
+            # to open a vault, so no artifact means the suite skipped rather than that it broke.
+            gh run download $runId -n coverage-system -D TestResults/coverage-raw/system 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              $have = $true
+              $reason = 'included'
+            } else {
+              $reason = 'ran without vault credentials, so it covered nothing'
+            }
+          }
+
+          "have=$($have.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Append
+          "reason=$reason" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "System coverage: $reason"
+
+      - name: Merge and summarise
+        id: merge
+        shell: pwsh
+        env:
+          HAVE_SYSTEM: ${{ steps.system.outputs.have }}
+          SYSTEM_REASON: ${{ steps.system.outputs.reason }}
+        run: |
+          $reports = @(Get-ChildItem TestResults/coverage-raw -Recurse -Filter '*.cobertura.xml')
+          if ($reports.Count -eq 0) { Write-Host "::error::No coverage was produced."; exit 1 }
+
+          # SonarQube is the generic coverage format the scanner reads; Cobertura and the Html
+          # report are for anyone downloading the artifact; the two summaries are what gets printed
+          # and what goes in the job summary. A line hit by either suite counts once.
+          dotnet reportgenerator `
+            "-reports:$(($reports.FullName) -join ';')" `
+            "-targetdir:TestResults/coverage-report" `
+            "-reporttypes:Html;Cobertura;SonarQube;TextSummary;MarkdownSummaryGithub" `
+            "-title:RavensPort combined coverage" `
+            "-verbosity:Warning"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          Get-Content TestResults/coverage-report/Summary.txt
+
+          # Provenance before the number. A reader who sees only a percentage cannot tell whether it
+          # is the combined figure or half of one, and half of one is what a fork pull request
+          # legitimately produces.
+          $lines = @('### Coverage — RavensPort.Core', '')
+          $lines += '- ✅ unit suite (`RavensPort.Core.Tests`) included'
+          if ($env:HAVE_SYSTEM -eq 'true') {
+            $lines += '- ✅ system suite (`RavensPort.SystemTests`) included'
+            $lines += ''
+            $lines += '**This is the combined figure.**'
+          } else {
+            $lines += "- ⚠️ system suite (``RavensPort.SystemTests``) $env:SYSTEM_REASON"
+            $lines += ''
+            $lines += '**Unit suite only — not the combined figure.**'
+          }
+          $lines += ''
+          $lines | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          Get-Content TestResults/coverage-report/SummaryGithub.md | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      # end is what analyses what the build produced and uploads it, coverage included. It runs even
+      # if the merge failed, because the code analysis is worth having on its own -- it just arrives
+      # with no coverage attached, and SonarCloud says so rather than silently keeping the last run's
+      # number.
+      - name: SonarCloud end
+        if: always() && steps.sonar_gate.outputs.ready == 'true'
+        shell: pwsh
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-combined
+          path: TestResults/coverage-report/
+          retention-days: 30
+          if-no-files-found: warn
