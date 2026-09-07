@@ -135,7 +135,15 @@ internal sealed class SystemTestHost : IAsyncDisposable
             // same by construction, so every comparison ties and the first always wins -- which
             // looks like the selection being broken and is really the vaults being one. Said out
             // loud, because the alternative is a mechanism that quietly does nothing.
-            if (seenVaults.TryGetValue(resolved, out var already))
+            // Only vaults that actually resolved. An unadopted one reports a placeholder rather
+            // than an identity, and comparing placeholders said two different empty vaults were
+            // the same vault -- a warning that was wrong in exactly the situation it was added to
+            // explain.
+            if (writtenAt == DateTimeOffset.MinValue)
+            {
+                // Nothing to compare, and nothing to warn about.
+            }
+            else if (seenVaults.TryGetValue(resolved, out var already))
             {
                 log($"  WARNING: {account.Label} and {already} resolve to the SAME vault. Grant each "
                     + "service account its own, or this cannot spread anything.");
