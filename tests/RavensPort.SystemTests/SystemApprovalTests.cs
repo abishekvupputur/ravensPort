@@ -92,8 +92,17 @@ public sealed class SystemApprovalTests(ApprovalRun run, ITestOutputHelper outpu
         // of them, so the cleanup nobody is waiting on is the one to drop.
         run.Host = await SystemTestHost.StartAsync(run.Account, purgeBeforeLoading: true);
 
-        var purged = await run.Host.PurgeVaultAsync();
-        await ApprovalRun.ClearStoreAsync(run.Host);
+        // Nothing swept or cleared here, and both omissions are deliberate.
+        //
+        // A second PurgeVaultAsync would re-list the vault to delete the nothing the first sweep
+        // left. A ClearStoreAsync would then mutate an already-empty store, and a mutation is a
+        // write whether or not it changes anything -- so it spent one of the hundred writes an hour
+        // this account gets to assert something the sweep had already made true.
+        //
+        // What makes the store empty is the sweep, which deletes every item and then rewrites the
+        // note to index nothing. The load that follows has no ids to chase, so the assertions below
+        // are reading the result of that rather than of a second pass.
+        var purged = run.Host.PurgedAtStartup;
 
         Assert.Empty(run.Host.Cache.Current.Credentials);
         Assert.Empty(run.Host.Cache.Current.Routes);

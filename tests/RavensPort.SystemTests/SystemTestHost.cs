@@ -58,6 +58,13 @@ internal sealed class SystemTestHost : IAsyncDisposable
     private readonly List<McpClient> _clients = [];
     private WebApplication _proxy;
 
+    /// <summary>
+    /// How many items the sweep before the load deleted. Reported by stage 1 rather than recounted
+    /// there: a second sweep would re-list the vault to find the nothing the first one left, and
+    /// this suite's ceiling is 1Password's write quota, so the work not done is the point.
+    /// </summary>
+    public int PurgedAtStartup { get; private init; }
+
     private SystemTestHost(SystemTestEnvironment.Account account, WebApplication proxy, string baseUrl)
     {
         _account = account;
@@ -339,9 +346,11 @@ internal sealed class SystemTestHost : IAsyncDisposable
                 + $"{account.Label} must reach a vault named '{account.VaultName}'.");
         }
 
+        var purgedAtStartup = 0;
+
         if (purgeBeforeLoading)
         {
-            await PurgeAsync(
+            purgedAtStartup = await PurgeAsync(
                 proxy.Services.GetRequiredService<IConfigVault>(), tolerateFailures: false, resetIndex: true);
         }
 
@@ -374,7 +383,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         var baseUrl = proxy.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!.Addresses.First();
 
-        var host = new SystemTestHost(account, proxy, baseUrl);
+        var host = new SystemTestHost(account, proxy, baseUrl) { PurgedAtStartup = purgedAtStartup };
 
         // A route-backed funnel source dials 127.0.0.1:{ListenPort}, so the stored port has to be
         // the one actually bound. In the app they agree by construction; here the port is ephemeral
