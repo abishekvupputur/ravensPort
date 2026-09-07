@@ -50,6 +50,30 @@ public sealed class SystemApprovalTests(ApprovalRun run, ITestOutputHelper outpu
     }
 
     /// <summary>
+    /// Says something to the test's own output and to the console both.
+    ///
+    /// xUnit hands ITestOutputHelper's lines to the reporter, which prints them for a failing test
+    /// and throws them away for a passing one. That is the right default for assertion detail and
+    /// the wrong one for the few lines that record which vault a run spent.
+    ///
+    /// The account chooser picks whichever configured account has gone longest without a write, so
+    /// which one ran is a fact about the run rather than about the product -- and on a green run
+    /// nothing kept it. Working out why a later run had been rate-limited then meant inferring the
+    /// choice from item timestamps in the 1Password UI, on a suite whose whole ceiling is that
+    /// quota. The answer should be in the log of the run that made the choice.
+    ///
+    /// Console output is not captured by xUnit, so it reaches `dotnet test` whether the test passed
+    /// or failed. Safe here because the stages are ordered and share one collection, so there is
+    /// nothing running alongside them to interleave with. Vault names reach CI from secrets and are
+    /// masked in the log like any other secret.
+    /// </summary>
+    private void Say(string line)
+    {
+        output.WriteLine(line);
+        Console.WriteLine(line);
+    }
+
+    /// <summary>
     /// Runs one stage, recording the first failure so that the stages after it report the
     /// prerequisite they are waiting on instead of failing on its wreckage.
     /// </summary>
@@ -78,9 +102,9 @@ public sealed class SystemApprovalTests(ApprovalRun run, ITestOutputHelper outpu
         // Whichever vault has gone longest without being written. With one account this is a no-op;
         // with two it halves the write rate each account sees, which is what keeps consecutive runs
         // off 1Password's per-account limit.
-        output.WriteLine($"choosing between {accounts.Count} configured account(s)");
-        run.Account = await SystemTestHost.ChooseLeastRecentlyUsedAsync(accounts, output.WriteLine);
-        output.WriteLine($"using {run.Account.Label}, vault '{run.Account.VaultName}'");
+        Say($"choosing between {accounts.Count} configured account(s)");
+        run.Account = await SystemTestHost.ChooseLeastRecentlyUsedAsync(accounts, Say);
+        Say($"using {run.Account.Label}, vault '{run.Account.VaultName}'");
 
         // Purged before the store is ever read. An item the vault will not hand back -- archived, or
         // half-deleted by a sweep that hit the write rate limit -- fails the load, and a host that
@@ -109,7 +133,7 @@ public sealed class SystemApprovalTests(ApprovalRun run, ITestOutputHelper outpu
         Assert.Empty(run.Host.Cache.Current.McpFunnels);
         Assert.Empty(run.Host.Cache.Current.McpSources);
 
-        output.WriteLine($"deleted {purged} item(s) left by the previous run; the store holds nothing");
+        Say($"deleted {purged} item(s) left by the previous run; the store holds nothing");
     });
 
     // ---- 2. seeding, including a real OAuth2 grant ----------------------------------------------
