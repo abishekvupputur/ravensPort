@@ -22,7 +22,7 @@ public sealed class GoogleOAuthService(ActivityLog activityLog)
     private const int RedirectPort = 51004;
     public static readonly string RedirectUri = new FixedPortGoogleCodeReceiver(RedirectPort).RedirectUri;
 
-    public async Task<AuthorizationOutcome> StartAuthorizationAsync(CredentialRecord credential, CancellationToken ct = default)
+    public static async Task<AuthorizationOutcome> StartAuthorizationAsync(CredentialRecord credential, CancellationToken ct = default)
     {
         var initializer = new GoogleAuthorizationCodeFlow.Initializer
         {

@@ -9,6 +9,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
     <AssemblyName>RavensPort</AssemblyName>
+
+    <!--
+      For the LibraryImport stub behind WindowHelper.DwmSetWindowAttribute; see the same property
+      in RavensPort.Core.csproj.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

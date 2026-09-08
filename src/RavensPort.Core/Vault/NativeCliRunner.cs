@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using RavensPort.Core.Diagnostics;
@@ -32,6 +33,13 @@ public sealed class NativeCliRunner : ICliRunner
     /// makes merely *loading* its library destructive — see <see cref="RequireIntegrationChannel"/>.
     /// </summary>
     private const string IntegrationChannel = @"\\.\pipe\1password-sdk-integrations";
+
+    /// <summary>
+    /// The flag every item verb carries. Named because the dispatcher below reads it out of the
+    /// argument list five times, and a typo in one of those would silently address the default
+    /// vault instead of the configured one.
+    /// </summary>
+    private const string VaultFlag = "--vault";
 
     private readonly ActivityLog? _activityLog;
     private readonly IOnePasswordNativeClient _client;
@@ -130,12 +138,29 @@ public sealed class NativeCliRunner : ICliRunner
     {
         lock (_initLock)
         {
-            _initialized = false;
+            MarkNotInitialized();
 
             // The user is asking, so nothing owed from earlier failures should stand in the way.
-            _lastReconnectAttempt = DateTimeOffset.MinValue;
+            ClearReconnectCooldown();
         }
     }
+
+    /// <summary>
+    /// The only places the process-wide connection flags are written.
+    ///
+    /// Static because the flags are, and the flags are static because the connection is: the Go
+    /// side keeps one package-level client, so "connected" and "last tried" are facts about the
+    /// process rather than about any one runner. Instance methods below reach the state through
+    /// these rather than assigning it directly, which is what keeps every writer visible from one
+    /// place. Callers of the first two hold <see cref="_initLock"/>.
+    /// </summary>
+    private static void MarkInitialized() => _initialized = true;
+
+    /// <inheritdoc cref="MarkInitialized"/>
+    private static void MarkNotInitialized() => _initialized = false;
+
+    /// <inheritdoc cref="MarkInitialized"/>
+    private static void ClearReconnectCooldown() => _lastReconnectAttempt = DateTimeOffset.MinValue;
 
     /// <summary>
     /// Claims the right to rebuild the connection, or reports that one was tried too recently.
@@ -193,7 +218,7 @@ public sealed class NativeCliRunner : ICliRunner
             try
             {
                 _client.Initialize(accountName);
-                _initialized = true;
+                MarkInitialized();
             }
             catch (Exception ex)
             {
@@ -219,7 +244,7 @@ public sealed class NativeCliRunner : ICliRunner
         try
         {
             _client.InitializeServiceAccount(_session!.CurrentToken!);
-            _initialized = true;
+            MarkInitialized();
         }
         catch (Exception ex)
         {
@@ -258,7 +283,7 @@ public sealed class NativeCliRunner : ICliRunner
     {
         lock (_initLock)
         {
-            _initialized = false;
+            MarkNotInitialized();
         }
 
         EnsureInitialized();
@@ -360,7 +385,7 @@ public sealed class NativeCliRunner : ICliRunner
             // clearing the cooldown on that put the burst straight back — one rebuild per call, the
             // prompts this exists to prevent. Reaching this line means the connection actually
             // carried an operation, which is the only evidence worth trusting.
-            _lastReconnectAttempt = DateTimeOffset.MinValue;
+            ClearReconnectCooldown();
 
             Log(args, result, stopwatch.ElapsedMilliseconds);
             return result;
@@ -386,86 +411,71 @@ public sealed class NativeCliRunner : ICliRunner
     /// </summary>
     private CliResult Dispatch(IReadOnlyList<string> args, string? stdin)
     {
-        var cmd = string.Join(" ", args);
-        string stdout = "";
-        string stderr = "";
-        int exitCode = 0;
-
-        if (args.Count >= 2 && args[0] == "vault" && args[1] == "list")
-        {
-            var vaults = _client.ListVaults();
-            stdout = vaults?.ToJsonString() ?? "[]";
-        }
-        else if (args.Count >= 3 && args[0] == "vault" && args[1] == "create")
-        {
-            string name = args[2];
-            string desc = "";
-            var descIdx = args.ToList().IndexOf("--description");
-            if (descIdx != -1 && args.Count > descIdx + 1) desc = args[descIdx + 1];
-
-            var vault = _client.CreateVault(name, desc);
-            stdout = vault?.ToJsonString() ?? "{}";
-        }
-        else if (args.Count >= 2 && args[0] == "item" && args[1] == "list")
-        {
-            var vaultIdx = args.ToList().IndexOf("--vault");
-            string vaultId = vaultIdx != -1 ? args[vaultIdx + 1] : "";
-            var items = _client.ListItems(vaultId);
-            stdout = items?.ToJsonString() ?? "[]";
-        }
-        else if (args.Count >= 3 && args[0] == "item" && args[1] == "get")
-        {
-            string itemId = args[2];
-            var vaultIdx = args.ToList().IndexOf("--vault");
-            string vaultId = vaultIdx != -1 ? args[vaultIdx + 1] : "";
-
-            var item = _client.GetItem(vaultId, itemId);
-            if (item == null)
-            {
-                exitCode = 1;
-                stderr = "isn't an item";
-            }
-            else
-            {
-                stdout = item.ToJsonString();
-            }
-        }
-        else if (args.Count >= 2 && args[0] == "item" && args[1] == "create")
-        {
-            var vaultIdx = args.ToList().IndexOf("--vault");
-            string vaultId = vaultIdx != -1 ? args[vaultIdx + 1] : "";
-
-            var item = _client.CreateItem(vaultId, stdin ?? "");
-            stdout = item?.ToJsonString() ?? "{}";
-        }
-        else if (args.Count >= 3 && args[0] == "item" && args[1] == "edit")
-        {
-            string itemId = args[2];
-            var vaultIdx = args.ToList().IndexOf("--vault");
-            string vaultId = vaultIdx != -1 ? args[vaultIdx + 1] : "";
-
-            var item = _client.EditItem(vaultId, itemId, stdin ?? "");
-            stdout = item?.ToJsonString() ?? "{}";
-        }
-        else if (args.Count >= 3 && args[0] == "item" && args[1] == "delete")
-        {
-            string itemId = args[2];
-            var vaultIdx = args.ToList().IndexOf("--vault");
-            string vaultId = vaultIdx != -1 ? args[vaultIdx + 1] : "";
-
-            _client.DeleteItem(vaultId, itemId);
-        }
-        else
-        {
-            exitCode = 1;
-            stderr = "Command not supported by NativeCliRunner: " + cmd;
-        }
+        var result = Route(args, stdin);
 
         // A dead client can also arrive as a failed result rather than an exception, depending
         // on which call reported it. Raised so the one recovery path in Execute covers both.
-        if (exitCode != 0 && ShouldReconnect(stderr)) throw new VaultCliException(stderr);
+        if (!result.Succeeded && ShouldReconnect(result.StdErr)) throw new VaultCliException(result.StdErr);
 
-        return new CliResult(exitCode, stdout, stderr);
+        return result;
+    }
+
+    /// <summary>
+    /// The command line, matched verb by verb. Every arm reads the same way on purpose: the vault
+    /// comes from the --vault flag when there is one, the item id is the third word when there is
+    /// one, and anything unrecognised is an unsupported command rather than a guess.
+    /// </summary>
+    private CliResult Route(IReadOnlyList<string> args, string? stdin) => args switch
+    {
+        ["vault", "list", ..] => Json(_client.ListVaults(), "[]"),
+
+        ["vault", "create", var name, ..] =>
+            Json(_client.CreateVault(name, Flag(args, "--description") ?? ""), "{}"),
+
+        ["item", "list", ..] => Json(_client.ListItems(Flag(args, VaultFlag) ?? ""), "[]"),
+
+        ["item", "get", var itemId, ..] => GetItem(Flag(args, VaultFlag) ?? "", itemId),
+
+        ["item", "create", ..] =>
+            Json(_client.CreateItem(Flag(args, VaultFlag) ?? "", stdin ?? ""), "{}"),
+
+        ["item", "edit", var itemId, ..] =>
+            Json(_client.EditItem(Flag(args, VaultFlag) ?? "", itemId, stdin ?? ""), "{}"),
+
+        ["item", "delete", var itemId, ..] => DeleteItem(Flag(args, VaultFlag) ?? "", itemId),
+
+        _ => new CliResult(1, "", "Command not supported by NativeCliRunner: " + string.Join(" ", args)),
+    };
+
+    /// <summary>The value after a flag, or null when the flag is absent or ends the line.</summary>
+    private static string? Flag(IReadOnlyList<string> args, string name)
+    {
+        for (var i = 0; i < args.Count - 1; i++)
+        {
+            if (args[i] == name) return args[i + 1];
+        }
+
+        return null;
+    }
+
+    /// <summary>A successful result carrying the SDK's JSON, or the empty document it stands for.</summary>
+    private static CliResult Json(JsonNode? node, string whenAbsent) =>
+        new(0, node?.ToJsonString() ?? whenAbsent, "");
+
+    /// <summary>
+    /// A missing item is reported the way `op` reports it, because
+    /// <see cref="OnePasswordVaultProvider"/> reads that wording to tell "gone" from "could not
+    /// look" — and treats everything it does not recognise as the latter.
+    /// </summary>
+    private CliResult GetItem(string vaultId, string itemId) =>
+        _client.GetItem(vaultId, itemId) is { } item
+            ? new CliResult(0, item.ToJsonString(), "")
+            : new CliResult(1, "", "isn't an item");
+
+    private CliResult DeleteItem(string vaultId, string itemId)
+    {
+        _client.DeleteItem(vaultId, itemId);
+        return new CliResult(0, "", "");
     }
 
     private void Log(IReadOnlyList<string> args, CliResult result, long elapsedMs)

@@ -99,9 +99,10 @@ public sealed class McpFunnelHandlerFactory
             try
             {
                 foreach (var tool in await DrainAsync(
-                             funnelId, source, ct,
+                             funnelId, source,
                              (client, cursor, token) => client.ListToolsAsync(new ListToolsRequestParams { Cursor = cursor }, token),
-                             page => (page.Tools, page.NextCursor)))
+                             page => (page.Tools, page.NextCursor),
+                             ct))
                 {
                     if (!link.AllowsTool(tool.Name)) continue;
 
@@ -201,9 +202,10 @@ public sealed class McpFunnelHandlerFactory
             try
             {
                 foreach (var prompt in await DrainAsync(
-                             funnelId, source, ct,
+                             funnelId, source,
                              (client, cursor, token) => client.ListPromptsAsync(new ListPromptsRequestParams { Cursor = cursor }, token),
-                             page => (page.Prompts, page.NextCursor)))
+                             page => (page.Prompts, page.NextCursor),
+                             ct))
                 {
                     if (!link.AllowsPrompt(prompt.Name)) continue;
                     if (McpNameMapper.IsTruncated(source.Alias, prompt.Name)) continue;
@@ -261,9 +263,10 @@ public sealed class McpFunnelHandlerFactory
             try
             {
                 foreach (var resource in await DrainAsync(
-                             funnelId, source, ct,
+                             funnelId, source,
                              (client, cursor, token) => client.ListResourcesAsync(new ListResourcesRequestParams { Cursor = cursor }, token),
-                             page => (page.Resources, page.NextCursor)))
+                             page => (page.Resources, page.NextCursor),
+                             ct))
                 {
                     if (!link.AllowsResource(resource.Uri)) continue;
 
@@ -291,9 +294,10 @@ public sealed class McpFunnelHandlerFactory
             try
             {
                 foreach (var template in await DrainAsync(
-                             funnelId, source, ct,
+                             funnelId, source,
                              (client, cursor, token) => client.ListResourceTemplatesAsync(new ListResourceTemplatesRequestParams { Cursor = cursor }, token),
-                             page => (page.ResourceTemplates, page.NextCursor)))
+                             page => (page.ResourceTemplates, page.NextCursor),
+                             ct))
                 {
                     if (!link.AllowsResource(template.UriTemplate)) continue;
 
@@ -367,9 +371,9 @@ public sealed class McpFunnelHandlerFactory
     private async ValueTask<List<TItem>> DrainAsync<TPage, TItem>(
         Guid funnelId,
         McpSourceRecord source,
-        CancellationToken ct,
         Func<McpClient, string?, CancellationToken, ValueTask<TPage>> fetchPage,
-        Func<TPage, (IList<TItem> Items, string? NextCursor)> readPage)
+        Func<TPage, (IList<TItem> Items, string? NextCursor)> readPage,
+        CancellationToken ct)
     {
         var items = new List<TItem>();
         string? cursor = null;

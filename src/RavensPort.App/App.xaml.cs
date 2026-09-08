@@ -32,7 +32,7 @@ public partial class App : Application
     /// </summary>
     private const string ShowWindowEventName = "RavensPort_ShowWindow";
 
-    private static Mutex? _singleInstanceMutex;
+    private Mutex? _singleInstanceMutex;
 
     private WebApplication? _webApp;
     private TrayIconManager? _trayIconManager;
@@ -510,7 +510,7 @@ public partial class App : Application
                 _webApp.MapMcpFunnel();
 
                 _webApp.MapReverseProxy();
-                _webApp.Start();
+                await _webApp.StartAsync();
             });
         }
         catch (Exception ex)
@@ -558,14 +558,18 @@ public partial class App : Application
     /// </summary>
     private async Task DiscoverMcpSourcesAsync()
     {
+        // Reached only after OnStartup has built the host. Taken as a local rather than asserted
+        // with "!" twice: it states the ordering the same way and does not have to be right.
+        if (_webApp is not { } app) return;
+
         try
         {
-            await _webApp!.Services.GetRequiredService<McpFunnelViewModel>()
+            await app.Services.GetRequiredService<McpFunnelViewModel>()
                 .RefreshAllSourcesCommand.ExecuteAsync(null);
         }
         catch (Exception ex)
         {
-            _webApp!.Services.GetService<ActivityLog>()?.LogError("Startup MCP source discovery failed", ex);
+            app.Services.GetService<ActivityLog>()?.LogError("Startup MCP source discovery failed", ex);
         }
     }
 
@@ -652,7 +656,7 @@ public partial class App : Application
         // One last attempt first. The manager is often unlocked by now — the user may have
         // unlocked it for something else entirely — and warning about losing changes that could
         // simply have been written would be a poor way to find that out.
-        if (_webApp!.Services.GetService<VaultSyncQueue>() is { } syncQueue)
+        if (_webApp.Services.GetService<VaultSyncQueue>() is { } syncQueue)
         {
             try
             {

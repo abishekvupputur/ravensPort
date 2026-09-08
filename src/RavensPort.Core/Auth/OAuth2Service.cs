@@ -73,7 +73,7 @@ public sealed class OAuth2Service(
 
         if (IsGoogle(credential))
         {
-            return await googleOAuthService.StartAuthorizationAsync(credential, ct);
+            return await GoogleOAuthService.StartAuthorizationAsync(credential, ct);
         }
 
         // The browser owns its HttpListener per-invocation and always releases it, so there
@@ -210,7 +210,7 @@ public sealed class OAuth2Service(
         if (browser is not null)
         {
             options.Browser = browser;
-            options.RedirectUri = browser.RedirectUri;
+            options.RedirectUri = LoopbackBrowser.StaticRedirectUri;
         }
 
         if (!string.IsNullOrWhiteSpace(credential.Authority))

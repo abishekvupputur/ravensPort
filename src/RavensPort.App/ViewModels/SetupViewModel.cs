@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.App.Views;
@@ -36,6 +37,9 @@ public sealed partial class SetupViewModel(
     /// it — so the name has to go from the copy as well as from the card. See
     /// <see cref="BuildProfile"/>.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public string SupportedManagers =>
         BuildProfile.ProtonPassEnabled ? "1Password or Proton Pass" : "1Password";
 
@@ -66,6 +70,17 @@ public sealed partial class SetupViewModel(
 
     /// <summary>Raised when the gate opens, so the host can start the proxy.</summary>
     public event Func<Task>? ReadyToStart;
+
+    /// <summary>
+    /// The token every command on this page passes, spelled out rather than left to a default.
+    ///
+    /// None of these buttons can be cancelled. Each is a short, user-initiated probe guarded by
+    /// <see cref="IsBusy"/> — there is no cancel affordance next to them, and abandoning a
+    /// half-finished vault connection or creation is worse than waiting for it. The one flow that
+    /// can be interrupted is device-code sign-in, which owns <see cref="_signInCts"/> and passes
+    /// that token itself.
+    /// </summary>
+    private static readonly CancellationToken NotCancellable = CancellationToken.None;
 
     /// <summary>Set by the host when a vault connected after a disconnect could not be read.</summary>
     public void ReportReconnectFailure(string message) =>
@@ -107,7 +122,7 @@ public sealed partial class SetupViewModel(
                 _helloChecked = true;
             }
 
-            var status = await Task.Run(() => gate.EvaluateAsync(VaultProbeDepth.Discovery));
+            var status = await Task.Run(() => gate.EvaluateAsync(VaultProbeDepth.Discovery, NotCancellable), NotCancellable);
             Apply(status);
 
             if (status.IsReady) await StartAsync("Loading your configuration from the vault…");
@@ -138,49 +153,7 @@ public sealed partial class SetupViewModel(
     {
         if (IsBusy || IsSigningIn) return;
 
-        // Answered here rather than by attempting the connection: the SDK opens against a named
-        // account, so a blank name fails inside the runner and comes back as a CLI error on the
-        // card — which reads as "1Password refused" rather than "you have not filled the box in".
-        if (card.Kind == VaultBackendKind.OnePassword && !card.UsesServiceToken
-            && string.IsNullOrWhiteSpace(card.OnePasswordAccountName))
-        {
-            StatusMessage = "Enter your 1Password account name first — it is at the top of the "
-                            + "1Password desktop app's sidebar.";
-            return;
-        }
-
-        // The token has to reach the session before anything probes, because its presence is what
-        // selects the whole authentication mode — the runner reads it to decide whether to open the
-        // desktop app's channel or go straight to 1Password over the network.
-        if (card.Kind == VaultBackendKind.OnePassword && card.UsesServiceToken)
-        {
-            try
-            {
-                onePasswordSession.Unlock(card.ServiceToken);
-            }
-            catch (VaultCliException ex)
-            {
-                StatusMessage = ex.Message;
-                return;
-            }
-
-            // The SDK client is cached per authentication mode, so a switch between the desktop app
-            // and a token — or a corrected token after a refusal — would otherwise keep using the
-            // connection made for the previous one.
-            NativeCliRunner.ResetInitialization();
-
-            // Saved only once the token has been accepted, further down. Storing first would leave
-            // a typo behind Windows Hello and offer it back on every restart.
-            _saveTokenAfterConnect = card.RememberToken;
-        }
-        else if (card.Kind == VaultBackendKind.OnePassword && onePasswordSession.HasToken)
-        {
-            // Switching back to the desktop app. The token has to go, because holding one is what
-            // puts the runner in service-account mode — leaving it would mean pressing "Connect" on
-            // the desktop option and silently connecting as the service account instead.
-            onePasswordSession.Clear();
-            NativeCliRunner.ResetInitialization();
-        }
+        if (!PrepareOnePasswordSession(card)) return;
 
         IsBusy = true;
         StatusMessage = $"Connecting to {card.Name}…";
@@ -191,26 +164,22 @@ public sealed partial class SetupViewModel(
             // below needs, it lives behind a Hello gesture, and that gesture needs a foreground
             // window to attach to. Declining leaves the probe to report an unopened session, which
             // is the truth and comes with its own buttons.
-            var unlocked = false;
+            var needsGesture = card.Kind == VaultBackendKind.ProtonPass && CanUnlockWithHello;
+            var unlocked = needsGesture && UnlockWithHello();
 
-            if (card.Kind == VaultBackendKind.ProtonPass && CanUnlockWithHello)
+            if (needsGesture && !unlocked)
             {
-                if (!HelloConsentWindow.RequestUnlock(protonAuthenticator.UnlockWithHelloAsync))
-                {
-                    StatusMessage = "Not unlocked. Try Windows Hello again, or discard this session and sign in.";
-                    NotifySessionStateChanged();
-                    Apply(gate.Status);
-                    return;
-                }
-
-                unlocked = true;
-                NotifySessionStateChanged();
+                StatusMessage = "Not unlocked. Try Windows Hello again, or discard this session and sign in.";
+                Apply(gate.Status);
+                return;
             }
 
             // A successful unlock has already connected this manager — see
             // ProtonPassAuthenticator.UnlockWithHelloAsync — so probing again would be a second
             // round of CLI calls for an answer already on hand.
-            var status = unlocked ? gate.Status : await Task.Run(() => gate.ConnectAsync(card.Kind));
+            var status = unlocked
+                ? gate.Status
+                : await Task.Run(() => gate.ConnectAsync(card.Kind, NotCancellable), NotCancellable);
             Apply(status);
 
             // After the connection worked, never before. A token that 1Password refused is a typo or
@@ -234,6 +203,71 @@ public sealed partial class SetupViewModel(
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Puts the 1Password session into the mode this card is asking for, before anything probes:
+    /// its presence is what selects the whole authentication mode, and the runner reads it to
+    /// decide whether to open the desktop app's channel or go straight to 1Password over the
+    /// network. False means the card cannot be connected and the reason is already on screen.
+    /// </summary>
+    private bool PrepareOnePasswordSession(ManagerCardViewModel card)
+    {
+        if (card.Kind != VaultBackendKind.OnePassword) return true;
+
+        if (!card.UsesServiceToken)
+        {
+            // Answered here rather than by attempting the connection: the SDK opens against a named
+            // account, so a blank name fails inside the runner and comes back as a CLI error on the
+            // card — which reads as "1Password refused" rather than "you have not filled the box in".
+            if (string.IsNullOrWhiteSpace(card.OnePasswordAccountName))
+            {
+                StatusMessage = "Enter your 1Password account name first — it is at the top of the "
+                                + "1Password desktop app's sidebar.";
+                return false;
+            }
+
+            // Switching back to the desktop app. The token has to go, because holding one is what
+            // puts the runner in service-account mode — leaving it would mean pressing "Connect" on
+            // the desktop option and silently connecting as the service account instead.
+            if (onePasswordSession.HasToken)
+            {
+                onePasswordSession.Clear();
+                NativeCliRunner.ResetInitialization();
+            }
+
+            return true;
+        }
+
+        try
+        {
+            onePasswordSession.Unlock(card.ServiceToken);
+        }
+        catch (VaultCliException ex)
+        {
+            StatusMessage = ex.Message;
+            return false;
+        }
+
+        // The SDK client is cached per authentication mode, so a switch between the desktop app
+        // and a token — or a corrected token after a refusal — would otherwise keep using the
+        // connection made for the previous one.
+        NativeCliRunner.ResetInitialization();
+
+        // Saved only once the token has been accepted, further down. Storing first would leave a
+        // typo behind Windows Hello and offer it back on every restart.
+        _saveTokenAfterConnect = card.RememberToken;
+
+        return true;
+    }
+
+    /// <summary>The Hello gesture, with the state change it causes either way.</summary>
+    private bool UnlockWithHello()
+    {
+        var unlocked = HelloConsentWindow.RequestUnlock(protonAuthenticator.UnlockWithHelloAsync);
+        NotifySessionStateChanged();
+
+        return unlocked;
     }
 
     /// <summary>
@@ -324,7 +358,7 @@ public sealed partial class SetupViewModel(
             onePasswordSession.Unlock(token);
             NativeCliRunner.ResetInitialization();
 
-            var status = await Task.Run(() => gate.ConnectAsync(card.Kind));
+            var status = await Task.Run(() => gate.ConnectAsync(card.Kind, NotCancellable), NotCancellable);
             Apply(status);
 
             if (status.IsReady) await StartAsync($"Loading your configuration from {card.Name}…");
@@ -434,7 +468,7 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            var status = await Task.Run(() => gate.CreateVaultAsync(card.Kind, name));
+            var status = await Task.Run(() => gate.CreateVaultAsync(card.Kind, name, NotCancellable), NotCancellable);
             Apply(status);
 
             if (status.IsReady) await StartAsync($"Loading the '{name}' vault…");
@@ -478,7 +512,7 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            var status = await Task.Run(() => gate.UseExistingVaultAsync(card.Kind, name));
+            var status = await Task.Run(() => gate.UseExistingVaultAsync(card.Kind, name, NotCancellable), NotCancellable);
             Apply(status);
 
             if (status.IsReady) await StartAsync($"Loading the '{name}' vault…");
@@ -514,7 +548,7 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            var status = await Task.Run(() => gate.UseExistingVaultAsync(choice.Kind, choice.Name));
+            var status = await Task.Run(() => gate.UseExistingVaultAsync(choice.Kind, choice.Name, NotCancellable), NotCancellable);
             Apply(status);
 
             if (status.IsReady) await StartAsync($"Loading the '{choice.Name}' vault…");
@@ -549,9 +583,9 @@ public sealed partial class SetupViewModel(
         try
         {
             var vault = gate.Selected;
-            var store = await vault.LoadAsync();
+            var store = await vault.LoadAsync(NotCancellable);
             store.Settings.ListenPort = port;
-            await vault.SaveAsync(store);
+            await vault.SaveAsync(store, NotCancellable);
 
             HasPortConflict = false;
             await StartAsync($"Starting the proxy on port {port}…");
@@ -614,6 +648,9 @@ public sealed partial class SetupViewModel(
     /// <c>TypeDescriptor</c>, which does not enumerate static members, so a static one would bind
     /// to nothing and show an empty block where the explanation should be.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public string HelloRequiredMessage => ProtonPassAuthenticator.HelloRequired;
 
     /// <summary>
@@ -885,10 +922,10 @@ public sealed partial class SetupViewModel(
     /// </summary>
     private async Task StartAsync(string workingMessage)
     {
-        if (ReadyToStart is not { } handler) return;
+        if (ReadyToStart is null) return;
 
         StatusMessage = workingMessage;
-        await handler();
+        await ReadyToStart.Invoke();
     }
 
     private void Apply(VaultGateStatus status)

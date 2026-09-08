@@ -49,111 +49,124 @@ public sealed class CredentialInjectionTransformProvider(
 
         var credentials = ProxyConfigBuilder.ReadCredentials(metadata);
 
-        context.AddRequestTransform(async transformContext =>
+        context.AddRequestTransform(transformContext => AttachAsync(transformContext, credentials));
+        context.AddResponseTransform(transformContext => ReportAsync(transformContext, credentials));
+    }
+
+    /// <summary>
+    /// Everything that happens to a request on its way out: the caller's own authorization is
+    /// stripped, and each of the route's credentials is either attached or explained.
+    /// </summary>
+    private async ValueTask AttachAsync(
+        RequestTransformContext transformContext, IReadOnlyList<RouteCredential> credentials)
+    {
+        // Cleared unconditionally — whatever the route's placements are, and whether or not
+        // there is a token to attach. YARP copies request headers through by default, so
+        // leaving these alone would forward the caller's own Authorization header and cookies
+        // to the upstream, letting a local caller spend credentials (or an ambient browser
+        // session) it should not have been able to reach.
+        transformContext.ProxyRequest.Headers.Authorization = null;
+        transformContext.ProxyRequest.Headers.Remove("Cookie");
+
+        var attached = new List<string>();
+        var failed = new List<string>();
+
+        // Body placements are gathered rather than applied in the loop; see WriteBodyAsync.
+        var bodyFields = new List<KeyValuePair<string, string>>();
+        var bodyLabels = new List<string>();
+
+        foreach (var routeCredential in credentials)
         {
-            // Cleared unconditionally — whatever the route's placements are, and whether or not
-            // there is a token to attach. YARP copies request headers through by default, so
-            // leaving these alone would forward the caller's own Authorization header and cookies
-            // to the upstream, letting a local caller spend credentials (or an ambient browser
-            // session) it should not have been able to reach.
-            transformContext.ProxyRequest.Headers.Authorization = null;
-            transformContext.ProxyRequest.Headers.Remove("Cookie");
+            var injection = routeCredential.ToCredentialInjection();
+            var credential = configStoreCache.GetCredential(routeCredential.CredentialId);
+            var label = $"{credential?.Name ?? "(deleted credential)"} via {Describe(injection)}";
 
-            var attached = new List<string>();
-            var failed = new List<string>();
+            // Not credential.Token.AccessToken directly: this refreshes first if the token has
+            // already expired, so a request arriving between refresh-loop ticks (or after the
+            // machine slept through one) still goes out authenticated instead of 401-ing.
+            var token = await accessTokenProvider.GetAccessTokenAsync(
+                routeCredential.CredentialId, transformContext.HttpContext.RequestAborted);
 
-            // Body placements are gathered rather than applied in the loop; see WriteBodyAsync.
-            var bodyFields = new List<KeyValuePair<string, string>>();
-            var bodyLabels = new List<string>();
+            if (token is null)
+            {
+                failed.Add($"{label} (credential not connected)");
+                continue;
+            }
 
+            // A store written before query placements were withdrawn can still name one.
+            // Refused rather than downgraded to a header: the upstream expects the parameter
+            // and would reject a header it does not read, so quietly "fixing" it would turn a
+            // clear failure into a confusing one. Checked before the token is fetched so a
+            // route nobody can use does not keep refreshing a grant on every request.
+            if (!injection.IsPermitted)
+            {
+                failed.Add($"{label} (query-string placements are no longer permitted — "
+                           + "change it to a header or body field on the Routes tab)");
+                continue;
+            }
+
+            if (injection.Placement == CredentialPlacement.Body)
+            {
+                bodyFields.Add(new KeyValuePair<string, string>(injection.Name, injection.FormatValue(token)));
+                bodyLabels.Add(label);
+                continue;
+            }
+
+            if (Inject(transformContext, injection, token))
+            {
+                attached.Add(label);
+            }
+            else
+            {
+                failed.Add($"{label} (could not be attached)");
+            }
+        }
+
+        if (bodyFields.Count > 0)
+        {
+            var wrote = await RequestBodyCredentialInjector.TryInjectAsync(
+                transformContext, bodyFields, activityLog, string.Join(", ", bodyLabels));
+
+            (wrote ? attached : failed).AddRange(bodyLabels);
+        }
+
+        Log(transformContext, credentials.Count, attached, failed);
+    }
+
+    /// <summary>
+    /// Everything that happens on the way back: a 401 flags the route's credentials for the
+    /// refresh loop, and every response is logged with what the upstream answered.
+    /// </summary>
+    private ValueTask ReportAsync(
+        ResponseTransformContext transformContext, IReadOnlyList<RouteCredential> credentials)
+    {
+        var status = transformContext.ProxyResponse?.StatusCode;
+        var request = transformContext.HttpContext.Request;
+
+        // The request body has already been streamed upstream by this point, so replaying
+        // it here is not possible. Flagging the credentials is the next best thing: the
+        // periodic loop picks them up and the user sees "Needs reconnect" in the UI, instead
+        // of silent 401s with no indication of which credential went bad.
+        //
+        // Every credential on the route is flagged because a 401 does not say which of them
+        // the upstream objected to.
+        if (status == System.Net.HttpStatusCode.Unauthorized)
+        {
             foreach (var routeCredential in credentials)
             {
-                var injection = routeCredential.ToCredentialInjection();
-                var credential = configStoreCache.GetCredential(routeCredential.CredentialId);
-                var label = $"{credential?.Name ?? "(deleted credential)"} via {Describe(injection)}";
+                if (configStoreCache.GetCredential(routeCredential.CredentialId) is not { } credential) continue;
 
-                // Not credential.Token.AccessToken directly: this refreshes first if the token has
-                // already expired, so a request arriving between refresh-loop ticks (or after the
-                // machine slept through one) still goes out authenticated instead of 401-ing.
-                var token = await accessTokenProvider.GetAccessTokenAsync(
-                    routeCredential.CredentialId, transformContext.HttpContext.RequestAborted);
-
-                if (token is null)
-                {
-                    failed.Add($"{label} (credential not connected)");
-                    continue;
-                }
-
-                // A store written before query placements were withdrawn can still name one.
-                // Refused rather than downgraded to a header: the upstream expects the parameter
-                // and would reject a header it does not read, so quietly "fixing" it would turn a
-                // clear failure into a confusing one. Checked before the token is fetched so a
-                // route nobody can use does not keep refreshing a grant on every request.
-                if (!injection.IsPermitted)
-                {
-                    failed.Add($"{label} (query-string placements are no longer permitted — "
-                               + "change it to a header or body field on the Routes tab)");
-                    continue;
-                }
-
-                if (injection.Placement == CredentialPlacement.Body)
-                {
-                    bodyFields.Add(new KeyValuePair<string, string>(injection.Name, injection.FormatValue(token)));
-                    bodyLabels.Add(label);
-                    continue;
-                }
-
-                if (Inject(transformContext, injection, token))
-                {
-                    attached.Add(label);
-                }
-                else
-                {
-                    failed.Add($"{label} (could not be attached)");
-                }
+                activityLog.Log(
+                    $"AUTH '{credential.Name}' rejected by upstream (401) — token refresh will be retried, "
+                    + "reconnect if this repeats");
+                credential.NeedsReconnect = credential.Token?.RefreshToken is null;
             }
+        }
 
-            if (bodyFields.Count > 0)
-            {
-                var wrote = await RequestBodyCredentialInjector.TryInjectAsync(
-                    transformContext, bodyFields, activityLog, string.Join(", ", bodyLabels));
-
-                (wrote ? attached : failed).AddRange(bodyLabels);
-            }
-
-            Log(transformContext, credentials.Count, attached, failed);
-        });
-
-        context.AddResponseTransform(transformContext =>
-        {
-            var status = transformContext.ProxyResponse?.StatusCode;
-            var request = transformContext.HttpContext.Request;
-
-            // The request body has already been streamed upstream by this point, so replaying
-            // it here is not possible. Flagging the credentials is the next best thing: the
-            // periodic loop picks them up and the user sees "Needs reconnect" in the UI, instead
-            // of silent 401s with no indication of which credential went bad.
-            //
-            // Every credential on the route is flagged because a 401 does not say which of them
-            // the upstream objected to.
-            if (status == System.Net.HttpStatusCode.Unauthorized)
-            {
-                foreach (var routeCredential in credentials)
-                {
-                    if (configStoreCache.GetCredential(routeCredential.CredentialId) is not { } credential) continue;
-
-                    activityLog.Log(
-                        $"AUTH '{credential.Name}' rejected by upstream (401) — token refresh will be retried, "
-                        + "reconnect if this repeats");
-                    credential.NeedsReconnect = credential.Token?.RefreshToken is null;
-                }
-            }
-
-            activityLog.Log(
-                $"  <- {(status is null ? "no response (upstream unreachable)" : ((int)status).ToString())}"
-                + $"{DescribeContentType(transformContext.ProxyResponse)} for {request.Method} {LogSafePath(request)}");
-            return ValueTask.CompletedTask;
-        });
+        activityLog.Log(
+            $"  <- {(status is null ? "no response (upstream unreachable)" : ((int)status).ToString())}"
+            + $"{DescribeContentType(transformContext.ProxyResponse)} for {request.Method} {LogSafePath(request)}");
+        return ValueTask.CompletedTask;
     }
 
     private static string Describe(CredentialInjection injection) =>
@@ -166,7 +179,7 @@ public sealed class CredentialInjectionTransformProvider(
     /// indistinguishable log lines.
     /// </summary>
     private void Log(
-        RequestTransformContext context, int configured, IReadOnlyList<string> attached, IReadOnlyList<string> failed)
+        RequestTransformContext context, int configured, List<string> attached, List<string> failed)
     {
         var request = context.HttpContext.Request;
         var head = $"PROXY {request.Method} {LogSafePath(request)} -> {context.DestinationPrefix}";

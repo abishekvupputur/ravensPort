@@ -273,7 +273,7 @@ public sealed class VaultGateService
         await ProviderFor(kind).CreateVaultAsync(vaultName, ct);
         _activityLog.Log($"STARTUP created the '{ProviderFor(kind).VaultName}' vault in {VaultLockGuidance.DisplayName(kind)}");
 
-        return await ResolveAfterUserChoiceAsync(kind, ct);
+        return await ResolveAfterUserChoiceAsync(kind);
     }
 
     /// <summary>
@@ -289,7 +289,7 @@ public sealed class VaultGateService
 
         await ProviderFor(kind).UseExistingVaultAsync(vaultName, ct);
 
-        return await ResolveAfterUserChoiceAsync(kind, ct);
+        return await ResolveAfterUserChoiceAsync(kind);
     }
 
     /// <summary>
@@ -327,7 +327,7 @@ public sealed class VaultGateService
     /// that this provider can open the vault; probing both managers again would repeat the costly
     /// tie-break reads and can only replace the user's explicit choice with the other manager.
     /// </summary>
-    private Task<VaultGateStatus> ResolveAfterUserChoiceAsync(VaultBackendKind kind, CancellationToken ct) =>
+    private Task<VaultGateStatus> ResolveAfterUserChoiceAsync(VaultBackendKind kind) =>
         Task.FromResult(SelectBackend(kind));
 
     /// <summary>

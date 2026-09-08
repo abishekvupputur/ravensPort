@@ -452,9 +452,13 @@ public class HelloCredentialBindingTests : IDisposable
     [Fact]
     public async Task Forget_DoesNotThrow_WhenThereIsNothingToForget()
     {
-        // Sign-out calls it unconditionally, and a sign-out is never allowed to fail.
-        await Protector.ForgetAsync(SessionDir);
-        await Protector.ForgetAsync(SessionDir);
+        // Sign-out calls it unconditionally, and a sign-out is never allowed to fail. Twice,
+        // because the second call is the one with nothing left to forget.
+        Assert.Null(await Record.ExceptionAsync(async () =>
+        {
+            await Protector.ForgetAsync(SessionDir);
+            await Protector.ForgetAsync(SessionDir);
+        }));
     }
 
     // ---- Migration off the old file layout ---------------------------------------------------

@@ -28,6 +28,11 @@ public sealed record GoogleServiceAccountKey(
     /// console produces has one; this keeps a hand-trimmed file working rather than failing with
     /// a null URL deep inside the client library.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Minor Code Smell", "S1075:URIs should not be hardcoded",
+        Justification = "Google's own published token endpoint, and the fallback for a key file "
+                        + "that omits it. Making it configurable would let a malformed file point "
+                        + "the token exchange somewhere else, which is the opposite of what this is for.")]
     public const string DefaultTokenUri = "https://oauth2.googleapis.com/token";
 
     /// <summary>The <c>type</c> a service account key file declares. Any other value is a different file.</summary>

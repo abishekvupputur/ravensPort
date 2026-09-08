@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -6,39 +7,60 @@ using System.Text.Json.Nodes;
 
 namespace RavensPort.Core.Vault;
 
-public static class OnePasswordNativeClient
+public static partial class OnePasswordNativeClient
 {
     private const string DllName = "onepassword.dll";
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr InitializeOP([MarshalAs(UnmanagedType.LPUTF8Str)] string accountName);
+    // LibraryImport rather than DllImport, so the marshalling is generated at compile time instead
+    // of being built by the runtime on first call. The reason it matters here is the string
+    // encoding: every one of these takes UTF-8, because the other side is Go, and DllImport had to
+    // be told that a parameter at a time with [MarshalAs(UnmanagedType.LPUTF8Str)]. Stating it once
+    // per import removes fourteen chances to forget one, and forgetting one does not fail to
+    // compile — it silently hands Go a UTF-16 buffer.
+    //
+    // Cdecl is spelled out even though it is the same ABI as stdcall on x64, which is the only
+    // architecture this DLL is built for: it is what the Go side declares, and an ARM64 build
+    // would care.
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr InitializeOPServiceAccount([MarshalAs(UnmanagedType.LPUTF8Str)] string token);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr InitializeOP(string accountName);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr VaultList();
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr InitializeOPServiceAccount(string token);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr VaultCreate([MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string description);
+    [LibraryImport(DllName)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr VaultList();
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr ItemList([MarshalAs(UnmanagedType.LPUTF8Str)] string vaultId);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr VaultCreate(string name, string description);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr ItemGet([MarshalAs(UnmanagedType.LPUTF8Str)] string vaultId, [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr ItemList(string vaultId);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr ItemCreate([MarshalAs(UnmanagedType.LPUTF8Str)] string vaultId, [MarshalAs(UnmanagedType.LPUTF8Str)] string itemJson);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr ItemGet(string vaultId, string itemId);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr ItemEdit([MarshalAs(UnmanagedType.LPUTF8Str)] string vaultId, [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId, [MarshalAs(UnmanagedType.LPUTF8Str)] string itemJson);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr ItemCreate(string vaultId, string itemJson);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr ItemDelete([MarshalAs(UnmanagedType.LPUTF8Str)] string vaultId, [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr ItemEdit(string vaultId, string itemId, string itemJson);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void FreeString(IntPtr ptr);
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr ItemDelete(string vaultId, string itemId);
+
+    [LibraryImport(DllName)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial void FreeString(IntPtr ptr);
 
     private static string? GetStringAndFree(IntPtr ptr)
     {

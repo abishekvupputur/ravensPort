@@ -289,6 +289,15 @@ public sealed partial class McpFunnelSourceItemViewModel : ObservableObject
 {
     private readonly McpFunnelRecord _funnel;
     private readonly Action<string> _onChanged;
+    /// <summary>
+    /// True from the first instruction, not from the end of the constructor. The Load calls below
+    /// raise change notifications that reach <see cref="Persist"/>, and this is what makes those
+    /// no-ops — so the initializer is load-bearing even though the constructor also assigns it.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Minor Code Smell", "S3604:Member initializer values should not be redundant",
+        Justification = "The constructor's assignment is at its end; this value is what guards the "
+                        + "Load calls in between.")]
     private bool _loading = true;
 
     public McpFunnelSourceItemViewModel(

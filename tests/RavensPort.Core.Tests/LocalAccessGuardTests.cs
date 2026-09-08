@@ -86,7 +86,7 @@ public class LocalAccessGuardTests : IAsyncLifetime
                         app.Run(async context =>
                         {
                             // Stand-in for a proxied upstream that answers with permissive CORS.
-                            context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+                            context.Response.Headers.AccessControlAllowOrigin = "*";
 
                             // Echoed back so tests can assert on exactly what an upstream would
                             // have received in its own logs.

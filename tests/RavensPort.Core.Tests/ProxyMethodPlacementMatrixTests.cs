@@ -423,7 +423,7 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
     /// Content that reports no length, so it goes on the wire chunked — the shape every MCP
     /// client produces.
     /// </summary>
-    private static HttpContent ChunkedJson(string body)
+    private static StreamContent ChunkedJson(string body)
     {
         var content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(body)));
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
@@ -469,7 +469,7 @@ public class ProxyMethodPlacementMatrixTests : IAsyncLifetime
     /// <summary>Bodies are sent on the verbs that carry them, and omitted on the ones that do not.</summary>
     private static bool HasBody(string method) => method is "POST" or "PUT" or "PATCH";
 
-    private static HttpContent? WithJsonBody(string method) => HasBody(method)
+    private static StringContent? WithJsonBody(string method) => HasBody(method)
         ? new StringContent("""{"field":"value"}""", Encoding.UTF8, "application/json")
         : null;
 

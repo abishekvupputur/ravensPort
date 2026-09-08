@@ -97,6 +97,6 @@ public static class McpFunnelEndpoints
     private static async Task NotFound(HttpContext context)
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
-        await context.Response.WriteAsync("No such MCP funnel endpoint.");
+        await context.Response.WriteAsync("No such MCP funnel endpoint.", context.RequestAborted);
     }
 }

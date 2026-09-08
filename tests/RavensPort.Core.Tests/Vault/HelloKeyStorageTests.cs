@@ -112,7 +112,7 @@ public class HelloKeyStorageTests : IDisposable
     public void CredentialStore_Delete_IsSilent_WhenNothingIsStored()
     {
         // Sign-out calls this unconditionally and must not fail because there was nothing to remove.
-        _store.Delete($"RavensPort.Test.{Guid.NewGuid():N}");
+        Assert.Null(Record.Exception(() => _store.Delete($"RavensPort.Test.{Guid.NewGuid():N}")));
     }
 
     // ---- Naming -------------------------------------------------------------------------------

@@ -28,7 +28,7 @@ namespace RavensPort.Core.Vault;
 /// <see cref="AuthenticodeTrustPolicy"/> asks about. Anything that later needs to verify a Windows
 /// component would have to add the catalog lookup as well.
 /// </summary>
-public static class ExecutableSignature
+public static partial class ExecutableSignature
 {
     /// <summary>WINTRUST_ACTION_GENERIC_VERIFY_V2 — the standard Authenticode policy.</summary>
     private static readonly Guid GenericVerifyV2 = new("00AAC56B-CD44-11D0-8CC2-00C04FC295EE");
@@ -108,7 +108,10 @@ public static class ExecutableSignature
                 closing.dwStateAction = StateActionClose;
                 Marshal.StructureToPtr(closing, dataBlock, fDeleteOld: false);
 
-                WinVerifyTrust(IntPtr.Zero, GenericVerifyV2, dataBlock);
+                // Discarded deliberately. The verdict is already in `result`; this call exists to
+                // hand back the state the verify allocated, and there is nothing useful to do in a
+                // finally block if closing it fails.
+                _ = WinVerifyTrust(IntPtr.Zero, GenericVerifyV2, dataBlock);
             }
 
             return result == 0
@@ -222,9 +225,11 @@ public static class ExecutableSignature
         _ => $"failed signature verification (0x{(uint)result:X8})",
     };
 
-    [DllImport("wintrust.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int WinVerifyTrust(
-        IntPtr hwnd, [MarshalAs(UnmanagedType.LPStruct)] Guid pgActionID, IntPtr pWVTData);
+    // `in Guid` rather than [MarshalAs(UnmanagedType.LPStruct)]: the native signature is the same
+    // pointer-to-GUID either way, and LPStruct is one of the marshalling directives LibraryImport
+    // does not generate.
+    [LibraryImport("wintrust.dll", SetLastError = false)]
+    private static partial int WinVerifyTrust(IntPtr hwnd, in Guid pgActionID, IntPtr pWVTData);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WinTrustFileInfo

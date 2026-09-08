@@ -231,36 +231,18 @@ public sealed class DeviceCodeService : IDisposable
 
         while (true)
         {
-            // Waits before the first poll on purpose: the user cannot possibly have approved
-            // anything yet, and an immediate request only earns a slow_down.
-            try
-            {
-                await Task.Delay(interval, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                return new AuthorizationOutcome(false, "cancelled", "Waiting for the code was cancelled.");
-            }
-
-            if (DateTimeOffset.UtcNow >= deadline)
-            {
-                return new AuthorizationOutcome(false, "expired_token",
-                    "The code expired before it was approved. Start again to get a new one.");
-            }
+            if (await WaitForNextPollAsync(interval, deadline, ct) is { } stopped) return stopped;
 
             TokenResponse response;
             try
             {
-                var request = new DeviceTokenRequest
-                {
-                    Address = credential.TokenEndpoint!.Trim(),
-                    DeviceCode = deviceCode,
-                };
-
-                ApplyClientIdentity(request, credential);
-                response = await _httpClient.RequestDeviceTokenAsync(request, ct);
+                response = await RequestTokenAsync(credential, deviceCode, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
+            {
+                return Cancelled;
+            }
+            catch (Exception ex)
             {
                 // One failed poll is not a failed sign-in — a dropped connection mid-wait is
                 // ordinary, and the user is still standing at the other device. Keep waiting;
@@ -268,62 +250,107 @@ public sealed class DeviceCodeService : IDisposable
                 _activityLog.LogError($"Device code poll for '{credential.Name}' threw — still waiting", ex);
                 continue;
             }
-            catch (OperationCanceledException)
-            {
-                return new AuthorizationOutcome(false, "cancelled", "Waiting for the code was cancelled.");
-            }
 
-            if (!response.IsError)
-            {
-                if (string.IsNullOrEmpty(response.AccessToken))
-                {
-                    return new AuthorizationOutcome(false, "no_token",
-                        "The provider approved the code but returned no access token.");
-                }
-
-                credential.Token = new TokenSet(
-                    response.AccessToken,
-                    string.IsNullOrEmpty(response.RefreshToken) ? null : response.RefreshToken,
-                    response.ExpiresIn > 0 ? DateTimeOffset.UtcNow.AddSeconds(response.ExpiresIn) : null,
-                    string.IsNullOrEmpty(response.TokenType) ? "Bearer" : response.TokenType,
-                    DateTimeOffset.UtcNow);
-                credential.NeedsReconnect = false;
-
-                _activityLog.Log($"DEVICE '{credential.Name}' approved — {credential.Token.DescribeExpiry()}"
-                                 + (credential.Token.RefreshToken is null
-                                     ? " (no refresh token issued — it will need reconnecting when it expires)"
-                                     : ""));
-
-                return new AuthorizationOutcome(true, null, null);
-            }
+            if (!response.IsError) return Accept(credential, response);
 
             var (error, description) = TokenErrorReader.Read(response);
 
-            switch (error)
-            {
-                // Nobody has typed the code yet. The expected answer for most of this loop.
-                case "authorization_pending":
-                    continue;
+            // Polling too fast. The increment is mandatory and cumulative — ignoring it is how a
+            // provider ends up refusing outright.
+            if (error == "slow_down") interval += SlowDownIncrement;
 
-                // Polling too fast. The increment is mandatory and cumulative — ignoring it is
-                // how a provider ends up refusing outright.
-                case "slow_down":
-                    interval += SlowDownIncrement;
-                    continue;
+            // The other one is "nobody has typed the code yet", the expected answer for most of
+            // this loop. Both mean the same thing here: ask again.
+            if (error is "slow_down" or "authorization_pending") continue;
 
-                case "access_denied":
-                    return new AuthorizationOutcome(false, error,
-                        "The request was declined at the provider.");
-
-                case "expired_token":
-                    return new AuthorizationOutcome(false, error,
-                        "The code expired before it was approved. Start again to get a new one.");
-
-                default:
-                    _activityLog.Log($"DEVICE '{credential.Name}' poll failed: {error} {description}".Trim());
-                    return new AuthorizationOutcome(false, error, description);
-            }
+            return Refuse(credential, error, description);
         }
+    }
+
+    /// <summary>Cancellation, phrased once: two places reach it and have to say the same thing.</summary>
+    private static AuthorizationOutcome Cancelled { get; } =
+        new(false, "cancelled", "Waiting for the code was cancelled.");
+
+    /// <inheritdoc cref="Cancelled"/>
+    private static AuthorizationOutcome Expired { get; } =
+        new(false, "expired_token", "The code expired before it was approved. Start again to get a new one.");
+
+    /// <summary>
+    /// Sleeps until the next poll is due. Returns the outcome that ends the wait — cancelled, or
+    /// out of time — or null when it is time to ask again.
+    ///
+    /// Waits before the first poll on purpose: the user cannot possibly have approved anything
+    /// yet, and an immediate request only earns a slow_down.
+    /// </summary>
+    private static async Task<AuthorizationOutcome?> WaitForNextPollAsync(
+        TimeSpan interval, DateTimeOffset deadline, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(interval, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return Cancelled;
+        }
+
+        return DateTimeOffset.UtcNow >= deadline ? Expired : null;
+    }
+
+    private async Task<TokenResponse> RequestTokenAsync(
+        CredentialRecord credential, string deviceCode, CancellationToken ct)
+    {
+        var request = new DeviceTokenRequest
+        {
+            Address = credential.TokenEndpoint!.Trim(),
+            DeviceCode = deviceCode,
+        };
+
+        ApplyClientIdentity(request, credential);
+        return await _httpClient.RequestDeviceTokenAsync(request, ct);
+    }
+
+    /// <summary>Stores an approved token, or reports that the provider approved without issuing one.</summary>
+    private AuthorizationOutcome Accept(CredentialRecord credential, TokenResponse response)
+    {
+        if (string.IsNullOrEmpty(response.AccessToken))
+        {
+            return new AuthorizationOutcome(false, "no_token",
+                "The provider approved the code but returned no access token.");
+        }
+
+        credential.Token = new TokenSet(
+            response.AccessToken,
+            string.IsNullOrEmpty(response.RefreshToken) ? null : response.RefreshToken,
+            response.ExpiresIn > 0 ? DateTimeOffset.UtcNow.AddSeconds(response.ExpiresIn) : null,
+            string.IsNullOrEmpty(response.TokenType) ? "Bearer" : response.TokenType,
+            DateTimeOffset.UtcNow);
+        credential.NeedsReconnect = false;
+
+        _activityLog.Log($"DEVICE '{credential.Name}' approved — {credential.Token.DescribeExpiry()}"
+                         + (credential.Token.RefreshToken is null
+                             ? " (no refresh token issued — it will need reconnecting when it expires)"
+                             : ""));
+
+        return new AuthorizationOutcome(true, null, null);
+    }
+
+    /// <summary>
+    /// The answers that end the wait without a token. Only the unrecognised ones are logged: a
+    /// decline and an expiry are the provider answering the user, and both are already on their
+    /// way to the UI with wording of their own.
+    /// </summary>
+    private AuthorizationOutcome Refuse(CredentialRecord credential, string? error, string? description) => error switch
+    {
+        "access_denied" => new AuthorizationOutcome(false, error, "The request was declined at the provider."),
+        "expired_token" => Expired,
+        _ => LogAndRefuse(credential, error, description),
+    };
+
+    private AuthorizationOutcome LogAndRefuse(CredentialRecord credential, string? error, string? description)
+    {
+        _activityLog.Log($"DEVICE '{credential.Name}' poll failed: {error} {description}".Trim());
+        return new AuthorizationOutcome(false, error, description);
     }
 
     /// <summary>

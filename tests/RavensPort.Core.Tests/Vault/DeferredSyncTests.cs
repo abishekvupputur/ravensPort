@@ -317,7 +317,7 @@ public class DeferredSyncTests : IDisposable
             ? Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
             : [];
 
-    private async Task<(ConfigStoreCache Cache, SwitchableVault Vault)> LockedAsync(ConfigStore? seed = null)
+    private static async Task<(ConfigStoreCache Cache, SwitchableVault Vault)> LockedAsync(ConfigStore? seed = null)
     {
         var vault = new SwitchableVault();
         if (seed is not null) await vault.SaveAsync(seed);
@@ -433,6 +433,10 @@ public class DeferredSyncTests : IDisposable
     public void Dispose()
     {
         try { Directory.Delete(_logPath, recursive: true); } catch { /* best effort */ }
+
+        // Nothing here has a finalizer, but the pattern is what CA1816 asks for and what a
+        // derived test fixture would need if one ever did.
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>

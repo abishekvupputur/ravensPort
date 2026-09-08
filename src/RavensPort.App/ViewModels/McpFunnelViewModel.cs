@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Diagnostics;
@@ -51,6 +52,9 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private ProxyKeyLifetime _newFunnelKeyLifetime = ProxyKeyLifetime.Never;
 
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public IReadOnlyList<ProxyKeyLifetime> KeyLifetimes => ProxyKeyLifetime.All;
 
     [ObservableProperty] private McpFunnelItemViewModel? _selectedFunnel;
