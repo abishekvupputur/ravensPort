@@ -10,6 +10,19 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/abishekvupputur/ravensPort/actions/workflows/coverage.yml"><img alt="Build status"
+    src="https://img.shields.io/github/actions/workflow/status/abishekvupputur/ravensPort/coverage.yml?branch=main&label=build&logo=githubactions&logoColor=white&style=flat-square"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=abishekvupputur_ravensPort"><img alt="SonarCloud quality gate"
+    src="https://img.shields.io/sonar/quality_gate/abishekvupputur_ravensPort?label=quality%20gate&server=https%3A%2F%2Fsonarcloud.io&logo=sonarqubecloud&logoColor=white&style=flat-square"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=abishekvupputur_ravensPort"><img alt="Line coverage"
+    src="https://img.shields.io/sonar/coverage/abishekvupputur_ravensPort?server=https%3A%2F%2Fsonarcloud.io&logo=sonarqubecloud&logoColor=white&style=flat-square"></a>
+  <a href="../../releases"><img alt="Latest release"
+    src="https://img.shields.io/github/v/release/abishekvupputur/ravensPort?label=release&logo=github&logoColor=white&style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT licence"
+    src="https://img.shields.io/github/license/abishekvupputur/ravensPort?label=licence&color=blue&style=flat-square"></a>
+</p>
+
+<p align="center">
   <code>winget install RavensPort</code>
 </p>
 
