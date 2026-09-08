@@ -155,12 +155,13 @@ public sealed class InMemoryVault : IConfigVault
         return Task.CompletedTask;
     }
 
-    /// <summary>Records the name. There is only ever one vault here, and it is always usable.</summary>
-    public Task UseExistingVaultAsync(string vaultName, CancellationToken ct = default)
-    {
-        VaultName = vaultName;
-        return Task.CompletedTask;
-    }
+    /// <summary>
+    /// Records the name. Identical to <see cref="CreateVaultAsync"/> on purpose: there is only ever
+    /// one vault here, it always exists, and it is always usable — so "make me one" and "open the
+    /// one I have" are the same act, and the distinction only matters to a real backend.
+    /// </summary>
+    public Task UseExistingVaultAsync(string vaultName, CancellationToken ct = default) =>
+        CreateVaultAsync(vaultName, ct);
 
     /// <summary>
     /// Nothing to forget: this vault <em>is</em> its storage, so dropping the items would destroy

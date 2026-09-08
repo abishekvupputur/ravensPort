@@ -262,12 +262,7 @@ public static class LocalAccessGuard
     {
         if (path.Value is not { } value || !value.Contains("..", StringComparison.Ordinal)) return false;
 
-        foreach (var segment in value.Split('/'))
-        {
-            if (segment == "..") return true;
-        }
-
-        return false;
+        return value.Split('/').Any(segment => segment == "..");
     }
 
     /// <summary>Length-independent, content-constant-time comparison — no early exit to time against.</summary>

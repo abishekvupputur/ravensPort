@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -42,6 +43,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// Instance rather than static because WPF's {Binding} reads instance members off the
     /// DataContext; a static would need {x:Static} at every use site.
     /// </summary>
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public bool IsMtlsAvailable => BuildProfile.MtlsEnabled;
     [ObservableProperty] private string _recentActivity = "";
     [ObservableProperty] private string _statusMessage = "Ready.";
@@ -153,6 +157,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Nine collaborators because the Settings tab is nine features — the vault "
+                        + "gate, the sync queue, the integrity check, both managers' sessions, the "
+                        + "proxy notifier and the MCP pool. They are resolved by the container, so "
+                        + "folding them into a parameter object would move the list one file away "
+                        + "without removing a single dependency. Splitting the tab is the real fix "
+                        + "and is not a rename.")]
     public SettingsViewModel(
         ConfigStoreCache configStoreCache,
         ActivityLog activityLog,
@@ -339,11 +350,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         // RavensPort at a vault of their own, nothing else on screen says which one it went to.
         PasswordManagerSummary = $"{manager} — vault '{_gate.Selected.VaultName}'";
 
-        PasswordManagerDetail = status?.ExePath is { Length: > 0 } path
-            ? status.Version is { Length: > 0 } version ? $"{path}  (v{version})" : path
-            : "";
+        PasswordManagerDetail = DescribeExecutable(status);
 
         VaultSyncSummary = DescribeSync(manager);
+    }
+
+    /// <summary>Where the manager's CLI was found, with its version when the probe read one.</summary>
+    private static string DescribeExecutable(VaultStatus? status)
+    {
+        if (status?.ExePath is not { Length: > 0 } path) return "";
+
+        return status.Version is { Length: > 0 } version ? $"{path}  (v{version})" : path;
     }
 
     private string DescribeSync(string manager)
@@ -377,7 +394,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// changes used to be a no-op that left a credential on screen the vault no longer had. The
     /// re-read drops it and queues the corrected configuration, which the push below then writes.
     /// </summary>
-    public bool CanSyncNow => false;
+    public static bool CanSyncNow => false;
 
     [RelayCommand(CanExecute = nameof(CanSyncNow))]
     private async Task SyncNowAsync()
@@ -412,9 +429,16 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         var saved = await _syncQueue.FlushAsync(TimeSpan.FromSeconds(30));
 
-        StatusMessage = saved
-            ? _configStoreCache.LastLoadNotice is { } notice ? $"Saved. {notice}" : "Saved."
-            : _syncQueue.LastError ?? "Could not save — the password manager is locked or unavailable.";
+        if (!saved)
+        {
+            StatusMessage = _syncQueue.LastError ?? "Could not save — the password manager is locked or unavailable.";
+        }
+        else
+        {
+            // The notice is whatever the last load had to say about the vault — a repaired item, a
+            // dropped one. It belongs after "Saved." rather than instead of it.
+            StatusMessage = _configStoreCache.LastLoadNotice is { } notice ? $"Saved. {notice}" : "Saved.";
+        }
 
         RefreshVaultStatus();
     }
@@ -909,7 +933,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             // Disposed: X509Certificate2 holds an OS key handle, and the container is only removed
             // when the last one closes. A tab that leaked one per visit would leave key files
             // behind for the life of the process.
-            using var certificate = MtlsCertificateFactory.Load(pfx!, settings.MtlsClientCertificatePassword);
+            using var certificate = MtlsCertificateFactory.Load(pfx, settings.MtlsClientCertificatePassword);
 
             var remaining = certificate.NotAfter.ToUniversalTime() - DateTime.UtcNow;
             var expiresOn = certificate.NotAfter.ToLocalTime().ToString("d MMMM yyyy");
@@ -1004,11 +1028,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             IsMtlsRestartRequired = true;
             RefreshCertificateExpiry();
-            StatusMessage = value
-                ? CertificateExpired
-                    ? "mTLS enabled, but the stored certificate is past its expiry date. The listener will bind and then refuse every caller — the MCP funnel included — during the TLS handshake. Generate a new certificate and install it everywhere before restarting."
-                    : "mTLS enabled. Restart RavensPort for the change to take effect."
-                : "mTLS disabled. Restart RavensPort for the change to take effect.";
+            StatusMessage = (value, CertificateExpired) switch
+            {
+                (true, true) => "mTLS enabled, but the stored certificate is past its expiry date. The listener will bind and then refuse every caller — the MCP funnel included — during the TLS handshake. Generate a new certificate and install it everywhere before restarting.",
+                (true, false) => "mTLS enabled. Restart RavensPort for the change to take effect.",
+                _ => "mTLS disabled. Restart RavensPort for the change to take effect.",
+            };
         }
         catch (Exception ex)
         {

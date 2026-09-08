@@ -179,7 +179,7 @@ public sealed class TokenRefreshService(
     /// <summary>Keeps the dictionary from growing across a long uptime of add/delete cycles.</summary>
     private void PruneBackoffForDeletedCredentials()
     {
-        if (_backoff.Count == 0) return;
+        if (_backoff.IsEmpty) return;
 
         var live = configStoreCache.Current.Credentials.Select(c => c.Id).ToHashSet();
         foreach (var id in _backoff.Keys.Where(id => !live.Contains(id)).ToList())

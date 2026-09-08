@@ -68,7 +68,7 @@ public sealed class HelloKeyProtector
         _store = store;
     }
 
-    private static ISecretStore NewDefaultStore()
+    private static WindowsCredentialStore NewDefaultStore()
     {
         if (!OperatingSystem.IsWindows())
         {

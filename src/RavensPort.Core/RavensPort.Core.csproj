@@ -4,6 +4,14 @@
     <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!--
+      Required by the LibraryImport source generator, not by any code written here: the P/Invoke
+      stubs it emits for WindowsCredentialStore, ExecutableSignature and the 1Password DLL are
+      generated with `unsafe` bodies. Nothing in this project's own source uses a pointer, and the
+      generator replaces hand-written marshalling that was less safe than what it produces.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

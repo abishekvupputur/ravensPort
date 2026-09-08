@@ -214,5 +214,9 @@ public class ExecutableTrustTests : IDisposable
         Environment.SetEnvironmentVariable(VaultProbe.OnePasswordPathVariable, null);
 
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+
+        // Nothing here has a finalizer, but the pattern is what CA1816 asks for and what a
+        // derived test fixture would need if one ever did.
+        GC.SuppressFinalize(this);
     }
 }

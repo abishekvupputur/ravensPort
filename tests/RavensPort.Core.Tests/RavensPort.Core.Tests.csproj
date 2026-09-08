@@ -7,6 +7,12 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+
+    <!--
+      For the LibraryImport stub behind LegacyStorePurgeTests.CreateHardLinkW; see the same
+      property in RavensPort.Core.csproj.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

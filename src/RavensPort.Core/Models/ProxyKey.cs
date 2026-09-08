@@ -96,11 +96,14 @@ public sealed class ProxyKey
 
         var remaining = expiry - now;
 
-        var span = remaining.TotalDays >= 1
-            ? $"{(int)remaining.TotalDays} day(s)"
-            : remaining.TotalHours >= 1
-                ? $"{(int)remaining.TotalHours} hour(s)"
-                : $"{Math.Max(1, (int)remaining.TotalMinutes)} minute(s)";
+        // Never "0 minute(s)": anything under a minute is still time left, and rounding it away
+        // would report a live key as though it had already gone.
+        var span = remaining switch
+        {
+            { TotalDays: >= 1 } => $"{(int)remaining.TotalDays} day(s)",
+            { TotalHours: >= 1 } => $"{(int)remaining.TotalHours} hour(s)",
+            _ => $"{Math.Max(1, (int)remaining.TotalMinutes)} minute(s)",
+        };
 
         return $"expires in {span} ({expiry.ToLocalTime():yyyy-MM-dd HH:mm})";
     }

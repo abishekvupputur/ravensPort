@@ -10,7 +10,7 @@ namespace RavensPort.Core.Tests;
 /// pin that the overwrite really happens before the file goes, and that a locked file fails
 /// honestly instead of reporting success.
 /// </summary>
-public class LegacyStorePurgeTests : IDisposable
+public partial class LegacyStorePurgeTests : IDisposable
 {
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), $"ravensport-test-legacy-{Guid.NewGuid()}");
@@ -103,8 +103,10 @@ public class LegacyStorePurgeTests : IDisposable
         Assert.True(File.Exists(path));
     }
 
-    [System.Runtime.InteropServices.DllImport(
-        "kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [System.Runtime.InteropServices.LibraryImport(
+        "kernel32.dll",
+        StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16,
+        SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-    private static extern bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+    private static partial bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 }

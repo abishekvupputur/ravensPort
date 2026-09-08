@@ -64,9 +64,14 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
 
     public bool IsReady { get; } = status.IsReady;
 
-    public string DetectedAt { get; } = status.ExePath is { Length: > 0 } path
-        ? status.Version is { Length: > 0 } version ? $"{path}  (v{version})" : path
-        : "Not found on this machine.";
+    public string DetectedAt { get; } = Describe(status);
+
+    private static string Describe(VaultStatus status)
+    {
+        if (status.ExePath is not { Length: > 0 } path) return "Not found on this machine.";
+
+        return status.Version is { Length: > 0 } version ? $"{path}  (v{version})" : path;
+    }
 
     /// <summary>
     /// Whatever the CLI itself said. Preferred over anything this app could infer: it

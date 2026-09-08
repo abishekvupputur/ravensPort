@@ -73,16 +73,13 @@ public static class RouteValidation
         // Whole-segment comparison: "/mcpstuff" is a different area and stays allowed, while
         // both "/mcp" and "/mcp/anything" are refused.
         var normalized = prefix.TrimEnd('/');
-        foreach (var reserved in ReservedPathPrefixes)
-        {
-            if (normalized.Equals(reserved, StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith(reserved + "/", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"'{reserved}' is reserved for this proxy's own MCP funnel endpoints. Pick another prefix.";
-            }
-        }
+        var reserved = ReservedPathPrefixes.FirstOrDefault(candidate =>
+            normalized.Equals(candidate, StringComparison.OrdinalIgnoreCase) ||
+            normalized.StartsWith(candidate + "/", StringComparison.OrdinalIgnoreCase));
 
-        return null;
+        return reserved is null
+            ? null
+            : $"'{reserved}' is reserved for this proxy's own MCP funnel endpoints. Pick another prefix.";
     }
 
     /// <summary>Convenience for callers that only need the yes/no answer.</summary>

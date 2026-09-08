@@ -22,7 +22,7 @@ namespace RavensPort.Core.Vault;
 /// it is a secret-shaped thing sitting in their profile with no OS ownership of it at all.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class WindowsCredentialStore : ISecretStore
+internal sealed partial class WindowsCredentialStore : ISecretStore
 {
     private const int GenericCredential = 1;
 
@@ -40,7 +40,7 @@ internal sealed class WindowsCredentialStore : ISecretStore
     /// than an identifier. The user seeing "RavensPort" there and wondering what it is, is the
     /// case this exists for.
     /// </summary>
-    private const string Comment =
+    private const string CredentialComment =
         "Encrypted Proton Pass session key for RavensPort. Only a Windows Hello gesture can decrypt it.";
 
     /// <summary>
@@ -60,7 +60,7 @@ internal sealed class WindowsCredentialStore : ISecretStore
         {
             targetPtr = Marshal.StringToCoTaskMemUni(target);
             userPtr = Marshal.StringToCoTaskMemUni(Environment.UserName);
-            commentPtr = Marshal.StringToCoTaskMemUni(Comment);
+            commentPtr = Marshal.StringToCoTaskMemUni(CredentialComment);
             blobPtr = Marshal.AllocCoTaskMem(blob.Length);
             Marshal.Copy(blob, 0, blobPtr, blob.Length);
 
@@ -182,18 +182,20 @@ internal sealed class WindowsCredentialStore : ISecretStore
         public IntPtr UserName;
     }
 
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    // The W entry points are named explicitly, so StringMarshalling.Utf16 is describing what
+    // those functions already are rather than choosing between an A and a W variant.
+    [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredWriteW(ref Credential credential, int flags);
+    private static partial bool CredWriteW(ref Credential credential, int flags);
 
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredReadW(string target, int type, int flags, out IntPtr credential);
+    private static partial bool CredReadW(string target, int type, int flags, out IntPtr credential);
 
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredDeleteW(string target, int type, int flags);
+    private static partial bool CredDeleteW(string target, int type, int flags);
 
-    [DllImport("advapi32.dll")]
-    private static extern void CredFree(IntPtr buffer);
+    [LibraryImport("advapi32.dll")]
+    private static partial void CredFree(IntPtr buffer);
 }

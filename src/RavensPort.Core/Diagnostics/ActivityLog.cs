@@ -180,7 +180,11 @@ public sealed class ActivityLog
         foreach (var file in Directory.EnumerateFiles(_logDirectory, "activity-*.log"))
         {
             var stamp = Path.GetFileNameWithoutExtension(file).Replace("activity-", "");
-            if (DateTime.TryParseExact(stamp, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var periodStart)
+            // Invariant, because the stamp is one this class wrote: CurrentPeriodStart formats it
+            // with the same fixed pattern, so a user in a non-Gregorian calendar must still be able
+            // to prune the files their own app left behind.
+            if (DateTime.TryParseExact(stamp, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var periodStart)
                 && periodStart < cutoff)
             {
                 TryDelete(file);

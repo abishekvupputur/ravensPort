@@ -115,7 +115,7 @@ public static class ProxyStartupExtensions
     /// endpoint cannot offer sampling, elicitation, or resource subscriptions, none of which a
     /// tool-shaping proxy needs. Upstream sessions are stateful and pooled regardless.
     /// </summary>
-    private static IServiceCollection AddMcpFunnel(this IServiceCollection services)
+    private static void AddMcpFunnel(this IServiceCollection services)
     {
         // Registered here rather than beside Kestrel's own configuration, even though Kestrel is
         // its first reader. The connection pool depends on it — it has to dial this app on the
@@ -164,7 +164,5 @@ public static class ProxyStartupExtensions
                     return Task.CompletedTask;
                 };
             });
-
-        return services;
     }
 }

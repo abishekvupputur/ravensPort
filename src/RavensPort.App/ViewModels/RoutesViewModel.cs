@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Mcp;
@@ -33,6 +34,9 @@ public sealed partial class RoutesViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private ProxyKeyLifetime _newRouteKeyLifetime = ProxyKeyLifetime.Never;
 
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public IReadOnlyList<ProxyKeyLifetime> KeyLifetimes => ProxyKeyLifetime.All;
 
     // Bearer-in-a-header is the default here and in RouteCredential, so someone who never opens
@@ -50,6 +54,9 @@ public sealed partial class RoutesViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<CredentialPlacement> AllPlacements { get; } = CredentialPlacements.Permitted;
 
+    [SuppressMessage("Major Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+        Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Bound with {Binding} from XAML, which resolves instance members off the DataContext only. A static here compiles and then binds to nothing at runtime.")]
     public IReadOnlyList<CredentialPlacement> Placements => AllPlacements;
 
     /// <summary>The name box means something different per placement.</summary>

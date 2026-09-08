@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -62,9 +63,13 @@ public static class MtlsCertificateFactory
     public static bool IsWithinValidity(X509Certificate certificate, DateTimeOffset now)
     {
         // Both are the certificate's own dates in local time; DateTime.Parse is what the framework
-        // itself uses to surface them off the base type.
-        if (!DateTime.TryParse(certificate.GetEffectiveDateString(), out var notBefore) ||
-            !DateTime.TryParse(certificate.GetExpirationDateString(), out var notAfter))
+        // itself uses to surface them off the base type. CurrentCulture is named rather than left
+        // implicit because it is the right answer here and only here: those two Get*String methods
+        // format with the current culture, so parsing them with anything else is what would break.
+        if (!DateTime.TryParse(certificate.GetEffectiveDateString(), CultureInfo.CurrentCulture,
+                DateTimeStyles.None, out var notBefore) ||
+            !DateTime.TryParse(certificate.GetExpirationDateString(), CultureInfo.CurrentCulture,
+                DateTimeStyles.None, out var notAfter))
         {
             return false;
         }

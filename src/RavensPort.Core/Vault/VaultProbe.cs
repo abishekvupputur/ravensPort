@@ -26,24 +26,34 @@ public static partial class VaultProbe
     /// </summary>
     public static readonly Version MinimumOnePasswordVersion = new(0, 4);
 
+    /// <summary>The executable names the two managers ship, and the one environment variable both
+    /// searches read a per-user install out of.</summary>
+    private const string OnePasswordExe = "op.exe";
+
+    /// <inheritdoc cref="OnePasswordExe"/>
+    private const string ProtonPassExe = "pass-cli.exe";
+
+    /// <inheritdoc cref="OnePasswordExe"/>
+    private const string LocalAppData = "LOCALAPPDATA";
+
     public static string? FindOnePassword() => Find(
         OnePasswordPathVariable,
-        "op.exe",
+        OnePasswordExe,
         [
-            Path.Combine(Env("ProgramFiles"), "1Password CLI", "op.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "op.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Programs", "1Password CLI", "op.exe"),
+            Path.Combine(Env("ProgramFiles"), "1Password CLI", OnePasswordExe),
+            Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", OnePasswordExe),
+            Path.Combine(Env(LocalAppData), "Programs", "1Password CLI", OnePasswordExe),
         ]);
 
     public static string? FindProtonPass() => Find(
         ProtonPassPathVariable,
-        "pass-cli.exe",
+        ProtonPassExe,
         [
             // Where the Proton Pass installer actually puts it.
-            Path.Combine(Env("LOCALAPPDATA"), "Programs", "ProtonPass", "pass-cli.exe"),
-            Path.Combine(Env("LOCALAPPDATA"), "Microsoft", "WinGet", "Links", "pass-cli.exe"),
-            Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", "pass-cli.exe"),
-            Path.Combine(Env("USERPROFILE"), ".cargo", "bin", "pass-cli.exe"),
+            Path.Combine(Env(LocalAppData), "Programs", "ProtonPass", ProtonPassExe),
+            Path.Combine(Env(LocalAppData), "Microsoft", "WinGet", "Links", ProtonPassExe),
+            Path.Combine(Env("ProgramFiles"), "Proton", "Pass CLI", ProtonPassExe),
+            Path.Combine(Env("USERPROFILE"), ".cargo", "bin", ProtonPassExe),
 
             // Last: a copy left behind by RavensPort 4.3.0 or earlier, which could fetch pass-cli
             // itself. That feature is gone — the app installs no software now — but an existing
@@ -58,7 +68,7 @@ public static partial class VaultProbe
     /// writes here any more.
     /// </summary>
     private static string LegacyDownloadedProtonPass { get; } = Path.Combine(
-        Env("LOCALAPPDATA"), "RavensPort", "cli", "pass-cli", "2.2.4", "pass-cli.exe");
+        Env(LocalAppData), "RavensPort", "cli", "pass-cli", "2.2.4", ProtonPassExe);
 
     /// <summary>
     /// Env override, then PATH, then the places installers actually use.
@@ -154,9 +164,11 @@ public static partial class VaultProbe
                      ReadPath(EnvironmentVariableTarget.Machine),
                  })
         {
-            foreach (var directory in Split(source))
+            // seen.Add as the filter: it answers "was this new" and records it in one pass, which
+            // is the whole point of the set — the same directory on both PATHs must be probed once.
+            foreach (var directory in Split(source).Where(seen.Add))
             {
-                if (seen.Add(directory)) yield return directory;
+                yield return directory;
             }
         }
     }

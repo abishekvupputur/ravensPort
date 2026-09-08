@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RavensPort.Core.Diagnostics;
@@ -45,6 +46,23 @@ public sealed class OnePasswordVaultProvider(
     IExecutableTrustPolicy? executableTrust = null) : IConfigVault
 {
     private IExecutableTrustPolicy trustPolicy => executableTrust ?? AuthenticodeTrustPolicy.Default;
+
+    /// <summary>
+    /// The pieces of <c>op</c>'s command line that recur across the verbs below: the noun, the
+    /// vault selector, and the switch that makes the output parseable. Named rather than repeated
+    /// because a typo in any of them is a runtime failure in one code path only — the other four
+    /// keep working, which is the hardest kind of mistake to notice.
+    /// </summary>
+    private const string VaultNoun = "vault";
+
+    /// <inheritdoc cref="VaultNoun"/>
+    private const string VaultFlag = "--vault";
+
+    /// <inheritdoc cref="VaultNoun"/>
+    private const string FormatFlag = "--format";
+
+    /// <summary>The item property <c>op</c> calls a title, read back in four different shapes.</summary>
+    private const string TitleKey = "title";
 
     /// <summary>Fields that can legitimately become absent, and so must be actively cleared.</summary>
     private static readonly string[] ClearableSecretFields =
@@ -157,28 +175,8 @@ public sealed class OnePasswordVaultProvider(
         _exePath = exePathOverride ?? VaultProbe.FindOnePassword();
         if (_exePath is null || (!File.Exists(_exePath) && _exePath != "native")) return VaultStatus.NotInstalled(Kind);
 
-        Version? version;
-        try
-        {
-            var versionResult = await RunAsync(["--version"], ct: ct);
-            if (!versionResult.Succeeded)
-            {
-                return VaultStatus.Faulted(Kind, versionResult.FirstErrorLine(), _exePath);
-            }
-
-            version = VaultProbe.ParseVersion(versionResult.StdOut);
-        }
-        catch (VaultCliException ex)
-        {
-            return VaultStatus.Faulted(Kind, ex.Message, _exePath);
-        }
-
-        if (version is not null && version < VaultProbe.MinimumOnePasswordVersion)
-        {
-            return VaultStatus.Faulted(Kind,
-                $"1Password CLI {version} is too old — {VaultProbe.MinimumOnePasswordVersion} or newer is required.",
-                _exePath);
-        }
+        var (version, versionFailure) = await ReadVersionAsync(ct);
+        if (versionFailure is not null) return versionFailure;
 
         // Everything past this point talks to the user's account, and `op` answers by asking the
         // desktop app — which is a biometric prompt, once per command, and there are several
@@ -191,7 +189,7 @@ public sealed class OnePasswordVaultProvider(
         CliResult vaultList;
         try
         {
-            vaultList = await RunAsync(["vault", "list", "--format", "json"], ct: ct);
+            vaultList = await RunAsync([VaultNoun, "list", FormatFlag, "json"], ct: ct);
         }
         catch (VaultCliException ex)
         {
@@ -211,27 +209,7 @@ public sealed class OnePasswordVaultProvider(
         var vaults = ParseVaults(vaultList.StdOut);
         _vaultId = vaults.FirstOrDefault(v => v.Name == _vaultName)?.VaultId;
 
-        List<OnePasswordVault> configured = [];
-
-        // Skipped once the user has disconnected. Rediscovery is what makes a vault stick across
-        // restarts, and straight after a disconnect it would silently reattach the very vault they
-        // just stepped away from — leaving them no way to pick a different one.
-        if (_vaultId is null && !_discoveryDisabled)
-        {
-            configured = await FindConfiguredVaultsAsync(vaults, ct);
-
-            if (configured.Count == 1)
-            {
-                // A vault the user pointed RavensPort at is not remembered on this PC — nothing
-                // about this app is — so it is found the same way the backend itself is: whichever
-                // vault actually holds the configuration is the one that was being used.
-                _vaultName = configured[0].Name;
-                _vaultId = configured[0].VaultId;
-
-                activityLog.Log($"VAULT 1Password — using the existing '{_vaultName}' vault, "
-                                + "which holds the RavensPort configuration");
-            }
-        }
+        var configured = await AdoptConfiguredVaultAsync(vaults, ct);
 
         return new VaultStatus(
             Kind,
@@ -251,10 +229,77 @@ public sealed class OnePasswordVaultProvider(
 
         // More than one configured vault is separate profiles, and opening one would mean
         // overwriting the other's note on the next save. That is a question for the user.
-        VaultAvailability Resolve() =>
-            _vaultId is not null ? VaultAvailability.Ready
-            : configured.Count > 1 ? VaultAvailability.VaultChoiceNeeded
-            : VaultAvailability.VaultMissing;
+        VaultAvailability Resolve()
+        {
+            if (_vaultId is not null) return VaultAvailability.Ready;
+
+            return configured.Count > 1
+                ? VaultAvailability.VaultChoiceNeeded
+                : VaultAvailability.VaultMissing;
+        }
+    }
+
+    /// <summary>
+    /// The CLI's version, or the status that says why the probe cannot go on.
+    ///
+    /// A null version with no failure is not a failure: `op` answered, this app could not parse
+    /// what it said, and refusing a working CLI over an unrecognised version string would be
+    /// worse than carrying on without knowing.
+    /// </summary>
+    private async Task<(Version? Version, VaultStatus? Failure)> ReadVersionAsync(CancellationToken ct)
+    {
+        Version? version;
+        try
+        {
+            var versionResult = await RunAsync(["--version"], ct: ct);
+            if (!versionResult.Succeeded)
+            {
+                return (null, VaultStatus.Faulted(Kind, versionResult.FirstErrorLine(), _exePath));
+            }
+
+            version = VaultProbe.ParseVersion(versionResult.StdOut);
+        }
+        catch (VaultCliException ex)
+        {
+            return (null, VaultStatus.Faulted(Kind, ex.Message, _exePath));
+        }
+
+        if (version is not null && version < VaultProbe.MinimumOnePasswordVersion)
+        {
+            return (version, VaultStatus.Faulted(Kind,
+                $"1Password CLI {version} is too old — {VaultProbe.MinimumOnePasswordVersion} or newer is required.",
+                _exePath));
+        }
+
+        return (version, null);
+    }
+
+    /// <summary>
+    /// Finds the vault that already holds a RavensPort configuration and adopts it when there is
+    /// exactly one, returning every candidate it found so the caller can offer a choice.
+    ///
+    /// Skipped once the user has disconnected. Rediscovery is what makes a vault stick across
+    /// restarts, and straight after a disconnect it would silently reattach the very vault they
+    /// just stepped away from — leaving them no way to pick a different one.
+    /// </summary>
+    private async Task<List<OnePasswordVault>> AdoptConfiguredVaultAsync(
+        List<OnePasswordVault> vaults, CancellationToken ct)
+    {
+        if (_vaultId is not null || _discoveryDisabled) return [];
+
+        var configured = await FindConfiguredVaultsAsync(vaults, ct);
+        if (configured.Count != 1) return configured;
+
+        // A vault the user pointed RavensPort at is not remembered on this PC — nothing about
+        // this app is — so it is found the same way the backend itself is: whichever vault
+        // actually holds the configuration is the one that was being used.
+        _vaultName = configured[0].Name;
+        _vaultId = configured[0].VaultId;
+
+        activityLog.Log($"VAULT 1Password — using the existing '{_vaultName}' vault, "
+                        + "which holds the RavensPort configuration");
+
+        return configured;
     }
 
     public async Task CreateVaultAsync(string vaultName, CancellationToken ct = default)
@@ -264,7 +309,7 @@ public sealed class OnePasswordVaultProvider(
 
         RequireExe();
 
-        var listed = await RunAsync(["vault", "list", "--format", "json"], ct: ct);
+        var listed = await RunAsync([VaultNoun, "list", FormatFlag, "json"], ct: ct);
         if (!listed.Succeeded) throw new VaultLockedException(Kind, listed.FirstErrorLine());
 
         // Refused rather than silently reused: "create" and "take over what is already there" are
@@ -277,7 +322,7 @@ public sealed class OnePasswordVaultProvider(
         }
 
         var result = await RunAsync(
-            ["vault", "create", name, "--description", VaultConstants.VaultDescription, "--format", "json"],
+            [VaultNoun, "create", name, "--description", VaultConstants.VaultDescription, FormatFlag, "json"],
             timeout: CliRunner.WriteTimeout, ct: ct);
 
         if (!result.Succeeded)
@@ -316,7 +361,7 @@ public sealed class OnePasswordVaultProvider(
 
         RequireExe();
 
-        var listed = await RunAsync(["vault", "list", "--format", "json"], ct: ct);
+        var listed = await RunAsync([VaultNoun, "list", FormatFlag, "json"], ct: ct);
         if (!listed.Succeeded) throw new VaultLockedException(Kind, listed.FirstErrorLine());
 
         var vaults = ParseVaults(listed.StdOut);
@@ -493,7 +538,7 @@ public sealed class OnePasswordVaultProvider(
         await RequireVaultAsync(ct);
 
         var result = await RunAsync(
-            ["item", "delete", itemId, "--vault", _vaultId!], timeout: CliRunner.WriteTimeout, ct: ct);
+            ["item", "delete", itemId, VaultFlag, _vaultId!], timeout: CliRunner.WriteTimeout, ct: ct);
 
         if (!result.Succeeded)
         {
@@ -514,7 +559,7 @@ public sealed class OnePasswordVaultProvider(
         // one is what the note gets, and it holds only what this save actually wrote. Carrying the
         // old entries forward left the note pointing at items that had been deleted — a dangling
         // reference the design is supposed to make impossible, and a wasted fetch on every load.
-        var previousIndex = await ReadIndexAsync(noteSummary, items, ct);
+        var previousIndex = await ReadIndexAsync(noteSummary, ct);
         var index = new VaultIndex();
 
         var written = 0;
@@ -596,7 +641,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     private async Task<string> CreateItemAsync(VaultItemSpec spec, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["item", "create", "--vault", _vaultId!, "--format", "json", "-"],
+            ["item", "create", VaultFlag, _vaultId!, FormatFlag, "json", "-"],
             stdin: BuildTemplate(spec, includeClears: false).ToJsonString(),
             timeout: CliRunner.WriteTimeout,
             ct: ct);
@@ -616,7 +661,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         // away — the access token of a credential the user just disconnected — would otherwise sit
         // in the vault forever. Sending it as empty is what actually revokes it from the item.
         var result = await RunAsync(
-            ["item", "edit", itemId, "--vault", _vaultId!, "--format", "json", "-"],
+            ["item", "edit", itemId, VaultFlag, _vaultId!, FormatFlag, "json", "-"],
             stdin: BuildTemplate(spec, includeClears: true).ToJsonString(),
             timeout: CliRunner.WriteTimeout,
             ct: ct);
@@ -645,7 +690,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     /// </summary>
     private async Task<List<VaultItemSummary>> ListItemsAsync(string vaultId, string vaultLabel, CancellationToken ct)
     {
-        var result = await RunAsync(["item", "list", "--vault", vaultId, "--format", "json"], ct: ct);
+        var result = await RunAsync(["item", "list", VaultFlag, vaultId, FormatFlag, "json"], ct: ct);
 
         if (!result.Succeeded)
         {
@@ -657,7 +702,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         foreach (var node in JsonNode.Parse(result.StdOut) as JsonArray ?? [])
         {
             var id = ReadString(node, "id");
-            var title = ReadString(node, "title");
+            var title = ReadString(node, TitleKey);
 
             // An archived item is one the user has put away. Reading it would make a vault they
             // had cleared look full and a credential they had removed look present — the same
@@ -668,7 +713,8 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             // Reported by both paths -- the CLI prints it and the SDK's ItemOverview carries it --
             // and the cheapest answer to "when was this vault last written", since it needs no item
             // contents and therefore no decryption.
-            var updated = DateTimeOffset.TryParse(ReadString(node, "updatedAt"), out var parsed)
+            var updated = DateTimeOffset.TryParse(ReadString(node, "updatedAt"),
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
                 ? parsed.ToUniversalTime()
                 : (DateTimeOffset?)null;
 
@@ -677,9 +723,6 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
 
         return items;
     }
-
-    private Task<VaultItemContents?> GetItemAsync(string itemId, CancellationToken ct) =>
-        GetItemAsync(itemId, _vaultId!, ct);
 
     /// <summary>
     /// How many times a read is attempted before it is called inconclusive. `op` reaches the
@@ -718,7 +761,22 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     /// than absent, and a read is idempotent so there is nothing to be careful about in repeating
     /// it.
     /// </summary>
+    /// <summary>The configured vault, for the callers that are not chasing another one.</summary>
+    private Task<VaultItemContents?> GetItemAsync(string itemId, CancellationToken ct) =>
+        GetItemAsync(itemId, _vaultId!, ct);
+
     private async Task<VaultItemContents?> GetItemAsync(string itemId, string vaultId, CancellationToken ct)
+    {
+        var json = await ReadItemJsonAsync(itemId, vaultId, ct);
+
+        return json is null ? null : ParseItem(itemId, json);
+    }
+
+    /// <summary>
+    /// The item's JSON, or null when 1Password positively reported it is not there. Anything
+    /// inconclusive throws rather than returning null, for the reason on <see cref="GetItemAsync"/>.
+    /// </summary>
+    private async Task<string?> ReadItemJsonAsync(string itemId, string vaultId, CancellationToken ct)
     {
         CliResult result = default;
         Exception? lastFailure = null;
@@ -729,7 +787,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
 
             try
             {
-                result = await RunAsync(["item", "get", itemId, "--vault", vaultId, "--format", "json"], ct: ct);
+                result = await RunAsync(["item", "get", itemId, VaultFlag, vaultId, FormatFlag, "json"], ct: ct);
                 lastFailure = null;
 
                 if (result.Succeeded) break;
@@ -750,18 +808,21 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             }
         }
 
-        if (lastFailure is not null || !result.Succeeded)
-        {
-            var detail = lastFailure?.Message ?? result.FirstErrorLine();
+        if (lastFailure is null && result.Succeeded) return result.StdOut;
 
-            throw new VaultCliException(
-                $"1Password could not be asked for one of the items holding your secrets ({detail}). "
-                + "Nothing has been changed — RavensPort will not treat an item it could not read as "
-                + "one you deleted.",
-                lastFailure);
-        }
+        var detail = lastFailure?.Message ?? result.FirstErrorLine();
 
-        var node = JsonNode.Parse(result.StdOut);
+        throw new VaultCliException(
+            $"1Password could not be asked for one of the items holding your secrets ({detail}). "
+            + "Nothing has been changed — RavensPort will not treat an item it could not read as "
+            + "one you deleted.",
+            lastFailure);
+    }
+
+    /// <summary>One item's JSON, flattened into the name/value pairs the rest of the app reads.</summary>
+    private static VaultItemContents? ParseItem(string itemId, string json)
+    {
+        var node = JsonNode.Parse(json);
         if (node is null) return null;
 
         var fields = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -774,7 +835,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             // Keyed by id, which is what the template sets, with the label as a fallback for a
             // field 1Password rewrote or a user added by hand in its UI.
             if (ReadString(field, "id") is { Length: > 0 } id) fields[id] = value;
-            var label = ReadString(field, "title") ?? ReadString(field, "label");
+            var label = ReadString(field, TitleKey) ?? ReadString(field, "label");
             if (label is { Length: > 0 }) fields.TryAdd(label, value);
         }
 
@@ -784,7 +845,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             fields[VaultFields.NoteContent] = notes;
         }
 
-        return new VaultItemContents(itemId, ReadString(node, "title") ?? "", fields);
+        return new VaultItemContents(itemId, ReadString(node, TitleKey) ?? "", fields);
     }
 
     private async Task ReconcileDeletionsAsync(
@@ -858,7 +919,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         foreach (var item in doomed)
         {
             var result = await RunAsync(
-                ["item", "delete", item.ItemId, "--vault", _vaultId!],
+                ["item", "delete", item.ItemId, VaultFlag, _vaultId!],
                 timeout: CliRunner.WriteTimeout, ct: ct);
 
             if (!result.Succeeded)
@@ -901,7 +962,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     /// concatenation so a value containing a quote or a backslash cannot break out of the
     /// document — the field values here are user-supplied secrets and names.
     /// </summary>
-    private JsonNode BuildTemplate(VaultItemSpec spec, bool includeClears)
+    private JsonObject BuildTemplate(VaultItemSpec spec, bool includeClears)
     {
         var fields = new JsonArray();
         var present = new HashSet<string>(StringComparer.Ordinal);
@@ -928,9 +989,9 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
 
         var json = new JsonObject
         {
-            ["title"] = spec.Title,
+            [TitleKey] = spec.Title,
             ["category"] = CategoryName(spec.Category),
-            ["vault"] = new JsonObject { ["id"] = _vaultId },
+            [VaultNoun] = new JsonObject { ["id"] = _vaultId },
             ["fields"] = fields,
         };
 
@@ -938,16 +999,15 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         {
             json["notes"] = notes;
         }
-        else
+        else if (spec.Fields.FirstOrDefault(f => f.Name == VaultFields.NoteContent) is { } noteField)
         {
-            // If the spec explicitly contains NoteContent field, use that
-            var noteField = spec.Fields.FirstOrDefault(f => f.Name == VaultFields.NoteContent);
-            if (noteField?.Name != null)
+            // The note body arrived as an ordinary field. 1Password keeps it at the top level, so
+            // it moves there and stops being listed twice.
+            json["notes"] = noteField.Value;
+
+            if (fields.FirstOrDefault(n => ReadString(n, "id") == VaultFields.NoteContent) is { } fieldNode)
             {
-                json["notes"] = noteField.Value;
-                // Remove it from fields array since it's mapped to top-level
-                var fieldNode = fields.FirstOrDefault(n => ReadString(n, "id") == VaultFields.NoteContent);
-                if (fieldNode != null) fields.Remove(fieldNode);
+                fields.Remove(fieldNode);
             }
         }
 
@@ -959,7 +1019,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         var field = new JsonObject
         {
             ["id"] = name,
-            ["title"] = name,
+            [TitleKey] = name,
             ["fieldType"] = VaultFields.IsConcealed(name) ? "Concealed" : "Text",
             ["value"] = value,
         };
@@ -983,8 +1043,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         _ => "SecureNote",
     };
 
-    private async Task<VaultIndex> ReadIndexAsync(
-        VaultItemSummary? noteSummary, List<VaultItemSummary> items, CancellationToken ct)
+    private async Task<VaultIndex> ReadIndexAsync(VaultItemSummary? noteSummary, CancellationToken ct)
     {
         if (noteSummary is null) return new VaultIndex();
 
@@ -1076,7 +1135,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
 
         foreach (var node in JsonNode.Parse(vaultListJson) as JsonArray ?? [])
         {
-            var name = ReadString(node, "title") ?? ReadString(node, "name");
+            var name = ReadString(node, TitleKey) ?? ReadString(node, "name");
             if (name is not null && ReadString(node, "id") is { } id)
             {
                 vaults.Add(new OnePasswordVault(name, id));

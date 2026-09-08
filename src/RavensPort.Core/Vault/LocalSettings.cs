@@ -50,6 +50,12 @@ public static class LocalSettings
         }
     }
 
+    /// <summary>
+    /// Cached, because Save runs on every settings change and a fresh JsonSerializerOptions makes
+    /// the serializer rebuild its metadata cache each time.
+    /// </summary>
+    private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
+
     public static void Save()
     {
         try
@@ -60,7 +66,7 @@ public static class LocalSettings
                 Directory.CreateDirectory(directory!);
             }
 
-            var json = JsonSerializer.Serialize(_current, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(_current, WriteOptions);
             File.WriteAllText(SettingsPath, json);
         }
         catch

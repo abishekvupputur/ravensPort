@@ -55,8 +55,14 @@ public sealed partial class CredentialsViewModel : ObservableObject
     [ObservableProperty] private string _redirectUriInfo = "";
     [ObservableProperty] private string _redirectUri = "";
     [ObservableProperty] private bool _isEditing;
-    [ObservableProperty] private string _formHeaderText = "Add credential";
-    [ObservableProperty] private string _saveButtonLabel = "Add credential";
+    /// <summary>What the form calls itself before an existing credential is loaded into it.</summary>
+    private const string AddCredentialLabel = "Add credential";
+
+    /// <summary>The one refusal four separate save paths can give.</summary>
+    private const string NameRequired = "Name is required.";
+
+    [ObservableProperty] private string _formHeaderText = AddCredentialLabel;
+    [ObservableProperty] private string _saveButtonLabel = AddCredentialLabel;
     [ObservableProperty] private string _statusMessage = "Ready.";
 
     // Where this credential's secret goes by default: what the Test button sends, and what
@@ -409,7 +415,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(NewName))
         {
-            StatusMessage = "Name is required.";
+            StatusMessage = NameRequired;
             return;
         }
 
@@ -476,7 +482,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(NewName))
         {
-            StatusMessage = "Name is required.";
+            StatusMessage = NameRequired;
             return;
         }
 
@@ -552,7 +558,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(NewName))
         {
-            StatusMessage = "Name is required.";
+            StatusMessage = NameRequired;
             return;
         }
 
@@ -640,7 +646,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(NewName))
         {
-            StatusMessage = "Name is required.";
+            StatusMessage = NameRequired;
             return;
         }
 
@@ -854,8 +860,8 @@ public sealed partial class CredentialsViewModel : ObservableObject
     {
         _editingItem = null;
         IsEditing = false;
-        FormHeaderText = "Add credential";
-        SaveButtonLabel = "Add credential";
+        FormHeaderText = AddCredentialLabel;
+        SaveButtonLabel = AddCredentialLabel;
         NewName = "";
         NewClientId = "";
         NewClientSecret = "";
@@ -946,7 +952,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
     /// thread, so the callback lands back on it: the poll loop reporting from a thread-pool thread
     /// must not touch the clipboard or a bound property directly.
     /// </summary>
-    private IProgress<DeviceCodePrompt> DeviceCodeProgress(CredentialItemViewModel item) =>
+    private Progress<DeviceCodePrompt> DeviceCodeProgress(CredentialItemViewModel item) =>
         new Progress<DeviceCodePrompt>(prompt =>
         {
             StatusMessage = $"Enter code {prompt.UserCode} at {prompt.VerificationUri} "

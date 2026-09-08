@@ -135,7 +135,7 @@ internal static class RequestBodyCredentialInjector
             var read = await body.ReadAsync(chunk, cancellationToken);
             if (read == 0) break;
 
-            buffer.Write(chunk, 0, read);
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
             total += read;
 
             if (total > limit) return (buffer.ToArray(), true);

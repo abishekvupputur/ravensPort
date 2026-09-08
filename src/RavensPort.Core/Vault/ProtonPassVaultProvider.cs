@@ -45,6 +45,16 @@ public sealed class ProtonPassVaultProvider(
     /// <summary>Section every custom field goes in, so the Proton Pass UI groups them together.</summary>
     private const string SectionName = "RavensPort";
 
+    /// <summary>
+    /// The two pieces of <c>pass-cli</c>'s command line that recur across the verbs below. Named
+    /// for the same reason as their 1Password counterparts: a typo in one of six call sites fails
+    /// only that path, while the rest keep working.
+    /// </summary>
+    private const string VaultNoun = "vault";
+
+    /// <inheritdoc cref="VaultNoun"/>
+    private const string OutputFlag = "--output";
+
     private string? _exePath;
     private string? _shareId;
     private string _vaultName = VaultConstants.VaultName;
@@ -121,22 +131,7 @@ public sealed class ProtonPassVaultProvider(
         _exePath = exePathOverride ?? VaultProbe.FindProtonPass();
         if (_exePath is null || !File.Exists(_exePath)) return VaultStatus.NotInstalled(Kind);
 
-        // Answered without launching anything. The env key provider refuses an empty
-        // PROTON_PASS_ENCRYPTION_KEY, so running the CLI now would spend a process launch to be
-        // told off in wording that says nothing about the actual problem — which is simply that
-        // nobody has unlocked this session since the app started.
-        if (session is not null && !session.HasKey && PersonalAccessToken is not { Length: > 0 })
-        {
-            return new VaultStatus(
-                Kind,
-                VaultAvailability.NotSignedIn,
-                _exePath,
-                // States the situation only. What to do about it is the setup page's job, and
-                // saying it in both places made the card repeat itself twice over.
-                Detail: session.HasSessionOnDisk
-                    ? "Locked — RavensPort has a session here but not the key that opens it."
-                    : "RavensPort is not signed in to Proton Pass yet.");
-        }
+        if (LockedWithoutAsking() is { } locked) return locked;
 
         string? version;
         CliResult vaultList;
@@ -155,7 +150,7 @@ public sealed class ProtonPassVaultProvider(
                 return VaultStatus.NotConnected(Kind, _exePath, version);
             }
 
-            vaultList = await RunAsync(["vault", "list", "--output", "json"], ct: ct);
+            vaultList = await RunAsync([VaultNoun, "list", OutputFlag, "json"], ct: ct);
         }
         catch (VaultCliException ex)
         {
@@ -174,28 +169,7 @@ public sealed class ProtonPassVaultProvider(
         var vaults = ParseVaults(vaultList.StdOut);
         _shareId = vaults.FirstOrDefault(v => v.Name == _vaultName)?.ShareId;
 
-        List<ProtonVault> configured = [];
-
-        // Skipped once the user has disconnected. Rediscovery is what makes a vault stick across
-        // restarts, and straight after a disconnect it would silently reattach the very vault they
-        // just stepped away from — leaving them no way to pick a different one.
-        if (_shareId is null && !_discoveryDisabled)
-        {
-            configured = await FindConfiguredVaultsAsync(vaults, ct);
-
-            if (configured.Count == 1)
-            {
-                // A vault the user pointed RavensPort at is not remembered on this PC — nothing
-                // about this app is — so it is found the same way the backend itself is: whichever
-                // vault actually holds the configuration is the one that was being used. Only
-                // reached when RavensPort is absent, so the ordinary path is one `vault list`.
-                _vaultName = configured[0].Name;
-                _shareId = configured[0].ShareId;
-
-                activityLog.Log($"VAULT Proton Pass — using the existing '{_vaultName}' vault, "
-                                + "which holds the RavensPort configuration");
-            }
-        }
+        var configured = await AdoptConfiguredVaultAsync(vaults, ct);
 
         return new VaultStatus(
             Kind,
@@ -210,10 +184,65 @@ public sealed class ProtonPassVaultProvider(
 
         // More than one configured vault is separate profiles, and opening one would mean
         // overwriting the other's note on the next save. That is a question for the user.
-        VaultAvailability Resolve() =>
-            _shareId is not null ? VaultAvailability.Ready
-            : configured.Count > 1 ? VaultAvailability.VaultChoiceNeeded
-            : VaultAvailability.VaultMissing;
+        VaultAvailability Resolve()
+        {
+            if (_shareId is not null) return VaultAvailability.Ready;
+
+            return configured.Count > 1
+                ? VaultAvailability.VaultChoiceNeeded
+                : VaultAvailability.VaultMissing;
+        }
+    }
+
+    /// <summary>
+    /// The one state that can be answered without launching anything, or null to carry on.
+    ///
+    /// The env key provider refuses an empty PROTON_PASS_ENCRYPTION_KEY, so running the CLI here
+    /// would spend a process launch to be told off in wording that says nothing about the actual
+    /// problem — which is simply that nobody has unlocked this session since the app started.
+    /// </summary>
+    private VaultStatus? LockedWithoutAsking()
+    {
+        if (session is null || session.HasKey || PersonalAccessToken is { Length: > 0 }) return null;
+
+        return new VaultStatus(
+            Kind,
+            VaultAvailability.NotSignedIn,
+            _exePath,
+            // States the situation only. What to do about it is the setup page's job, and saying
+            // it in both places made the card repeat itself twice over.
+            Detail: session.HasSessionOnDisk
+                ? "Locked — RavensPort has a session here but not the key that opens it."
+                : "RavensPort is not signed in to Proton Pass yet.");
+    }
+
+    /// <summary>
+    /// Finds the vault that already holds a RavensPort configuration and adopts it when there is
+    /// exactly one, returning every candidate it found so the caller can offer a choice.
+    ///
+    /// Skipped once the user has disconnected. Rediscovery is what makes a vault stick across
+    /// restarts, and straight after a disconnect it would silently reattach the very vault they
+    /// just stepped away from — leaving them no way to pick a different one.
+    /// </summary>
+    private async Task<List<ProtonVault>> AdoptConfiguredVaultAsync(
+        List<ProtonVault> vaults, CancellationToken ct)
+    {
+        if (_shareId is not null || _discoveryDisabled) return [];
+
+        var configured = await FindConfiguredVaultsAsync(vaults, ct);
+        if (configured.Count != 1) return configured;
+
+        // A vault the user pointed RavensPort at is not remembered on this PC — nothing about
+        // this app is — so it is found the same way the backend itself is: whichever vault
+        // actually holds the configuration is the one that was being used. Only reached when
+        // RavensPort is absent, so the ordinary path is one `vault list`.
+        _vaultName = configured[0].Name;
+        _shareId = configured[0].ShareId;
+
+        activityLog.Log($"VAULT Proton Pass — using the existing '{_vaultName}' vault, "
+                        + "which holds the RavensPort configuration");
+
+        return configured;
     }
 
     public async Task CreateVaultAsync(string vaultName, CancellationToken ct = default)
@@ -223,7 +252,7 @@ public sealed class ProtonPassVaultProvider(
 
         await RequireExeAsync();
 
-        var listed = await RunAsync(["vault", "list", "--output", "json"], ct: ct);
+        var listed = await RunAsync([VaultNoun, "list", OutputFlag, "json"], ct: ct);
         if (!listed.Succeeded) throw new VaultLockedException(Kind, listed.FirstErrorLine());
 
         // Refused rather than silently reused: "create" and "take over what is already there" are
@@ -236,7 +265,7 @@ public sealed class ProtonPassVaultProvider(
         }
 
         var result = await RunAsync(
-            ["vault", "create", "--name", name],
+            [VaultNoun, "create", "--name", name],
             timeout: CliRunner.WriteTimeout, ct: ct);
 
         if (!result.Succeeded)
@@ -247,7 +276,7 @@ public sealed class ProtonPassVaultProvider(
         }
 
         // `vault create` does not report the share id, so re-list rather than parse its output.
-        var after = await RunAsync(["vault", "list", "--output", "json"], ct: ct);
+        var after = await RunAsync([VaultNoun, "list", OutputFlag, "json"], ct: ct);
 
         _shareId = after.Succeeded
             ? ParseVaults(after.StdOut)
@@ -286,7 +315,7 @@ public sealed class ProtonPassVaultProvider(
 
         await RequireExeAsync();
 
-        var listed = await RunAsync(["vault", "list", "--output", "json"], ct: ct);
+        var listed = await RunAsync([VaultNoun, "list", OutputFlag, "json"], ct: ct);
         if (!listed.Succeeded) throw new VaultLockedException(Kind, listed.FirstErrorLine());
 
         var vaults = ParseVaults(listed.StdOut);
@@ -452,7 +481,7 @@ public sealed class ProtonPassVaultProvider(
         await RequireVaultAsync(ct);
 
         var result = await RunAsync(
-            ["item", "delete", Share, ItemId(itemId)], timeout: CliRunner.WriteTimeout, ct: ct);
+            ["item", "delete", Share, ItemArg(itemId)], timeout: CliRunner.WriteTimeout, ct: ct);
 
         if (!result.Succeeded)
         {
@@ -553,7 +582,7 @@ await ReconcileAsync(existing, index, previousIndex, ct);
 
     private static string ShareArg(string shareId) => $"--share-id={shareId}";
 
-    private static string ItemId(string itemId) => $"--item-id={itemId}";
+    private static string ItemArg(string itemId) => $"--item-id={itemId}";
 
 
     /// <summary>
@@ -613,8 +642,8 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         string shareId, string vaultLabel, bool withSecrets, CancellationToken ct)
     {
         string[] args = withSecrets
-            ? ["item", "list", ShareArg(shareId), "--output", "json", "--show-secrets"]
-            : ["item", "list", ShareArg(shareId), "--output", "json"];
+            ? ["item", "list", ShareArg(shareId), OutputFlag, "json", "--show-secrets"]
+            : ["item", "list", ShareArg(shareId), OutputFlag, "json"];
 
         var result = await RunAsync(args, ct: ct);
 
@@ -672,34 +701,46 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         // for everything else. Both land here; only the config note is ever read back.
         if (ReadString(content, "note") is { Length: > 0 } note) fields[VaultFields.NoteContent] = note;
 
-        var payload = content["content"];
+        ReadPayload(content["content"], fields, ref concealed);
 
+        return new ProtonItem(itemId, title, new VaultItemContents(itemId, title, fields));
+    }
+
+    /// <summary>
+    /// The type-tagged payload, of which this app writes and reads exactly two shapes: a login for
+    /// a single secret, and a custom item for anything with more than one field. Anything else is
+    /// someone else's item and contributes no fields.
+    /// </summary>
+    private static void ReadPayload(JsonNode? payload, Dictionary<string, string> fields, ref int concealed)
+    {
         if (payload?["Login"] is JsonObject login)
         {
             Record(fields, VaultFields.Username, ReadString(login, "username"), ref concealed);
             Record(fields, VaultFields.Password, ReadString(login, "password"), ref concealed);
             Record(fields, VaultFields.Website, (login["urls"] as JsonArray)?.FirstOrDefault()?.GetValue<string>(),
                 ref concealed);
+            return;
         }
-        else if (payload?["Custom"] is JsonObject custom)
-        {
-            foreach (var section in custom["sections"] as JsonArray ?? [])
-            {
-                foreach (var field in section?["section_fields"] as JsonArray ?? [])
-                {
-                    var name = ReadString(field, "name");
-                    if (name is null) continue;
 
-                    // Reads wrap the value in its type — {"Text": "..."} or {"Hidden": "..."} —
-                    // while writes use a flat field_type/value pair. Neither side is wrong; they
-                    // just are not the same shape.
-                    var wrapper = field?["content"];
-                    Record(fields, name, ReadString(wrapper, "Text") ?? ReadString(wrapper, "Hidden"), ref concealed);
-                }
+        if (payload?["Custom"] is JsonObject custom) ReadCustomFields(custom, fields, ref concealed);
+    }
+
+    private static void ReadCustomFields(JsonObject custom, Dictionary<string, string> fields, ref int concealed)
+    {
+        foreach (var section in custom["sections"] as JsonArray ?? [])
+        {
+            foreach (var field in section?["section_fields"] as JsonArray ?? [])
+            {
+                var name = ReadString(field, "name");
+                if (name is null) continue;
+
+                // Reads wrap the value in its type — {"Text": "..."} or {"Hidden": "..."} —
+                // while writes use a flat field_type/value pair. Neither side is wrong; they just
+                // are not the same shape.
+                var wrapper = field?["content"];
+                Record(fields, name, ReadString(wrapper, "Text") ?? ReadString(wrapper, "Hidden"), ref concealed);
             }
         }
-
-        return new ProtonItem(itemId, title, new VaultItemContents(itemId, title, fields));
     }
 
     private static void Record(Dictionary<string, string> fields, string name, string? value, ref int concealed)
@@ -718,7 +759,7 @@ await ReconcileAsync(existing, index, previousIndex, ct);
     private async Task DeleteItemAsync(string itemId, string title, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["item", "delete", Share, ItemId(itemId)],
+            ["item", "delete", Share, ItemArg(itemId)],
             timeout: CliRunner.WriteTimeout, ct: ct);
 
         if (!result.Succeeded)
@@ -849,7 +890,7 @@ await ReconcileAsync(existing, index, previousIndex, ct);
     /// timestamps — has to be a custom item. A proxy key is a single secret, so it stays a login,
     /// where Proton Pass gives it the usual conceal-and-copy treatment.
     /// </summary>
-    private JsonNode BuildTemplate(VaultItemSpec spec)
+    private static JsonObject BuildTemplate(VaultItemSpec spec)
     {
         var template = new JsonObject { ["title"] = spec.Title };
 

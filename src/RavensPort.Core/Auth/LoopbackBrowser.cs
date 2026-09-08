@@ -25,8 +25,6 @@ public sealed class LoopbackBrowser : IBrowser
     /// </summary>
     private static readonly SemaphoreSlim FlowGate = new(1, 1);
 
-    public string RedirectUri => StaticRedirectUri;
-
     public async Task<BrowserResult> InvokeAsync(BrowserOptions options, CancellationToken cancellationToken = default)
     {
         if (!await FlowGate.WaitAsync(TimeSpan.Zero, cancellationToken))

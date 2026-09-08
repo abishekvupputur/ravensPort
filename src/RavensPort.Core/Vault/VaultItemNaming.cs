@@ -50,7 +50,7 @@ public static partial class VaultItemNaming
     public static bool TryParse(string title, out VaultItemRole role, out Guid id)
     {
         role = default;
-        id = default;
+        id = Guid.Empty;
 
         if (!IsOwned(title)) return false;
 
@@ -65,12 +65,23 @@ public static partial class VaultItemNaming
 
         if (!Guid.TryParseExact(match.Groups[1].Value, "D", out id)) return false;
 
-        role = title.Contains("credential —", StringComparison.Ordinal) ? VaultItemRole.Credential
-            : title.Contains("route key —", StringComparison.Ordinal) ? VaultItemRole.RouteKey
-            : title.Contains("funnel key —", StringComparison.Ordinal) ? VaultItemRole.FunnelKey
-            : default;
+        role = RoleOf(title);
 
         return role != default;
+    }
+
+    /// <summary>
+    /// Which role a title's wording claims. <see cref="VaultItemRole.Config"/> is not reachable
+    /// here — the config note has no guid and is matched by name before this is asked — so an
+    /// unrecognised title falls through to <c>default</c>, which the caller reads as "not ours".
+    /// </summary>
+    private static VaultItemRole RoleOf(string title)
+    {
+        if (title.Contains("credential —", StringComparison.Ordinal)) return VaultItemRole.Credential;
+        if (title.Contains("route key —", StringComparison.Ordinal)) return VaultItemRole.RouteKey;
+        if (title.Contains("funnel key —", StringComparison.Ordinal)) return VaultItemRole.FunnelKey;
+
+        return default;
     }
 
     /// <summary>

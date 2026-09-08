@@ -1,4 +1,5 @@
 using RavensPort.Core.Diagnostics;
+using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 
 namespace RavensPort.Core.Vault;
@@ -217,30 +218,7 @@ public sealed class VaultIntegrityService(
         {
             foreach (var record in records)
             {
-                switch (record.Role)
-                {
-                    case VaultItemRole.Credential:
-                        if (store.Credentials.RemoveAll(c => c.Id == record.RecordId) == 0) continue;
-
-                        // A route left pointing at it would look configured and forward nothing.
-                        foreach (var route in store.Routes)
-                        {
-                            route.Credentials.RemoveAll(c => c.CredentialId == record.RecordId);
-                        }
-
-                        break;
-
-                    case VaultItemRole.RouteKey:
-                        if (store.Routes.RemoveAll(r => r.Id == record.RecordId) == 0) continue;
-                        break;
-
-                    case VaultItemRole.FunnelKey:
-                        if (store.McpFunnels.RemoveAll(f => f.Id == record.RecordId) == 0) continue;
-                        break;
-
-                    default:
-                        continue;
-                }
+                if (!Drop(store, record)) continue;
 
                 activityLog.Log($"VAULT integrity — removed '{record.Title}' from the configuration");
                 dropped++;
@@ -248,6 +226,31 @@ public sealed class VaultIntegrityService(
         }, ct);
 
         return dropped;
+    }
+
+    /// <summary>
+    /// Removes one record from the store. False means there was nothing to remove — an unknown
+    /// role, or a record the user had already deleted — and nothing is logged or counted for it.
+    /// </summary>
+    private static bool Drop(ConfigStore store, VaultMissingItem record) => record.Role switch
+    {
+        VaultItemRole.Credential => DropCredential(store, record.RecordId),
+        VaultItemRole.RouteKey => store.Routes.RemoveAll(r => r.Id == record.RecordId) > 0,
+        VaultItemRole.FunnelKey => store.McpFunnels.RemoveAll(f => f.Id == record.RecordId) > 0,
+        _ => false,
+    };
+
+    private static bool DropCredential(ConfigStore store, Guid credentialId)
+    {
+        if (store.Credentials.RemoveAll(c => c.Id == credentialId) == 0) return false;
+
+        // A route left pointing at it would look configured and forward nothing.
+        foreach (var route in store.Routes)
+        {
+            route.Credentials.RemoveAll(c => c.CredentialId == credentialId);
+        }
+
+        return true;
     }
 
     /// <summary>
