@@ -89,10 +89,22 @@
   <!--
     mTLS is not in the Microsoft Store build, and this suite enables it. Nothing to assert without
     it, and MtlsCertificateFactory.GenerateClientCertificatePfx is not compiled there at all.
+
+    All four files, not just the two that name the missing API. The stages, the host they drive,
+    the fixture they share and the attribute that orders them are one unit: removing the first two
+    on their own left ApprovalRun holding a SystemTestHost that no longer existed, so
+    `dotnet build -p:StoreBuild=true` failed on the fixture rather than skipping the suite.
+
+    SystemTestEnvironment stays. It reads the token and the acknowledgement variable and depends on
+    none of the above, so it still compiles — and leaving it means the one file that decides
+    whether this suite may touch a real vault is compiled in both configurations rather than only
+    in the one that runs it.
   -->
   <ItemGroup Condition="'$(StoreBuild)' == 'true'">
     <Compile Remove="SystemApprovalTests.cs" />
     <Compile Remove="SystemTestHost.cs" />
+    <Compile Remove="ApprovalRun.cs" />
+    <Compile Remove="StageOrderer.cs" />
   </ItemGroup>
 
 </Project>
