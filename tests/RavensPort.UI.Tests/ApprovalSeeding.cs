@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
@@ -183,6 +184,102 @@ internal static class ApprovalSeeding
                 $"{prefix} to carry what was configured — wanted [{Expected(store, credentials)}] "
                 + $"but saved [{Describe(store, prefix)}]");
         }
+    }
+
+    /// <summary>
+    /// Cuts one source of one funnel down to the named tools, through that source's own list.
+    ///
+    /// Three things have to happen in order, and each is a real step a person takes: the funnel is
+    /// selected so its sources are shown, every source is refreshed so the tab knows what tools
+    /// exist to tick — the list is read from the server, not guessed — and the source row is
+    /// expanded so its groups are on screen at all.
+    /// </summary>
+    public static async Task SelectToolsAsync(
+        SingleUseHarness harness, string funnelSlug, string sourceName, params string[] tools)
+    {
+        var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
+        var view = UiDriver.Show<McpFunnelView>(funnels);
+        var store = harness.Services.GetRequiredService<ConfigStoreCache>();
+
+        await UiDriver.SelectRowAsync<McpFunnelItemViewModel>(
+            view, AutomationIds.FunnelsGrid, f => f.Slug == funnelSlug);
+
+        // Nothing can be ticked until the catalogue exists, and the catalogue comes from asking the
+        // servers. This is the button that asks.
+        await UiDriver.ClickAsync(view, AutomationIds.RefreshAllSources);
+        await UiDriver.UntilAsync(
+            () => funnels.FunnelSources.Any(s => s.Name == sourceName && s.Tools.Items.Count > 0),
+            $"the tools of '{sourceName}' to be discovered");
+
+        // Re-resolved before every interaction rather than held. Expanding a row rebuilds the
+        // controls under it, so a container captured a moment ago can be detached from the tree by
+        // the time the next click needs it — which shows up as "the view has 0" of something that
+        // is plainly on screen.
+        Control Source() => UiDriver.Container<McpFunnelSourceItemViewModel>(view, s => s.Name == sourceName);
+
+        // The model is looked up again every time, never held. Refreshing the sources rewrites the
+        // catalogue, which reloads the tab and replaces every item in FunnelSources — so a captured
+        // instance goes on reporting "expanded" while the one actually on screen is collapsed, and
+        // the groups that should be under it are not in the tree at all.
+        McpFunnelSourceItemViewModel Model() => funnels.FunnelSources.Single(s => s.Name == sourceName);
+
+        await ExpandAsync(() => Model().IsExpanded, () => UiDriver.ClickAsync(Source(), AutomationIds.ExpandSource),
+            $"'{sourceName}' to expand");
+
+        await ExpandAsync(() => Model().Tools.IsExpanded,
+            () => UiDriver.ClickNthAsync(Source(), AutomationIds.ExpandGroup, 0),
+            $"the tools list of '{sourceName}' to open");
+
+        await UiDriver.SelectNthAsync(Source(), AutomationIds.GroupMode, 0, "Include");
+
+        // The ticks are hidden under "All" — deliberately, so nobody sets a selection that is then
+        // silently ignored — so they only exist once the mode above has changed and the list has
+        // been laid out.
+        await UiDriver.UntilAsync(
+            () => Model().Tools.Items.Count > 0
+                  && UiDriver.FindAll<CheckBox>(Source(), AutomationIds.GroupItem).Count
+                     >= Model().Tools.Items.Count,
+            $"the tool ticks of '{sourceName}' to appear once its mode is Include");
+
+        foreach (var tool in tools)
+        {
+            var index = Model().Tools.Items
+                .Select((item, i) => (item, i))
+                .First(x => x.item.Name == tool).i;
+
+            await UiDriver.CheckNthAsync(Source(), AutomationIds.GroupItem, index, true);
+        }
+
+        await UiDriver.UntilAsync(
+            () =>
+            {
+                var saved = store.Current.McpFunnels.Single(f => f.Slug == funnelSlug).Sources
+                    .SingleOrDefault(s => s.SourceId == store.Current.McpSources.Single(m => m.Name == sourceName).Id);
+
+                return saved is not null
+                       && saved.ToolMode == McpSelectionMode.Include
+                       && tools.All(saved.Tools.Contains)
+                       && saved.Tools.Count == tools.Length;
+            },
+            $"'{funnelSlug}' to serve exactly [{string.Join(", ", tools)}] from '{sourceName}'");
+    }
+
+    /// <summary>
+    /// Presses an expander until it is open, re-reading the state each time.
+    ///
+    /// A plain "if collapsed, click" races the reload a refresh triggers: the click lands on a row
+    /// that is replaced a moment later, and the next step looks for controls that are no longer
+    /// there. Asking again is what makes it settle.
+    /// </summary>
+    private static async Task ExpandAsync(Func<bool> isOpen, Func<Task> toggle, string because)
+    {
+        for (var attempt = 0; attempt < 5 && !isOpen(); attempt++)
+        {
+            await toggle();
+            await UiDriver.PumpAsync();
+        }
+
+        await UiDriver.UntilAsync(isOpen, because);
     }
 
     /// <summary>What a route actually carries, in a form a failure message can print.</summary>
