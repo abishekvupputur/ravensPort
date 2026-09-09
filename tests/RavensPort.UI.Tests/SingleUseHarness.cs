@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Client;
 using System.Text.Json;
 using RavensPort.Core;
 using RavensPort.Core.Mcp;
@@ -37,6 +38,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 {
     private readonly WebApplication _proxy;
     private readonly WebApplication _upstream;
+    private readonly List<McpClient> _mcpClients = [];
 
     public IServiceProvider Services => _proxy.Services;
 
@@ -173,6 +175,31 @@ internal sealed class SingleUseHarness : IAsyncDisposable
     /// <summary>An HTTP caller the guard will refuse, for the test that says so.</summary>
     public HttpClient CreateClientWithNoKey() => new() { BaseAddress = new Uri(BaseUrl) };
 
+    /// <summary>
+    /// An MCP client speaking to one of this app’s funnels, over the same loopback listener a real
+    /// client uses. The protocol version is pinned when a test wants to prove the funnel answers an
+    /// older revision as well as the current one.
+    /// </summary>
+    public async Task<McpClient> ConnectMcpAsync(string slug, string funnelKey, string? protocolVersion = null)
+    {
+        var options = new HttpClientTransportOptions
+        {
+            Endpoint = new Uri($"{BaseUrl}{McpFunnelEndpoints.BasePath}/{slug}"),
+            TransportMode = HttpTransportMode.StreamableHttp,
+            ConnectionTimeout = TimeSpan.FromSeconds(30),
+            AdditionalHeaders = new Dictionary<string, string> { [LocalAccessGuard.ApiKeyHeaderName] = funnelKey },
+        };
+
+        var transport = new HttpClientTransport(options, CreateClientFor(funnelKey), null, ownsHttpClient: true);
+
+        var client = await McpClient.CreateAsync(
+            transport,
+            protocolVersion is null ? null : new McpClientOptions { ProtocolVersion = protocolVersion });
+
+        _mcpClients.Add(client);
+        return client;
+    }
+
     /// <summary>Reads back what the echo upstream reported.</summary>
     public static Echoed ReadEcho(string json)
     {
@@ -187,6 +214,8 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var client in _mcpClients) await client.DisposeAsync();
+
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
 

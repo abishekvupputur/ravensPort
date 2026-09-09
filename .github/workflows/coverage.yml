@@ -229,6 +229,25 @@ jobs:
             --results-directory TestResults/coverage-raw/unit
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      # The third suite, and the one that covers RavensPort.UI at all: it drives real Avalonia views
+      # in a single-use session, so the view models behind them are executed rather than merely
+      # compiled. Same settings file as the other two, because a union of three halves collected
+      # under different include rules is not a union of anything.
+      #
+      # One framework rather than both. The suite multi-targets so that a locked restore works on
+      # Linux, but the two builds run identical code over identical assemblies -- collecting twice
+      # would double the runtime to merge a report with itself.
+      - name: UI suite with coverage
+        shell: pwsh
+        run: |
+          dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj `
+            -f net10.0-windows10.0.19041.0 `
+            -c Release --no-build --verbosity normal `
+            --settings coverlet.runsettings `
+            --collect:"XPlat Code Coverage" `
+            --results-directory TestResults/coverage-raw/ui
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       # Waits for system-approval.yml on this same commit, then takes its coverage artifact.
       #
       # Matched by head SHA, not by run id: this job is not what triggered that one, so its run has
@@ -335,8 +354,9 @@ jobs:
           # Provenance before the number. A reader who sees only a percentage cannot tell whether it
           # is the combined figure or half of one, and half of one is what a fork pull request
           # legitimately produces.
-          $lines = @('### Coverage — RavensPort.Core', '')
+          $lines = @('### Coverage — RavensPort.Core and RavensPort.UI', '')
           $lines += '- ✅ unit suite (`RavensPort.Core.Tests`) included'
+          $lines += '- ✅ single-use UI suite (`RavensPort.UI.Tests`) included'
           if ($env:HAVE_SYSTEM -eq 'true') {
             $lines += '- ✅ system suite (`RavensPort.SystemTests`) included'
             $lines += ''
