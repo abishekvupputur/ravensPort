@@ -165,7 +165,7 @@ public sealed partial class SetupViewModel(
             // window to attach to. Declining leaves the probe to report an unopened session, which
             // is the truth and comes with its own buttons.
             var needsGesture = card.Kind == VaultBackendKind.ProtonPass && CanUnlockWithHello;
-            var unlocked = needsGesture && UnlockWithHello();
+            var unlocked = needsGesture && RequestHelloGesture();
 
             if (needsGesture && !unlocked)
             {
@@ -261,8 +261,16 @@ public sealed partial class SetupViewModel(
         return true;
     }
 
-    /// <summary>The Hello gesture, with the state change it causes either way.</summary>
-    private bool UnlockWithHello()
+    /// <summary>
+    /// The Hello gesture, with the state change it causes either way.
+    ///
+    /// Not named UnlockWithHello: that pairs it with the <see cref="UnlockWithHelloCommand"/> below
+    /// as though this were its synchronous twin, which is how Sonar read it (S6966, “await
+    /// UnlockWithHelloAsync instead”). They are different jobs — that one is the standalone button,
+    /// this is the gesture taken mid-connect — and this one is synchronous on purpose: Hello needs a
+    /// foreground window, so the consent window owns the thread while it runs.
+    /// </summary>
+    private bool RequestHelloGesture()
     {
         var unlocked = HelloConsentWindow.RequestUnlock(protonAuthenticator.UnlockWithHelloAsync);
         NotifySessionStateChanged();

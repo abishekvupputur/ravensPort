@@ -308,6 +308,21 @@ jobs:
 
           Get-Content TestResults/coverage-report/Summary.txt
 
+          # A report with nothing in it is the failure this guard exists for, and it is not
+          # hypothetical: coverlet 6.x cannot instrument a module carrying LibraryImport-generated
+          # P/Invoke stubs, and rather than failing it wrote a well-formed Cobertura file with zero
+          # assemblies in it. Every check above stayed green -- tests passed, files existed,
+          # ReportGenerator merged them happily -- and SonarCloud was handed 0% as though the suites
+          # had covered nothing. The count-the-files check above cannot see that, because the files
+          # were there; only their contents were missing.
+          $coverable = [int](Select-Xml -Path TestResults/coverage-report/Cobertura.xml `
+            -XPath '/coverage/@lines-valid').Node.Value
+          if ($coverable -eq 0) {
+            Write-Host "::error::Coverage reports were produced but cover nothing (0 coverable lines). The collector did not instrument RavensPort.Core -- publishing this would report 0% as a real figure."
+            exit 1
+          }
+          Write-Host "Coverable lines: $coverable"
+
           # Provenance before the number. A reader who sees only a percentage cannot tell whether it
           # is the combined figure or half of one, and half of one is what a fork pull request
           # legitimately produces.
