@@ -13,7 +13,7 @@ using RavensPort.Core.Mcp;
 
 namespace RavensPort.UI.ViewModels;
 
-public sealed partial class SettingsViewModel : ObservableObject
+public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 {
     private const int VisibleLogLines = 150;
 
@@ -34,6 +34,17 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// tab lives as long as the process does.
     /// </summary>
     private readonly IDisposable _logTimer;
+
+    /// <summary>
+    /// Stops the repeating timer this view model started.
+    ///
+    /// The field existed only to keep the subscription alive, which reads as a field nobody uses
+    /// (S4487) — and it was true in a narrower sense too: nothing ever stopped the timer. The
+    /// container owns this object for the life of the process, so in practice it ran until exit;
+    /// disposing it is what the held handle is for, and says so.
+    /// </summary>
+    public void Dispose() => _logTimer.Dispose();
+
 
     [ObservableProperty] private int _listenPort;
     [ObservableProperty] private bool _mtlsEnabled;
@@ -1179,7 +1190,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         try
         {
-            File.WriteAllBytes(path, Convert.FromBase64String(pfx));
+            await File.WriteAllBytesAsync(path, Convert.FromBase64String(pfx));
             // The password is deliberately not echoed here. The status line is the one part of this
             // window that is read aloud in a screen share and captured in a screenshot of an
             // unrelated problem, and a password printed there outlives the export by however long

@@ -114,7 +114,12 @@ public class KeyringKeyStorageTests : IDisposable
     {
         // Offered on the setup page as a way out of a broken session, which means it is reachable
         // when there is nothing to remove.
-        await Protector().ForgetAsync(SessionDir);
+        var protector = Protector();
+
+        // Said out loud rather than left to "the body did not throw" (S2699). The quiet is the
+        // subject of this test, and a reader should not have to infer it from an empty method.
+        Assert.Null(await Record.ExceptionAsync(() => protector.ForgetAsync(SessionDir)));
+        Assert.False(protector.HasProtectedKey(SessionDir));
     }
 
     // ---- Failure, and what the user is told ----------------------------------------------------
