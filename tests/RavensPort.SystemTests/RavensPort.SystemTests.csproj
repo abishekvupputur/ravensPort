@@ -20,7 +20,13 @@
         SystemTestEnvironment.
   -->
   <PropertyGroup>
-    <!-- TargetFramework comes from Directory.Build.props — see the note there on why it is shared. -->
+    <!--
+      Both frameworks, matching RavensPort.Core.Tests. Directory.Build.props stopped setting a
+      single TargetFramework when the app learned to build on Linux, and this project was the one
+      left naming none — which is not a quiet default but a hard stop: `dotnet restore` on the
+      solution failed with NETSDK1013 for every project, because the solution lists this one.
+    -->
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 

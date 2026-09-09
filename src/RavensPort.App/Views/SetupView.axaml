@@ -512,6 +512,7 @@
                         </TextBlock>
                         <Button Content="Start in single use" HorizontalAlignment="Left" MinWidth="170"
                                 Classes="ghost"
+                                AutomationProperties.AutomationId="setup.startSingleUse"
                                 IsEnabled="{Binding CanCheck}"
                                 Command="{Binding StartSingleUseCommand}"/>
                     </StackPanel>

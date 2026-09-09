@@ -1,0 +1,88 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The single-use UI suite: the approval suite's ground, walked through the actual Avalonia views
+    instead of through the view models, on both platforms the app now builds for.
+
+    Why it can run in CI at all, when the approval suite cannot. RavensPort.SystemTests opens a real
+    1Password vault with a real service-account token, which is why it is serialised, gated behind
+    an acknowledgement variable and skipped everywhere else. This suite starts the app the way the
+    "Start in single use" button does: the whole configuration lives in memory, no password manager
+    is involved and no secret is needed, so it is safe on any pull request including a fork's.
+
+    What it does not cover, and cannot: mTLS. Turning it on rewrites the listener and the app
+    restarts itself to rebind Kestrel — and a single-use session's configuration exists only inside
+    the process that holds it, so a restart is precisely the thing that ends it. Stages 6 to 11 of
+    the approval suite are therefore not mirrored here; they remain that suite's job, against a real
+    vault that can survive the restart.
+  -->
+  <PropertyGroup>
+    <!--
+      One framework, chosen by the machine doing the building, because this project references
+      RavensPort.App and that project does the same. A multi-targeting suite would ask for an App
+      built for a framework the current OS does not produce.
+    -->
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">$(WindowsTargetFramework)</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">$(PortableTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      Avalonia resolves Application.Current through a static, and the headless platform is set up
+      once per process. Tests that each build a window therefore have to run one at a time, which
+      Avalonia.Headless.XUnit already enforces per collection; this turns off xUnit's own
+      cross-class parallelism so two classes cannot race the same static.
+    -->
+    <ParallelizeTestCollections>false</ParallelizeTestCollections>
+
+    <!--
+      CS0649 — "field is never assigned to". Same reason RavensPort.SystemTests carries it:
+      FakeMcpServer is linked from Core.Tests, where every one of its misbehaviour switches is set
+      by some test, and this suite uses only a few. The fields are assigned, just not by these
+      tests.
+    -->
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The headless platform draws to nothing and needs no display server, which is what lets the
+      same tests run on windows-latest and on ubuntu-latest without Xvfb. Version-locked to the
+      Avalonia the app itself uses: the headless backend is an implementation of the same
+      interfaces, and a mismatch fails at run time rather than at restore.
+
+      Avalonia.Headless, and deliberately not Avalonia.Headless.XUnit — which is the documented way
+      to do this and would give an [AvaloniaFact] attribute that does what UiSession does below.
+      It depends on xunit.v3, and every other suite here is on xunit 2.5.3. Two major versions of
+      one test framework in a repository whose CI names projects explicitly is a trap that springs
+      later and elsewhere; the session type the attribute is built on is public, so the cost of
+      going without it is the one small class in UiSession.cs.
+    -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.1" />
+
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RavensPort.App\RavensPort.App.csproj" />
+  </ItemGroup>
+
+  <!--
+    Linked rather than copied, for the same reason RavensPort.SystemTests links it: FakeMcpServer is
+    a hand-written MCP server whose value is that it is not the SDK, and a second copy would drift.
+  -->
+  <ItemGroup>
+    <Compile Include="..\RavensPort.Core.Tests\Mcp\FakeMcpServer.cs" Link="FakeMcpServer.cs" />
+  </ItemGroup>
+
+</Project>
