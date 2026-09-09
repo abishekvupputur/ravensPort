@@ -47,13 +47,22 @@ internal static class UiDriver
         return window;
     }
 
+    /// <summary>
+    /// Every control carrying this automation id, in visual-tree order.
+    ///
+    /// Needed because some ids are on a template rather than on a control: a route's credential
+    /// editors, a funnel's source check boxes. There is one per item, they are all called the same
+    /// thing, and which one is meant is a position — the second credential attached to this route.
+    /// </summary>
+    public static IReadOnlyList<T> FindAll<T>(Visual root, string automationId) where T : Control =>
+        [.. root.GetVisualDescendants()
+            .OfType<T>()
+            .Where(c => AutomationProperties.GetAutomationId(c) == automationId)];
+
     /// <summary>The one control carrying this automation id, or a failure naming what was there.</summary>
     public static T Find<T>(Visual root, string automationId) where T : Control
     {
-        var matches = root.GetVisualDescendants()
-            .OfType<T>()
-            .Where(c => AutomationProperties.GetAutomationId(c) == automationId)
-            .ToList();
+        var matches = FindAll<T>(root, automationId);
 
         if (matches.Count == 1) return matches[0];
 
@@ -123,10 +132,10 @@ internal static class UiDriver
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var match = combo.Items.FirstOrDefault(i => i?.ToString() == label)
+            var match = combo.Items.FirstOrDefault(i => Label(i) == label)
                 ?? throw new InvalidOperationException(
                     $"'{automationId}' has no item reading '{label}'. It offers: "
-                    + string.Join(", ", combo.Items.Select(i => i?.ToString())));
+                    + string.Join(", ", combo.Items.Select(Label)));
 
             combo.SelectedItem = match;
         });
@@ -134,12 +143,95 @@ internal static class UiDriver
         await PumpAsync();
     }
 
+    /// <summary>
+    /// What a combo box item reads as on screen.
+    ///
+    /// The item templates bind a property rather than showing ToString(), so a test that matched on
+    /// ToString() would be matching text no user ever sees — and for a record it would be the whole
+    /// object printed out. These three property names are the ones those templates bind.
+    /// </summary>
+    private static string Label(object? item) => item switch
+    {
+        null => "",
+        Enum e => e.ToString(),
+        _ => Property(item, "Label") ?? Property(item, "Name") ?? Property(item, "PathPrefix")
+             ?? item.ToString() ?? "",
+    };
+
+    private static string? Property(object item, string name) =>
+        item.GetType().GetProperty(name)?.GetValue(item)?.ToString();
+
     /// <summary>Sets a check box, if it is not already where it should be.</summary>
     public static async Task CheckAsync(Visual root, string automationId, bool value)
     {
         var box = Find<CheckBox>(root, automationId);
 
         await Dispatcher.UIThread.InvokeAsync(() => box.IsChecked = value);
+        await PumpAsync();
+    }
+
+    /// <summary>
+    /// Selects a row in a grid, which is how the row's editor comes into existence.
+    ///
+    /// Route and funnel editing lives in row details shown only for the selected row, so there is
+    /// nothing in the visual tree to drive until something is selected — and, usefully, never more
+    /// than one row's worth of it, which is what keeps the ids inside those templates unambiguous.
+    /// </summary>
+    public static async Task SelectRowAsync<TItem>(Visual root, string automationId, Func<TItem, bool> match)
+    {
+        var grid = Find<DataGrid>(root, automationId);
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var item = grid.ItemsSource!.OfType<TItem>().FirstOrDefault(match)
+                ?? throw new InvalidOperationException($"No row in '{automationId}' matched.");
+
+            grid.SelectedItem = item;
+        });
+
+        await PumpAsync();
+    }
+
+    /// <summary>Types into the nth box carrying this id — see <see cref="FindAll{T}"/>.</summary>
+    public static async Task TypeNthAsync(Visual root, string automationId, int index, string text)
+    {
+        var boxes = FindAll<TextBox>(root, automationId);
+        Assert.True(index < boxes.Count,
+            $"wanted '{automationId}' #{index} but the view has {boxes.Count}");
+
+        await Dispatcher.UIThread.InvokeAsync(() => boxes[index].Text = text);
+        await PumpAsync();
+    }
+
+    /// <summary>Picks in the nth combo carrying this id, by the text an item shows.</summary>
+    public static async Task SelectNthAsync(Visual root, string automationId, int index, string label)
+    {
+        var combos = FindAll<ComboBox>(root, automationId);
+        Assert.True(index < combos.Count,
+            $"wanted '{automationId}' #{index} but the view has {combos.Count}");
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var combo = combos[index];
+            var match = combo.Items.FirstOrDefault(i => Label(i) == label)
+                ?? throw new InvalidOperationException(
+                    $"'{automationId}' #{index} has no item reading '{label}'. It offers: "
+                    + string.Join(", ", combo.Items.Select(Label)));
+
+            combo.SelectedItem = match;
+        });
+
+        await PumpAsync();
+    }
+
+    /// <summary>Ticks the nth check box carrying this id.</summary>
+    public static async Task CheckNthAsync(Visual root, string automationId, int index, bool value)
+    {
+        var boxes = FindAll<CheckBox>(root, automationId);
+        Assert.True(index < boxes.Count,
+            $"wanted '{automationId}' #{index} but the view has {boxes.Count}");
+
+        await Dispatcher.UIThread.InvokeAsync(() => boxes[index].IsChecked = value);
         await PumpAsync();
     }
 

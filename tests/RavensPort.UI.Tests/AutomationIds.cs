@@ -29,6 +29,30 @@ internal static class AutomationIds
     public const string RouteCredential = "routes.editor.credential";
     public const string AddRoute = "routes.editor.add";
 
+    // A route's own editor, in the grid's row details — realized only for the selected row, which
+    // is what keeps these unambiguous across eight routes. Repeated once per attached credential.
+    public const string RoutesGrid = "routes.grid";
+    public const string AddRouteCredential = "routes.detail.addCredential";
+    public const string RouteDetailCredential = "routes.detail.credential";
+    public const string RouteDetailPlacement = "routes.detail.placement";
+    public const string RouteDetailParameter = "routes.detail.parameter";
+    public const string RouteDetailValuePrefix = "routes.detail.valuePrefix";
+
+    // MCP sources and the funnels that pool them.
+    public const string EnableFunnel = "funnels.enable";
+    public const string SourceName = "funnels.source.name";
+    public const string SourceAlias = "funnels.source.alias";
+    public const string SourceKind = "funnels.source.kind";
+    public const string SourceTransport = "funnels.source.transport";
+    public const string SourceUrl = "funnels.source.url";
+    public const string SourceRoute = "funnels.source.route";
+    public const string AddSource = "funnels.source.add";
+    public const string FunnelName = "funnels.funnel.name";
+    public const string FunnelSlug = "funnels.funnel.slug";
+    public const string AddFunnel = "funnels.funnel.add";
+    public const string FunnelsGrid = "funnels.grid";
+    public const string IncludeSource = "funnels.funnel.includeSource";
+
     // Settings. Disconnect is two presses: the first asks, the second does it — and the second is a
     // different button, which is the point of the confirmation rather than an accident of layout.
     public const string Disconnect = "settings.disconnect";

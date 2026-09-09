@@ -98,6 +98,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                 </Grid>
 
                 <CheckBox Content="Enable MCP funnel" IsChecked="{Binding IsEnabled}"
+                          AutomationProperties.AutomationId="funnels.enable"
                           ToolTip.Tip="{StaticResource FunnelHelpText}" Margin="0,0,0,4"/>
                 <TextBlock Classes="hint" Margin="0,0,0,16"
                            Text="Off by default. A funnel lets one caller reach several upstreams — and their OAuth grants — through a single path, so it stays dark until you ask for it."/>
@@ -116,6 +117,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                 </StackPanel>
 
                 <DataGrid ItemsSource="{Binding Funnels}" SelectedItem="{Binding SelectedFunnel}"
+                          AutomationProperties.AutomationId="funnels.grid"
                           AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
                           behaviors:RowSelectionToggle.Enable="True"
                           IsVisible="{Binding HasFunnels}">
@@ -221,6 +223,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                         <StackPanel>
                                             <Grid>
                                                 <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
+                                                          AutomationProperties.AutomationId="funnels.funnel.includeSource"
                                                           VerticalAlignment="Center" Margin="0,0,40,0">
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Name}"/>
@@ -261,11 +264,13 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                             <StackPanel Margin="0,0,6,0">
                                 <TextBlock Text="Name" Classes="label"/>
-                                <TextBox Text="{Binding NewFunnelName}"/>
+                                <TextBox AutomationProperties.AutomationId="funnels.funnel.name"
+                                         Text="{Binding NewFunnelName}"/>
                             </StackPanel>
                             <StackPanel Margin="6,0,0,0">
                                 <TextBlock Text="Endpoint slug (optional)" Classes="label"/>
-                                <TextBox Text="{Binding NewFunnelSlug}"
+                                <TextBox AutomationProperties.AutomationId="funnels.funnel.slug"
+                                         Text="{Binding NewFunnelSlug}"
                                          ToolTip.Tip="Last part of the URL, e.g. /mcp/coding-agent. Derived from the name if left blank."/>
                             </StackPanel>
                         </UniformGrid>
@@ -279,7 +284,9 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                             <TextBlock Classes="hint"
                                        Text="The funnel gets its own key on creation — copy it from the panel above after selecting the funnel. Changeable at any time."/>
                         </StackPanel>
-                        <Button Content="Add funnel" HorizontalAlignment="Left" Width="110" Command="{Binding AddFunnelCommand}"/>
+                        <Button Content="Add funnel" HorizontalAlignment="Left" Width="110"
+                                AutomationProperties.AutomationId="funnels.funnel.add"
+                                Command="{Binding AddFunnelCommand}"/>
                     </StackPanel>
                 </Border>
 
@@ -391,12 +398,14 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                             <StackPanel Margin="0,0,6,0">
                                 <TextBlock Text="Name" Classes="label"/>
-                                <TextBox Text="{Binding NewSourceName}"/>
+                                <TextBox AutomationProperties.AutomationId="funnels.source.name"
+                                         Text="{Binding NewSourceName}"/>
                             </StackPanel>
                             <StackPanel Margin="6,0,0,0">
                                 <TextBlock Text="Tool prefix (optional)" Classes="label"
                                            ToolTip.Tip="{StaticResource AliasHelpText}"/>
-                                <TextBox Text="{Binding NewSourceAlias}"
+                                <TextBox AutomationProperties.AutomationId="funnels.source.alias"
+                                         Text="{Binding NewSourceAlias}"
                                          ToolTip.Tip="{StaticResource AliasHelpText}"/>
                             </StackPanel>
                         </UniformGrid>
@@ -406,6 +415,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                 <TextBlock Text="Kind" Classes="label"
                                            ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
                                 <ComboBox ItemsSource="{Binding AllKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                                          AutomationProperties.AutomationId="funnels.source.kind"
                                           HorizontalAlignment="Stretch"
                                           ToolTip.Tip="{StaticResource SourceKindHelpText}"/>
                             </StackPanel>
@@ -413,6 +423,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                 <TextBlock Text="Transport" Classes="label"
                                            ToolTip.Tip="{StaticResource TransportHelpText}"/>
                                 <ComboBox ItemsSource="{Binding AllTransports}" SelectedItem="{Binding NewSourceTransport, Mode=TwoWay}"
+                                          AutomationProperties.AutomationId="funnels.source.transport"
                                           HorizontalAlignment="Stretch"
                                           ToolTip.Tip="{StaticResource TransportHelpText}"/>
                             </StackPanel>
@@ -421,6 +432,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsRouteSource}">
                             <TextBlock Text="Route" Classes="label"/>
                             <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewSourceRoute}"
+                                      AutomationProperties.AutomationId="funnels.source.route"
                                       HorizontalAlignment="Stretch">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="models:RouteMapping">
@@ -447,12 +459,15 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
 
                         <StackPanel Margin="0,0,0,8" IsVisible="{Binding IsUrlSource}">
                             <TextBlock Text="Server URL" Classes="label"/>
-                            <TextBox Text="{Binding NewSourceUrl}"/>
+                            <TextBox AutomationProperties.AutomationId="funnels.source.url"
+                                     Text="{Binding NewSourceUrl}"/>
                             <TextBlock Classes="hint"
                                        Text="For servers needing no credential. https required, except on localhost."/>
                         </StackPanel>
 
-                        <Button Content="Add source" HorizontalAlignment="Left" Width="110" Command="{Binding AddSourceCommand}"/>
+                        <Button Content="Add source" HorizontalAlignment="Left" Width="110"
+                                AutomationProperties.AutomationId="funnels.source.add"
+                                Command="{Binding AddSourceCommand}"/>
                     </StackPanel>
                 </Border>
 
