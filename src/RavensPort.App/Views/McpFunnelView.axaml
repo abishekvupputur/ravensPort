@@ -93,6 +93,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                 <Grid Margin="0,0,0,6">
                     <TextBlock Text="MCP Funnel" Classes="section" VerticalAlignment="Center"/>
                     <Button Content="Refresh" HorizontalAlignment="Right" Width="90" Classes="ghost"
+                            AutomationProperties.AutomationId="funnels.refresh"
                             Command="{Binding RefreshCommand}"
                             ToolTip.Tip="Re-read sources, funnels, and routes from storage"/>
                 </Grid>

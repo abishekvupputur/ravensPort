@@ -100,9 +100,12 @@ internal static class ApprovalSeeding
         await UiDriver.ClickAsync(view, AutomationIds.SaveCredential);
         await UiDriver.UntilAsync(() => store.Current.Credentials.Count == 1, "the API key to be saved");
 
-        // The OAuth credential's shape, through the same editor.
-        await UiDriver.SelectAsync(view, AutomationIds.CredentialKind, "OAuth 2.0");
+        // The OAuth credential's shape, through the same editor. The client id is not optional:
+        // the editor refuses a save without one, and says so on the status line.
+        await UiDriver.SelectAsync(view, AutomationIds.CredentialKind, "OAuth2 (user login)");
         await UiDriver.TypeAsync(view, AutomationIds.CredentialName, OAuthCredential);
+        await UiDriver.TypeAsync(view, AutomationIds.CredentialClientId, "id");
+        await UiDriver.TypeAsync(view, AutomationIds.CredentialClientSecret, "secret"); // gitleaks:allow
         await UiDriver.ClickAsync(view, AutomationIds.SaveCredential);
         await UiDriver.UntilAsync(() => store.Current.Credentials.Count == 2, "the OAuth credential to be saved");
 
@@ -143,31 +146,62 @@ internal static class ApprovalSeeding
 
             if (credentials.Length == 0) continue;
 
-            // Selecting the row is what brings its editor into existence, so it has to happen
-            // before anything below can be found.
-            await UiDriver.SelectRowAsync<RouteItemViewModel>(
+            // Selecting the row is what brings its editor into existence, and the row is what
+            // everything below is searched inside — the grid keeps more than one row’s details
+            // realized, so the whole view would offer several of each of these.
+            var row = await UiDriver.SelectAndOpenRowAsync<RouteItemViewModel>(
                 view, AutomationIds.RoutesGrid, r => r.PathPrefix == prefix);
 
             for (var i = 0; i < credentials.Length; i++)
             {
                 var (credential, placement, parameter, valuePrefix) = credentials[i];
 
-                await UiDriver.ClickAsync(view, AutomationIds.AddRouteCredential);
+                await UiDriver.ClickAsync(row, AutomationIds.AddRouteCredential);
                 await UiDriver.UntilAsync(
-                    () => UiDriver.FindAll<Avalonia.Controls.ComboBox>(view, AutomationIds.RouteDetailCredential).Count > i,
+                    () => UiDriver.FindAll<Avalonia.Controls.ComboBox>(row, AutomationIds.RouteDetailCredential).Count > i,
                     $"credential editor #{i} on {prefix}");
 
-                await UiDriver.SelectNthAsync(view, AutomationIds.RouteDetailCredential, i, credential);
-                await UiDriver.SelectNthAsync(view, AutomationIds.RouteDetailPlacement, i, placement);
-                await UiDriver.TypeNthAsync(view, AutomationIds.RouteDetailParameter, i, parameter);
-                await UiDriver.TypeNthAsync(view, AutomationIds.RouteDetailValuePrefix, i, valuePrefix);
+                // Name before placement, and that order is the product’s rather than a preference.
+                // "Add credential" takes the next free slot, so a second entry for the same
+                // credential opens on a placement the route is not already using — Body, where a
+                // Header is taken. Moving it to Header while it still carries the default name would
+                // collide with the entry already there, and the view model refuses that outright.
+                // Renaming it first makes the slot free, which is the same sequence a person is
+                // walked through by the refusal message.
+                await UiDriver.SelectNthAsync(row, AutomationIds.RouteDetailCredential, i, credential);
+                await UiDriver.TypeNthAsync(row, AutomationIds.RouteDetailParameter, i, parameter);
+                await UiDriver.SelectNthAsync(row, AutomationIds.RouteDetailPlacement, i, placement);
+                await UiDriver.TypeNthAsync(row, AutomationIds.RouteDetailParameter, i, parameter);
+                await UiDriver.TypeNthAsync(row, AutomationIds.RouteDetailValuePrefix, i, valuePrefix);
             }
 
+            // Counting the editors is not enough: adding one produces an empty row, so a selection
+            // that failed to stick would still count. Every field is compared, and a mismatch says
+            // what was actually saved rather than leaving it to surface as a missing header later.
             await UiDriver.UntilAsync(
-                () => store.Current.Routes.Single(r => r.PathPrefix == prefix).Credentials.Count == credentials.Length,
-                $"{prefix} to carry {credentials.Length} credentials");
+                () => Describe(store, prefix) == Expected(store, credentials),
+                $"{prefix} to carry what was configured — wanted [{Expected(store, credentials)}] "
+                + $"but saved [{Describe(store, prefix)}]");
         }
     }
+
+    /// <summary>What a route actually carries, in a form a failure message can print.</summary>
+    private static string Describe(ConfigStoreCache store, string prefix)
+    {
+        var route = store.Current.Routes.SingleOrDefault(r => r.PathPrefix == prefix);
+        if (route is null) return "(no such route)";
+
+        var names = store.Current.Credentials.ToDictionary(c => c.Id, c => c.Name);
+
+        return string.Join(" | ", route.Credentials.Select(c =>
+            $"{(names.TryGetValue(c.CredentialId, out var n) ? n : c.CredentialId.ToString())}"
+            + $"/{c.Placement}/{c.ParameterName}/'{c.ValuePrefix}'"));
+    }
+
+    /// <summary>The same form, built from what the seeding asked for.</summary>
+    private static string Expected(
+        ConfigStoreCache store, (string Credential, string Placement, string Parameter, string Prefix)[] wanted) =>
+        string.Join(" | ", wanted.Select(w => $"{w.Credential}/{w.Placement}/{w.Parameter}/'{w.Prefix}'"));
 
     /// <summary>
     /// Ticks "Enable MCP funnel", which is what makes anything under /mcp answer at all.
@@ -210,18 +244,18 @@ internal static class ApprovalSeeding
         await UiDriver.UntilAsync(
             () => store.Current.Routes.Any(r => r.PathPrefix == "/mcpsecured"), "the secured route");
 
-        await UiDriver.SelectRowAsync<RouteItemViewModel>(
+        var securedRow = await UiDriver.SelectAndOpenRowAsync<RouteItemViewModel>(
             routesView, AutomationIds.RoutesGrid, r => r.PathPrefix == "/mcpsecured");
 
-        await UiDriver.ClickAsync(routesView, AutomationIds.AddRouteCredential);
+        await UiDriver.ClickAsync(securedRow, AutomationIds.AddRouteCredential);
         await UiDriver.UntilAsync(
-            () => UiDriver.FindAll<Avalonia.Controls.ComboBox>(routesView, AutomationIds.RouteDetailCredential).Count > 0,
+            () => UiDriver.FindAll<Avalonia.Controls.ComboBox>(securedRow, AutomationIds.RouteDetailCredential).Count > 0,
             "the credential editor on /mcpsecured");
 
-        await UiDriver.SelectNthAsync(routesView, AutomationIds.RouteDetailCredential, 0, OAuthCredential);
-        await UiDriver.SelectNthAsync(routesView, AutomationIds.RouteDetailPlacement, 0, "Header");
-        await UiDriver.TypeNthAsync(routesView, AutomationIds.RouteDetailParameter, 0, "Authorization");
-        await UiDriver.TypeNthAsync(routesView, AutomationIds.RouteDetailValuePrefix, 0, "Bearer ");
+        await UiDriver.SelectNthAsync(securedRow, AutomationIds.RouteDetailCredential, 0, OAuthCredential);
+        await UiDriver.SelectNthAsync(securedRow, AutomationIds.RouteDetailPlacement, 0, "Header");
+        await UiDriver.TypeNthAsync(securedRow, AutomationIds.RouteDetailParameter, 0, "Authorization");
+        await UiDriver.TypeNthAsync(securedRow, AutomationIds.RouteDetailValuePrefix, 0, "Bearer ");
 
         await UiDriver.UntilAsync(
             () => store.Current.Routes.Single(r => r.PathPrefix == "/mcpsecured").Credentials.Count == 1,
@@ -230,10 +264,15 @@ internal static class ApprovalSeeding
         var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
         var funnelView = UiDriver.Show<McpFunnelView>(funnels);
 
+        await UiDriver.ClickAsync(funnelView, AutomationIds.RefreshFunnels);
+        await UiDriver.UntilAsync(
+            () => funnels.Routes.Any(r => r.PathPrefix == "/mcpsecured"),
+            "the funnel tab to notice the route added on the Routes tab");
+
         await UiDriver.TypeAsync(funnelView, AutomationIds.SourceName, "secured");
         await UiDriver.TypeAsync(funnelView, AutomationIds.SourceAlias, "secured");
-        await UiDriver.SelectAsync(funnelView, AutomationIds.SourceKind, "Proxy route");
-        await UiDriver.SelectAsync(funnelView, AutomationIds.SourceTransport, "Streamable HTTP");
+        await UiDriver.SelectAsync(funnelView, AutomationIds.SourceKind, "ProxyRoute");
+        await UiDriver.SelectAsync(funnelView, AutomationIds.SourceTransport, "StreamableHttp");
         await UiDriver.SelectAsync(funnelView, AutomationIds.SourceRoute, "/mcpsecured");
         await UiDriver.ClickAsync(funnelView, AutomationIds.AddSource);
         await UiDriver.UntilAsync(
@@ -257,31 +296,44 @@ internal static class ApprovalSeeding
     }
 
     /// <summary>
-    /// Adds one MCP source per server, then a funnel over them, through the funnel tab.
+    /// Adds one MCP source per server, through the funnel tab.
+    ///
+    /// Separate from the funnel below, because a source is not a funnel’s property: two funnels can
+    /// pool the same one, which is exactly what "both" and "solo" do. Adding a second copy under a
+    /// different name is not a way to have it twice — the alias is what a source’s tools are
+    /// prefixed with, so a duplicate one is refused on the way in.
     /// </summary>
-    public static async Task SeedFunnelAsync(
-        SingleUseHarness harness, string funnelName, params (string Name, string Alias, string Url)[] sources)
+    public static async Task SeedSourcesAsync(
+        SingleUseHarness harness, params (string Name, string Alias, string Url)[] sources)
     {
         var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
         var view = UiDriver.Show<McpFunnelView>(funnels);
         var store = harness.Services.GetRequiredService<ConfigStoreCache>();
 
-        var before = store.Current.McpSources.Count;
-
-        for (var i = 0; i < sources.Length; i++)
+        foreach (var (name, alias, url) in sources)
         {
-            var (name, alias, url) = sources[i];
-
             await UiDriver.TypeAsync(view, AutomationIds.SourceName, name);
             await UiDriver.TypeAsync(view, AutomationIds.SourceAlias, alias);
-            await UiDriver.SelectAsync(view, AutomationIds.SourceKind, "Remote URL");
-            await UiDriver.SelectAsync(view, AutomationIds.SourceTransport, "Streamable HTTP");
+            await UiDriver.SelectAsync(view, AutomationIds.SourceKind, "RemoteUrl");
+            await UiDriver.SelectAsync(view, AutomationIds.SourceTransport, "StreamableHttp");
             await UiDriver.TypeAsync(view, AutomationIds.SourceUrl, url);
             await UiDriver.ClickAsync(view, AutomationIds.AddSource);
 
-            var expected = before + i + 1;
-            await UiDriver.UntilAsync(() => store.Current.McpSources.Count == expected, $"source '{name}' to be added");
+            await UiDriver.UntilAsync(
+                () => store.Current.McpSources.Any(s => s.Name == name),
+                $"source '{name}' to be added — the tab says: {funnels.StatusMessage}");
         }
+    }
+
+    /// <summary>
+    /// Adds a funnel over sources that already exist, through the funnel tab.
+    /// </summary>
+    public static async Task SeedFunnelAsync(
+        SingleUseHarness harness, string funnelName, params string[] sourceNames)
+    {
+        var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
+        var view = UiDriver.Show<McpFunnelView>(funnels);
+        var store = harness.Services.GetRequiredService<ConfigStoreCache>();
 
         await UiDriver.TypeAsync(view, AutomationIds.FunnelName, funnelName);
         await UiDriver.TypeAsync(view, AutomationIds.FunnelSlug, funnelName);
@@ -294,7 +346,7 @@ internal static class ApprovalSeeding
         await UiDriver.SelectRowAsync<McpFunnelItemViewModel>(
             view, AutomationIds.FunnelsGrid, f => f.Slug == funnelName);
 
-        foreach (var (name, _, _) in sources)
+        foreach (var name in sourceNames)
         {
             var index = funnels.FunnelSources
                 .Select((s, i) => (s, i))
@@ -304,7 +356,7 @@ internal static class ApprovalSeeding
         }
 
         await UiDriver.UntilAsync(
-            () => store.Current.McpFunnels.Single(f => f.Slug == funnelName).Sources.Count == sources.Length,
-            $"funnel '{funnelName}' to pool {sources.Length} sources");
+            () => store.Current.McpFunnels.Single(f => f.Slug == funnelName).Sources.Count == sourceNames.Length,
+            $"funnel '{funnelName}' to pool {sourceNames.Length} sources");
     }
 }

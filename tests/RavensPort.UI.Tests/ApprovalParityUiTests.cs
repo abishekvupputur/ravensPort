@@ -91,9 +91,13 @@ public class ApprovalParityUiTests
         await using var beta = await FakeMcpServer.StartAsync();
 
         await ApprovalSeeding.EnableFunnelAsync(harness);
-        await ApprovalSeeding.SeedFunnelAsync(harness, "both",
+        await ApprovalSeeding.SeedSourcesAsync(harness,
             ("alpha", "alpha", alpha.Url), ("beta", "beta", beta.Url));
-        await ApprovalSeeding.SeedFunnelAsync(harness, "solo", ("alpha2", "alpha", alpha.Url));
+
+        // Two funnels over the same two sources, which is the point of the pair: one pools both,
+        // the other pools alpha alone and must not show beta's tools.
+        await ApprovalSeeding.SeedFunnelAsync(harness, "both", "alpha", "beta");
+        await ApprovalSeeding.SeedFunnelAsync(harness, "solo", "alpha");
 
         var store = harness.Services.GetRequiredService<ConfigStoreCache>();
         var bothKey = store.Current.McpFunnels.Single(f => f.Slug == "both").Key.Value;
@@ -153,7 +157,11 @@ public class ApprovalParityUiTests
         var client = await harness.ConnectMcpAsync("oauth", key);
 
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        Assert.Contains("secured__echo", tools);
+        Assert.True(tools.Contains("secured__echo"),
+            $"funnel offered [{string.Join(", ", tools)}]; the fake saw {secured.ReceivedAuthorization.Count} "
+            + $"request(s); activity log: "
+            + string.Join(" // ", harness.Services.GetRequiredService<RavensPort.Core.Diagnostics.ActivityLog>()
+                .GetRecent(8)));
 
         var call = await client.CallToolAsync(
             "secured__echo", new Dictionary<string, object?> { ["value"] = "through the route" }!);

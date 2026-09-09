@@ -18,7 +18,16 @@ internal static class AutomationIds
     public const string CredentialApiKey = "credentials.editor.apiKey";
     public const string CredentialPlacement = "credentials.editor.placement";
     public const string CredentialParameter = "credentials.editor.parameter";
+    public const string CredentialClientId = "credentials.editor.clientId";
+    public const string CredentialClientSecret = "credentials.editor.clientSecret";
+    public const string CredentialTokenEndpoint = "credentials.editor.tokenEndpoint";
+    public const string CredentialScopes = "credentials.editor.scopes";
+    public const string CredentialTestEndpoint = "credentials.editor.testEndpoint";
     public const string SaveCredential = "credentials.editor.save";
+    public const string CancelCredentialEdit = "credentials.editor.cancel";
+    public const string EditCredentialRow = "credentials.row.edit";
+    public const string DeleteCredentialRow = "credentials.row.delete";
+    public const string TestCredentialRow = "credentials.row.test";
 
     // Routes — an upstream first, then a route pointing at it.
     public const string UpstreamName = "routes.upstream.name";
@@ -40,6 +49,7 @@ internal static class AutomationIds
 
     // MCP sources and the funnels that pool them.
     public const string EnableFunnel = "funnels.enable";
+    public const string RefreshFunnels = "funnels.refresh";
     public const string SourceName = "funnels.source.name";
     public const string SourceAlias = "funnels.source.alias";
     public const string SourceKind = "funnels.source.kind";
