@@ -178,13 +178,16 @@ jobs:
           DOTNET_USE_POLLING_FILE_WATCHER: "1"
         run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
 
-      # The same UI suite the Windows job runs, on the portable target. The native dependencies
-      # installed above are what it needs: Avalonia’s headless platform draws to nothing, but the
-      # assembly still loads against libX11 and libfontconfig.
+      # The same UI suite the Windows job runs, on the portable target. -f net10.0 for the same
+      # reason the step above carries it: the suite multi-targets, and the Windows half of it
+      # cannot be built here at all.
+      #
+      # The native dependencies installed above are what it needs: Avalonia’s headless platform
+      # draws to nothing, but the assembly still loads against libX11 and libfontconfig.
       - name: UI suite (single use)
         env:
           DOTNET_USE_POLLING_FILE_WATCHER: "1"
-        run: dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -c Release --no-restore --verbosity normal
+        run: dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
 
       # The counterpart to "Validate installer script" on Windows, and it earns its ~90 seconds
       # twice over. It is the only step that publishes self-contained linux-x64 — so the only one
