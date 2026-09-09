@@ -21,6 +21,9 @@ namespace RavensPort.UI.Tests;
 /// </summary>
 public class FunnelToolSelectionUiTests
 {
+    /// <summary>The three sources the pooling test builds, named once (CA1861).</summary>
+    private static readonly string[] ThreeSources = ["one", "two", "three"];
+
     /// <summary>
     /// Three sources, everything pooled: every tool of every source is reachable, and each arrives
     /// under its own source's prefix so two servers offering "echo" do not collide.
@@ -43,7 +46,7 @@ public class FunnelToolSelectionUiTests
 
         var tools = await ListToolsAsync(harness, "everything");
 
-        foreach (var source in new[] { "one", "two", "three" })
+        foreach (var source in ThreeSources)
         {
             foreach (var tool in one.Tools)
             {
@@ -59,7 +62,7 @@ public class FunnelToolSelectionUiTests
         // again before the upstream sees it.
         var client = await harness.ConnectMcpAsync("everything", KeyOf(harness, "everything"));
 
-        foreach (var source in new[] { "one", "two", "three" })
+        foreach (var source in ThreeSources)
         {
             var call = await client.CallToolAsync(
                 $"{source}__echo", new Dictionary<string, object?> { ["value"] = $"hello {source}" }!);
