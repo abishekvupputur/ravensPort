@@ -83,7 +83,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<IClipboardService, AvaloniaClipboardService>();
         builder.Services.AddSingleton<IPlatformLauncher, RecordingLauncher>();
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
-        builder.Services.AddSingleton<IFileSavePicker, AvaloniaFileSavePicker>();
+        builder.Services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
@@ -241,6 +241,38 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
         await _upstream.StopAsync();
         await _upstream.DisposeAsync();
+    }
+}
+
+/// <summary>
+/// Answers the save dialog with a temp path instead of showing one.
+///
+/// The real picker is a modal window waiting for a person, so a test that reached it would hang
+/// until the run timed out. What is under test is what gets written and where the app was told to
+/// write it — both of which this keeps.
+/// </summary>
+internal sealed class RecordingSavePicker : IFileSavePicker
+{
+    private readonly string _directory =
+        Path.Combine(Path.GetTempPath(), $"ravensport-ui-{Guid.NewGuid():n}");
+
+    /// <summary>Every path handed back, in order.</summary>
+    public List<string> Picked { get; } = [];
+
+    /// <summary>Set to make the next pick look like a cancelled dialog.</summary>
+    public bool Cancel { get; set; }
+
+    public Task<string?> PickSavePathAsync(
+        string title, string suggestedFileName, string extension, string filterName)
+    {
+        if (Cancel) return Task.FromResult<string?>(null);
+
+        Directory.CreateDirectory(_directory);
+
+        var path = Path.Combine(_directory, suggestedFileName);
+        Picked.Add(path);
+
+        return Task.FromResult<string?>(path);
     }
 }
 
