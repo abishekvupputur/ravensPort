@@ -271,7 +271,9 @@
                     IsVisible="{Binding IsMtlsAvailable}">
                 <StackPanel>
                     <TextBlock Text="Client Certificate (mTLS)" Classes="section"/>
-                    <CheckBox Content="Require mTLS for all routes and funnels" IsChecked="{Binding MtlsEnabled}" Margin="0,0,0,8"/>
+                    <CheckBox Content="Require mTLS for all routes and funnels"
+                              AutomationProperties.AutomationId="settings.mtls.enabled"
+                              IsChecked="{Binding MtlsEnabled}" Margin="0,0,0,8"/>
                     <TextBlock Text="Restart required for mTLS changes to take effect."
                                Classes="hint" Foreground="{StaticResource ErrorBrush}" Margin="0,0,0,8"
                                IsVisible="{Binding IsMtlsRestartRequired}"/>
@@ -299,19 +301,26 @@
 
                              Width, not MaxWidth: left-aligned in a StackPanel the box sizes to its
                              content, so an empty one is a few pixels wide and looks broken. -->
-                        <TextBox Text="{Binding NewCertificatePassword}" PasswordChar="●"
+                        <TextBox AutomationProperties.AutomationId="settings.mtls.password"
+                                 Text="{Binding NewCertificatePassword}" PasswordChar="●"
                                  Width="320" HorizontalAlignment="Left" FontSize="13" Padding="8,6" Margin="0,0,0,4"/>
                         <TextBlock Classes="hint" Margin="0,0,0,8"
                                    Text="Every client loading the exported file will need this. Write it down before confirming — it is never shown again, and the only way out of a forgotten one is generating another certificate and reinstalling it everywhere."/>
                         <WrapPanel>
-                            <Button Content="Confirm Generate" Margin="0,0,8,6" Command="{Binding GenerateMtlsCertificateCommand}"/>
+                            <Button Content="Confirm Generate" Margin="0,0,8,6"
+                                    AutomationProperties.AutomationId="settings.mtls.generate.confirm"
+                                    Command="{Binding GenerateMtlsCertificateCommand}"/>
                             <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost" Command="{Binding CancelGenerateCertificateCommand}"/>
                         </WrapPanel>
                     </StackPanel>
 
                     <WrapPanel IsVisible="{Binding !IsConfirmingGenerateCertificate}">
-                        <Button Content="Generate new certificate" Margin="0,0,8,6" Command="{Binding GenerateMtlsCertificateCommand}"/>
-                        <Button Content="Export certificate" Margin="0,0,8,6" Classes="ghost" Command="{Binding ExportMtlsCertificateCommand}"/>
+                        <Button Content="Generate new certificate" Margin="0,0,8,6"
+                                AutomationProperties.AutomationId="settings.mtls.generate"
+                                Command="{Binding GenerateMtlsCertificateCommand}"/>
+                        <Button Content="Export certificate" Margin="0,0,8,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.mtls.export"
+                                Command="{Binding ExportMtlsCertificateCommand}"/>
                     </WrapPanel>
 
                     <TextBox IsReadOnly="True" FontFamily="Consolas" Margin="0,8,0,0" Padding="8"
