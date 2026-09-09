@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using System.Text.Json;
 using RavensPort.Core;
+using RavensPort.Core.Auth;
+using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
@@ -115,6 +117,13 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<IPlatformLauncher, RecordingLauncher>();
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
         builder.Services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
+
+        // The device flow opens the verification page itself rather than going through
+        // IPlatformLauncher, so recording that launcher is not enough — without this the suite opens
+        // a real browser tab per run on whatever machine it is on. DoNotOpen exists in the product
+        // for exactly this, and is the only thing the app ever substitutes here.
+        builder.Services.AddSingleton(sp => new DeviceCodeService(
+            sp.GetRequiredService<ActivityLog>(), DeviceCodeService.DoNotOpen));
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();
