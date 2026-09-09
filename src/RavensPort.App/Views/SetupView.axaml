@@ -544,6 +544,7 @@
         <Border Grid.Row="1" Classes="footer">
             <DockPanel>
                 <Button Content="Check again" DockPanel.Dock="Right" MinWidth="100"
+                        AutomationProperties.AutomationId="setup.check"
                         IsEnabled="{Binding CanCheck}"
                         Command="{Binding CheckCommand}"/>
                 <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>

@@ -52,16 +52,47 @@ internal sealed class SingleUseHarness : IAsyncDisposable
     /// </summary>
     public string UpstreamUrl { get; }
 
-    private SingleUseHarness(WebApplication proxy, string baseUrl, WebApplication upstream, string upstreamUrl)
+    private readonly WebApplication _auth;
+    private readonly string _authUrl;
+
+    private SingleUseHarness(
+        WebApplication proxy, string baseUrl, WebApplication upstream, string upstreamUrl,
+        WebApplication auth, string authUrl)
     {
         _proxy = proxy;
         BaseUrl = baseUrl;
         _upstream = upstream;
         UpstreamUrl = upstreamUrl;
+        _auth = auth;
+        _authUrl = authUrl;
     }
 
     /// <summary>What the echo upstream saw on the last request it answered.</summary>
     public sealed record Echoed(Dictionary<string, string> Headers, string Body);
+
+    /// <summary>
+    /// A token endpoint that issues one, so the client-credentials flow can be driven for real.
+    ///
+    /// This is the one OAuth2 grant a headless test can complete: the browser flow needs a person at
+    /// a consent screen and the device flow needs one at a second device, while this is the app
+    /// signing in as itself. The approval suite reaches a mock authorization server over the network
+    /// for the same reason; here it is in-process, so the suite needs no secrets and no internet.
+    /// </summary>
+    public string TokenEndpoint => $"{_authUrl}/token";
+
+    /// <summary>
+    /// Where the device flow asks for a code. RFC 8628’s first leg, answered in-process.
+    ///
+    /// The poll that follows lands on the token endpoint above, which issues immediately — so the
+    /// flow completes without the wait a real provider imposes while somebody types the code on
+    /// another device. What is under test is the app’s half of the exchange, not its patience.
+    /// </summary>
+    public string DeviceAuthorizationEndpoint => $"{_authUrl}/device";
+
+    /// <summary>How many tokens it has issued, so a refresh can be told from a cache hit.</summary>
+    public int TokensIssued => _tokensIssued;
+
+    private static int _tokensIssued;
 
     public static async Task<SingleUseHarness> StartAsync()
     {
@@ -99,6 +130,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<MainWindow>();
 
         var upstream = await StartEchoUpstreamAsync();
+        var auth = await StartTokenEndpointAsync();
 
         var proxy = builder.Build();
 
@@ -114,7 +146,47 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
         var baseUrl = AddressOf(proxy);
 
-        return new SingleUseHarness(proxy, baseUrl, upstream, AddressOf(upstream));
+        return new SingleUseHarness(
+            proxy, baseUrl, upstream, AddressOf(upstream), auth, AddressOf(auth));
+    }
+
+    /// <summary>
+    /// Answers /token with a fresh access token, the way a client-credentials endpoint does.
+    ///
+    /// Each answer is distinct, which is what lets a test tell a refresh from a value the app had
+    /// already cached — the two are indistinguishable from the row otherwise.
+    /// </summary>
+    private static async Task<WebApplication> StartTokenEndpointAsync()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+
+        var app = builder.Build();
+
+        app.MapPost("/device", () => Results.Json(new
+        {
+            device_code = "device-code-1",
+            user_code = "WDJB-MJHT",
+            verification_uri = "https://example.test/activate",
+            expires_in = 600,
+            interval = 1,
+        }));
+
+        app.MapPost("/token", () =>
+        {
+            var issued = Interlocked.Increment(ref _tokensIssued);
+
+            return Results.Json(new
+            {
+                access_token = $"issued-token-{issued}",
+                token_type = "Bearer",
+                expires_in = 3600,
+            });
+        });
+
+        await app.StartAsync();
+        return app;
     }
 
     private static string AddressOf(WebApplication app) => app.Services
@@ -241,6 +313,9 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
         await _upstream.StopAsync();
         await _upstream.DisposeAsync();
+
+        await _auth.StopAsync();
+        await _auth.DisposeAsync();
     }
 }
 
