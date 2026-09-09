@@ -126,7 +126,8 @@ reach on its own.
 
 ## Requirements
 
-- Windows 10/11
+- Windows 10/11, or a Debian-based Linux — see
+  [On Ubuntu or Debian](#on-ubuntu-or-debian-experimental), which is **experimental**
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or newer — only to build from
   source; released binaries are self-contained
 
@@ -194,6 +195,79 @@ needs its endpoint's proxy key. A vault last written by the Proton Pass backend 
 there.
 
 See [docs/STORE-MSIX.md](docs/STORE-MSIX.md) for how the two builds are produced.
+
+### On Ubuntu or Debian <sub><sup>experimental</sup></sub>
+
+> **The Debian and Ubuntu builds are experimental.** Windows is the supported target: it is what
+> the releases carry, what the Microsoft Store package is, and what the approval suite runs
+> against. The Linux build compiles, packages, installs and runs — CI proves that on every pull
+> request — but it has had far less use, and two things behave differently by necessity. The
+> Proton Pass session key lives in the desktop keyring through libsecret rather than in Windows
+> Hello, and 1Password is reached through the `op` CLI. Treat it as something to try rather than
+> something to depend on, and please report what breaks.
+
+There is no `.deb` on the Releases page — releases are cut Windows-only — so the package is built
+from a checkout. It needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), Go
+with cgo (so a C compiler), and `dpkg-dev`:
+
+```bash
+sudo apt install -y build-essential dpkg-dev
+packaging/build-deb.sh                 # or: packaging/build-deb.sh 5.0.0
+```
+
+That writes `packaging/ravensport_<version>_amd64.deb`. It is self-contained — the .NET runtime
+travels inside it, so nothing else has to be installed — and it builds `libonepassword.so` from
+the same Go source as the Windows DLL on the way through.
+
+**Install it with `apt` rather than `dpkg -i`,** so the dependencies below are resolved rather than
+merely reported:
+
+```bash
+sudo apt install ./packaging/ravensport_5.0.0_amd64.deb
+```
+
+| | |
+|---|---|
+| Depends | `libx11-6`, `libice6`, `libsm6`, `libfontconfig1`, `libsecret-1-0` |
+| Recommends | `gnome-keyring` — without a running keyring there is nowhere to keep a Proton Pass session key |
+| Installs to | `/opt/ravensport`, a `ravensport` command on `PATH`, and a desktop entry |
+
+Start it from your launcher, or run `ravensport`. Everything after that is the same as on Windows:
+the setup page opens, and the proxy starts once a vault is connected.
+
+**For the 1Password backend, install the `op` CLI too** — from
+[1Password’s instructions](https://developer.1password.com/docs/cli/get-started/), which add their
+apt repository and signing key. Installing the 1Password desktop app for Linux adds that repository
+too, in which case `sudo apt install 1password-cli` is the whole of it.
+
+RavensPort looks for `op` at `/usr/bin/op`, `/usr/local/bin/op` and `/snap/bin/op`, and shows no
+1Password card at all without it. The desktop app must also be told to allow it — 1Password →
+*Settings → Developer → Integrate with 1Password CLI* — and that integration channel is opened when
+1Password starts, so turn it on and then restart 1Password before connecting.
+
+#### Uninstalling
+
+```bash
+sudo apt remove ravensport     # the program
+sudo apt purge ravensport      # the same, plus any packaged configuration
+```
+
+**Neither touches your own data**, because none of it belongs to the package — it is written at
+run time under your home directory, and `purge` only removes files dpkg installed. To be rid of it
+as well:
+
+```bash
+rm -rf ~/.config/RavensPort ~/.local/share/RavensPort
+```
+
+That is the activity log (`~/.config/RavensPort/logs/`), the local settings
+(`~/.local/share/RavensPort/`), and — if you used Proton Pass — the reference to the session key.
+The key itself is in the desktop keyring, not in either directory, and is dropped by *Disconnect*
+or by signing out on the Settings tab.
+
+Deleting all of it removes nothing from your password manager: every credential, route and funnel
+lives in the vault, so reconnecting the same vault on any machine brings the whole configuration
+back.
 
 ### From source
 
