@@ -18,12 +18,12 @@
   -->
   <PropertyGroup>
     <!--
-      One framework, chosen by the machine doing the building, because this project references
-      RavensPort.App and that project does the same. A multi-targeting suite would ask for an App
-      built for a framework the current OS does not produce.
+      Both frameworks, matching RavensPort.App and RavensPort.Core.Tests. It has to be both rather
+      than one picked by $(OS): the lock file records the frameworks it was generated for, and a
+      locked restore wants the project’s set to match it exactly — so an OS-conditional single
+      target restores on the machine that wrote the lock file and fails with NU1004 on the other.
     -->
-    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">$(WindowsTargetFramework)</TargetFramework>
-    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">$(PortableTargetFramework)</TargetFramework>
+    <TargetFrameworks>$(PortableTargetFramework);$(WindowsTargetFramework)</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
