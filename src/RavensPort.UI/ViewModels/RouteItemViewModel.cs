@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -28,6 +29,11 @@ public sealed partial class RouteItemViewModel : ObservableObject
 
     private readonly IReadOnlyList<CredentialRecord> _availableCredentials;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "A route row is the record, the upstream it points at, the credentials it "
+                        + "may attach, and the four callbacks the tab hands it to report a change, "
+                        + "a refusal, and a save. Folding them into a context object would move the "
+                        + "same eight things behind a name that explains none of them.")]
     public RouteItemViewModel(
         RouteMapping route,
         UpstreamRecord? upstream,

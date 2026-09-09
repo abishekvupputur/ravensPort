@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RavensPort.UI.Services;
@@ -22,6 +23,10 @@ public sealed partial class VaultStatusViewModel : ObservableObject
 
     private readonly AppTabs _tabs;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "The status line reports on eight things, so it is given eight things: the "
+                        + "store cache, the sync queue, the gate, the integrity check and the tabs "
+                        + "it summarises. Resolved by the container, never constructed by hand.")]
     public VaultStatusViewModel(
         ConfigStoreCache configStoreCache,
         VaultSyncQueue syncQueue,

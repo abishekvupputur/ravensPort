@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -24,7 +25,7 @@ namespace RavensPort.Core.Vault;
 /// process list.
 /// </summary>
 [UnsupportedOSPlatform("windows")]
-internal sealed class SecretServiceStore : ISecretStore
+internal sealed partial class SecretServiceStore : ISecretStore
 {
     private const string Lib = "libsecret-1.so.0";
 
@@ -34,25 +35,40 @@ internal sealed class SecretServiceStore : ISecretStore
     /// </summary>
     private static readonly IntPtr Schema = CreateSchema();
 
-    [DllImport(Lib, EntryPoint = "secret_password_store_sync", CallingConvention = CallingConvention.Cdecl)]
-    private static extern bool StoreSync(
+    // Generated rather than hand-marshalled (SYSLIB1054), which is also what settles the encoding
+    // these entry points want: libsecret is glib, so every string here is UTF-8 (CA2101). The
+    // previous DllImports left it to the platform default, which is UTF-8 on Linux and so happened
+    // to be right — but it was right by accident, and this is the only platform they run on.
+    //
+    // The bool returns are gboolean, which is a 4-byte gint. UnmanagedType.Bool is that same
+    // 4-byte BOOL, and is what DllImport was defaulting to; spelling it out changes nothing except
+    // that LibraryImport requires it to be said.
+    [LibraryImport(Lib, EntryPoint = "secret_password_store_sync", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool StoreSync(
         IntPtr schema, string collection, string label, string password,
         IntPtr cancellable, out IntPtr error, string attribute, string value, IntPtr terminator);
 
-    [DllImport(Lib, EntryPoint = "secret_password_lookup_sync", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr LookupSync(
+    [LibraryImport(Lib, EntryPoint = "secret_password_lookup_sync", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr LookupSync(
         IntPtr schema, IntPtr cancellable, out IntPtr error, string attribute, string value, IntPtr terminator);
 
-    [DllImport(Lib, EntryPoint = "secret_password_clear_sync", CallingConvention = CallingConvention.Cdecl)]
-    private static extern bool ClearSync(
+    [LibraryImport(Lib, EntryPoint = "secret_password_clear_sync", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ClearSync(
         IntPtr schema, IntPtr cancellable, out IntPtr error, string attribute, string value, IntPtr terminator);
 
     /// <summary>Frees the returned secret <em>and wipes the memory it was in</em>, unlike g_free.</summary>
-    [DllImport(Lib, EntryPoint = "secret_password_free", CallingConvention = CallingConvention.Cdecl)]
-    private static extern void PasswordFree(IntPtr password);
+    [LibraryImport(Lib, EntryPoint = "secret_password_free")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial void PasswordFree(IntPtr password);
 
-    [DllImport(Lib, EntryPoint = "secret_schema_new", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr SchemaNew(string name, int flags, string attribute, int type, IntPtr terminator);
+    [LibraryImport(Lib, EntryPoint = "secret_schema_new", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private static partial IntPtr SchemaNew(string name, int flags, string attribute, int type, IntPtr terminator);
 
     /// <summary>The default collection, which is the one a desktop unlocks at login.</summary>
     private const string DefaultCollection = "default";
@@ -80,14 +96,14 @@ internal sealed class SecretServiceStore : ISecretStore
         }
     }
 
-    public void Write(string name, byte[] contents)
+    public void Write(string target, byte[] blob)
     {
         // Base64 because libsecret's password API is null-terminated text and the payload is
         // ciphertext, which contains zero bytes by definition.
-        var encoded = Convert.ToBase64String(contents);
+        var encoded = Convert.ToBase64String(blob);
 
-        if (!StoreSync(Schema, DefaultCollection, $"RavensPort — {name}", encoded,
-                IntPtr.Zero, out var error, AttributeName, name, IntPtr.Zero)
+        if (!StoreSync(Schema, DefaultCollection, $"RavensPort — {target}", encoded,
+                IntPtr.Zero, out var error, AttributeName, target, IntPtr.Zero)
             || error != IntPtr.Zero)
         {
             throw new VaultCliException(
@@ -96,9 +112,9 @@ internal sealed class SecretServiceStore : ISecretStore
         }
     }
 
-    public byte[]? Read(string name)
+    public byte[]? Read(string target)
     {
-        var handle = LookupSync(Schema, IntPtr.Zero, out var error, AttributeName, name, IntPtr.Zero);
+        var handle = LookupSync(Schema, IntPtr.Zero, out var error, AttributeName, target, IntPtr.Zero);
 
         if (error != IntPtr.Zero)
         {
@@ -121,12 +137,12 @@ internal sealed class SecretServiceStore : ISecretStore
         }
     }
 
-    public void Delete(string name)
+    public void Delete(string target)
     {
         // Deliberately ignores both the result and any error. Nothing to delete is the normal case
         // — ForgetAsync runs on paths where a key may never have existed — and a keyring that
         // cannot be reached is not a reason to fail a sign-out.
-        ClearSync(Schema, IntPtr.Zero, out _, AttributeName, name, IntPtr.Zero);
+        ClearSync(Schema, IntPtr.Zero, out _, AttributeName, target, IntPtr.Zero);
     }
 
     /// <summary>

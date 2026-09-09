@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media.Imaging;
@@ -106,6 +107,10 @@ internal sealed class AvaloniaTrayIconManager : ITrayIcon
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         });
 
+    [SuppressMessage("Minor Code Smell", "S1075:URIs should not be hardcoded",
+        Justification = "avares:// addresses a resource compiled into this assembly, not a location "
+                        + "on disk or a service that could move. Assets/tray.ico is built into this "
+                        + "binary, so the URI is as fixed as the type name beside it.")]
     private static WindowIcon? LoadIcon()
     {
         try
