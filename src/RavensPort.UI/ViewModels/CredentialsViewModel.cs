@@ -9,7 +9,7 @@ using RavensPort.Core.Storage;
 
 namespace RavensPort.UI.ViewModels;
 
-public sealed partial class CredentialsViewModel : ObservableObject
+public sealed partial class CredentialsViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigStoreCache _configStoreCache;
     private readonly OAuth2Service _oAuth2Service;
@@ -23,6 +23,17 @@ public sealed partial class CredentialsViewModel : ObservableObject
     /// tab lives as long as the process does.
     /// </summary>
     private readonly IDisposable _statusTimer;
+
+    /// <summary>
+    /// Stops the repeating timer this view model started.
+    ///
+    /// The field existed only to keep the subscription alive, which reads as a field nobody uses
+    /// (S4487) — and it was true in a narrower sense too: nothing ever stopped the timer. The
+    /// container owns this object for the life of the process, so in practice it ran until exit;
+    /// disposing it is what the held handle is for, and says so.
+    /// </summary>
+    public void Dispose() => _statusTimer.Dispose();
+
 
     private CredentialItemViewModel? _editingItem;
 

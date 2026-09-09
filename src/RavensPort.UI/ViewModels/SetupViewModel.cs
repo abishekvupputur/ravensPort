@@ -18,6 +18,12 @@ namespace RavensPort.UI.ViewModels;
 /// every credential, route, key, and setting lives in the vault, so without one the tabs would be
 /// four empty grids whose every button fails.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "Eight collaborators because the setup page is the one screen that touches every "
+                    + "way in: the vault gate, both managers' sessions and authenticators, the token "
+                    + "protector, the activity log and the consent prompt. They are resolved by the "
+                    + "container and never passed by hand, so the count is a description of what "
+                    + "setup does rather than a call site anyone has to read.")]
 public sealed partial class SetupViewModel(
     VaultGateService gate,
     ProtonPassSession protonSession,

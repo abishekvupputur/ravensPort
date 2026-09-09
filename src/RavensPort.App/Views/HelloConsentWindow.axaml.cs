@@ -273,9 +273,13 @@ public partial class HelloConsentWindow : Window
     {
         StatusText.Text = message;
         StatusText.IsVisible = true;
-        StatusText.Foreground = this.TryFindResource(isError ? "ErrorBrush" : "MutedTextBrush", out var brush)
-            && brush is IBrush found
-            ? found
-            : StatusText.Foreground;
+        // Two questions, asked one at a time (S3358): which brush this message wants, and whether
+        // the theme actually has it. Nested, the second silently answered the first.
+        var wanted = isError ? "ErrorBrush" : "MutedTextBrush";
+
+        if (this.TryFindResource(wanted, out var resource) && resource is IBrush brush)
+        {
+            StatusText.Foreground = brush;
+        }
     }
 }
