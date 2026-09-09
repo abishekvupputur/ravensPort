@@ -42,8 +42,12 @@
       Cobertura reports are merged into one figure (see coverlet.runsettings and coverage.ps1);
       coverlet's instrumentation and its line attribution have changed between majors before, so two
       halves collected by two different collectors would merge into a number that is neither.
+
+      RavensPort.Core.Tests carries the note on why that shared version is 10.x rather than the 6.x
+      this started on — in short, 6.x silently reports nothing at all for a module holding
+      LibraryImport stubs.
     -->
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />

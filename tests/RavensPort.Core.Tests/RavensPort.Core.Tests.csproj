@@ -18,7 +18,15 @@
   <ItemGroup>
     <!-- In-memory host used by LocalAccessGuardTests to exercise the middleware end to end. -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.5" />
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <!--
+      10.x, and the version is load-bearing. RavensPort.Core now carries LibraryImport-generated
+      P/Invoke stubs, and coverlet 6.x cannot instrument a module that contains them: it emits no
+      warning, writes a well-formed Cobertura report with zero assemblies in it, and every consumer
+      downstream reports 0% as though the tests had covered nothing. Measured on this repository at
+      6.0.0 and 6.0.4 (238-byte report, "No assemblies have been covered") against 10.0.1 (a full
+      one). See the guard in coverage.yml that now fails the build on an empty report.
+    -->
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="xunit" Version="2.5.3" />

@@ -46,10 +46,21 @@
           <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[xunit.*]*</Exclude>
 
           <!--
-            Generated code is not code anybody wrote or can test. GeneratedCodeAttribute covers the
-            XAML and source-generator output, CompilerGeneratedAttribute the closures and iterator
-            state machines the compiler emits behind async and LINQ, and ExcludeFromCodeCoverage the
-            handful of places the source opts out on purpose.
+            Generated code is not code anybody wrote or can test: GeneratedCodeAttribute covers the
+            XAML and source-generator output, ExcludeFromCodeCoverage the handful of places the
+            source opts out on purpose.
+
+            CompilerGeneratedAttribute is the one to be careful with, and the reason this comment is
+            longer than the setting. Under coverlet 6.x it also excluded the async state machines the
+            compiler emits — and in a codebase where nearly every vault and proxy call is async, that
+            is not closure noise, it is the method bodies. 124 of them, 2,077 coverable lines, none
+            of it counted: the figure was 84% of 3,435 lines rather than 79% of 5,512, and the five
+            points were bought by not looking. Coverlet 10 counts them, which is why the number fell
+            when the collector moved and why the lower one is the honest figure.
+
+            The attribute stays because it still keeps the compiler’s own scaffolding out of the
+            report; what changed is that "generated" no longer swallows the code the tests exist to
+            exercise.
           -->
           <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
           <ExcludeByFile>**/obj/**/*.cs,**/*.g.cs,**/*.g.i.cs</ExcludeByFile>

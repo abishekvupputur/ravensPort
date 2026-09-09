@@ -964,12 +964,24 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     /// </summary>
     private JsonObject BuildTemplate(VaultItemSpec spec, bool includeClears)
     {
-        var fields = new JsonArray();
+        // 1Password keeps the note body at the top level rather than among the fields, so the one
+        // field carrying the note’s own name is picked out here and never written as a field below.
+        // It used to be added with the rest and then searched for and removed again, which spent two
+        // passes to end up in the same place and read as a lookup on a list that might be empty
+        // (S4158). Skipping it on the way in says the same thing once.
         var present = new HashSet<string>(StringComparer.Ordinal);
+        string? noteFromField = null;
 
         foreach (var field in spec.Fields)
         {
             present.Add(field.Name);
+            if (field.Name == VaultFields.NoteContent) noteFromField = field.Value;
+        }
+
+        var fields = new JsonArray();
+
+        foreach (var field in spec.Fields.Where(f => f.Name != VaultFields.NoteContent))
+        {
             fields.Add(BuildField(field.Name, field.Value));
         }
 
@@ -981,12 +993,6 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             }
         }
 
-        var notes = "";
-        if (spec.Caption is { Length: > 0 } caption && !present.Contains(VaultFields.NoteContent))
-        {
-            notes = caption;
-        }
-
         var json = new JsonObject
         {
             [TitleKey] = spec.Title,
@@ -995,20 +1001,16 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
             ["fields"] = fields,
         };
 
-        if (notes.Length > 0)
+        // A note that arrived as a field wins over the caption, and is written even when it is
+        // empty: that is how a note is cleared. The caption is only the fallback for a spec that
+        // carried no note field at all.
+        if (noteFromField is not null)
         {
-            json["notes"] = notes;
+            json["notes"] = noteFromField;
         }
-        else if (spec.Fields.FirstOrDefault(f => f.Name == VaultFields.NoteContent) is { } noteField)
+        else if (spec.Caption is { Length: > 0 } caption)
         {
-            // The note body arrived as an ordinary field. 1Password keeps it at the top level, so
-            // it moves there and stops being listed twice.
-            json["notes"] = noteField.Value;
-
-            if (fields.FirstOrDefault(n => ReadString(n, "id") == VaultFields.NoteContent) is { } fieldNode)
-            {
-                fields.Remove(fieldNode);
-            }
+            json["notes"] = caption;
         }
 
         return json;
