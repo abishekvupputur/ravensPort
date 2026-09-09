@@ -62,6 +62,13 @@ internal static class AutomationIds
     public const string AddFunnel = "funnels.funnel.add";
     public const string FunnelsGrid = "funnels.grid";
     public const string IncludeSource = "funnels.funnel.includeSource";
+    public const string RefreshAllSources = "funnels.refreshAllSources";
+
+    // Per-source tool selection, inside an expanded source row on the selected funnel.
+    public const string ExpandSource = "funnels.source.expand";
+    public const string ExpandGroup = "funnels.group.expand";
+    public const string GroupMode = "funnels.group.mode";
+    public const string GroupItem = "funnels.group.item";
 
     // Settings. Disconnect is two presses: the first asks, the second does it — and the second is a
     // different button, which is the point of the confirmation rather than an accident of layout.
