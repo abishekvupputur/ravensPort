@@ -40,10 +40,12 @@
                     <WrapPanel IsVisible="{Binding IsConnected}">
                         <!-- Disabled rather than hidden in single use: the tab keeps its shape, and
                              the greyed control beside the note above says which mode this is. -->
-                        <Button Content="Sync now" Margin="0,0,8,6" Command="{Binding SyncNowCommand}"
+                        <Button Content="Sync now" Margin="0,0,8,6" AutomationProperties.AutomationId="settings.syncNow"
+                                Command="{Binding SyncNowCommand}"
                                 IsEnabled="{Binding IsVaultConnected}"/>
                         <Button Content="Rewrite all items to vault" Margin="0,0,8,6" Classes="ghost"
                                 IsEnabled="{Binding IsVaultConnected}"
+                                AutomationProperties.AutomationId="settings.rewriteAll"
                                 Command="{Binding RewriteAllItemsCommand}"/>
                         <Button Content="Re-initialise from vault" Margin="0,0,8,6" Classes="ghost"
                                 IsEnabled="{Binding IsVaultConnected}"
@@ -149,7 +151,8 @@
                                  different waits with different explanations. -->
                             <Button Content="Check the vault" HorizontalAlignment="Left" Margin="0,0,0,8"
                                     IsEnabled="{Binding !IsCheckingIntegrity}"
-                                    Command="{Binding CheckIntegrityCommand}"/>
+                                    AutomationProperties.AutomationId="settings.integrity.check"
+                                Command="{Binding CheckIntegrityCommand}"/>
 
                             <TextBlock Text="{Binding IntegritySummary}" TextWrapping="Wrap" Margin="0,0,0,8"
                                        IsVisible="{Binding HasIntegrityResult}"/>
@@ -178,7 +181,8 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <Button Content="Delete all of them" HorizontalAlignment="Left" Margin="0,2,0,10"
-                                        Classes="ghost" Command="{Binding DeleteAllOrphansCommand}"/>
+                                        Classes="ghost" AutomationProperties.AutomationId="settings.integrity.deleteOrphans"
+                                Command="{Binding DeleteAllOrphansCommand}"/>
                             </StackPanel>
 
                             <StackPanel IsVisible="{Binding HasOtherItems}">
@@ -205,7 +209,8 @@
                                 <TextBlock Classes="hint" Margin="0,0,0,6"
                                            Text="Two ways out. Writing them to the vault from memory keeps them and touches nothing else — do that while RavensPort is running, because the secret is only in memory. Removing takes the record out of the configuration instead."/>
                                 <Button Content="Write missing items to vault" HorizontalAlignment="Left"
-                                        Margin="0,0,0,8" Command="{Binding WriteMissingItemsCommand}"/>
+                                        Margin="0,0,0,8" AutomationProperties.AutomationId="settings.integrity.writeMissing"
+                                Command="{Binding WriteMissingItemsCommand}"/>
                                 <ItemsControl ItemsSource="{Binding MissingItems}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vault:VaultMissingItem">
