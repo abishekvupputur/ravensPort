@@ -11,6 +11,7 @@ internal static class AutomationIds
 {
     // Setup
     public const string StartSingleUse = "setup.startSingleUse";
+    public const string CheckAgain = "setup.check";
 
     // Credentials
     public const string CredentialKind = "credentials.editor.kind";
@@ -28,6 +29,9 @@ internal static class AutomationIds
     public const string EditCredentialRow = "credentials.row.edit";
     public const string DeleteCredentialRow = "credentials.row.delete";
     public const string TestCredentialRow = "credentials.row.test";
+    public const string ConnectCredentialRow = "credentials.row.connect";
+    public const string DisconnectCredentialRow = "credentials.row.disconnect";
+    public const string RefreshCredentialRow = "credentials.row.refresh";
     public const string CredentialValuePrefix = "credentials.editor.valuePrefix";
     public const string CredentialAuthority = "credentials.editor.authority";
     public const string CredentialAuthorizationEndpoint = "credentials.editor.authorizationEndpoint";
@@ -99,4 +103,9 @@ internal static class AutomationIds
     public const string ConfirmGenerateMtls = "settings.mtls.generate.confirm";
     public const string ExportMtls = "settings.mtls.export";
     public const string MtlsPassword = "settings.mtls.password";
+    public const string SyncNow = "settings.syncNow";
+    public const string RewriteAll = "settings.rewriteAll";
+    public const string CheckIntegrity = "settings.integrity.check";
+    public const string DeleteOrphans = "settings.integrity.deleteOrphans";
+    public const string WriteMissing = "settings.integrity.writeMissing";
 }
