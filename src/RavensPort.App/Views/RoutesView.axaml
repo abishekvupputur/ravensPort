@@ -61,6 +61,7 @@ Entries may reuse the same credential in different places, or use different cred
                        IsVisible="{Binding HasRoutes}"/>
 
             <DataGrid ItemsSource="{Binding Routes}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                      AutomationProperties.AutomationId="routes.grid"
                       RowDetailsVisibilityMode="VisibleWhenSelected"
                       behaviors:RowSelectionToggle.Enable="True"
                       IsVisible="{Binding HasRoutes}">
@@ -108,6 +109,7 @@ Entries may reuse the same credential in different places, or use different cred
                                                             <TextBlock Text="Credential" Classes="label"/>
                                                             <ComboBox ItemsSource="{Binding AvailableCredentials}"
                                                                       SelectedItem="{Binding Credential, Mode=TwoWay}"
+                                                                      AutomationProperties.AutomationId="routes.detail.credential"
                                                                       HorizontalAlignment="Stretch">
                                                                 <ComboBox.ItemTemplate>
                                                                     <DataTemplate x:DataType="models:CredentialRecord">
@@ -123,17 +125,20 @@ Entries may reuse the same credential in different places, or use different cred
                                                             <TextBlock Text="Placement" Classes="label"/>
                                                             <ComboBox ItemsSource="{Binding Placements}"
                                                                       SelectedItem="{Binding Placement, Mode=TwoWay}"
+                                                                      AutomationProperties.AutomationId="routes.detail.placement"
                                                                       HorizontalAlignment="Stretch"
                                                                       ToolTip.Tip="{StaticResource CredentialPlacementHelpText}"/>
                                                         </StackPanel>
                                                         <StackPanel Margin="6,0">
                                                             <TextBlock Text="{Binding ParameterNameLabel}" Classes="label"/>
-                                                            <TextBox Text="{Binding ParameterName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                            <TextBox AutomationProperties.AutomationId="routes.detail.parameter"
+                                                                     Text="{Binding ParameterName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                         </StackPanel>
                                                         <StackPanel Margin="6,0,0,0">
                                                             <TextBlock Text="Value prefix" Classes="label"
                                                                        ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
-                                                            <TextBox Text="{Binding ValuePrefix, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                            <TextBox AutomationProperties.AutomationId="routes.detail.valuePrefix"
+                                                                     Text="{Binding ValuePrefix, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                                      ToolTip.Tip="{StaticResource ValuePrefixHelpText}"/>
                                                         </StackPanel>
                                                     </UniformGrid>
@@ -144,6 +149,7 @@ Entries may reuse the same credential in different places, or use different cred
                                 </ItemsControl>
 
                                 <Button Content="Add credential" HorizontalAlignment="Left" Width="120" Classes="ghost"
+                                        AutomationProperties.AutomationId="routes.detail.addCredential"
                                         Command="{Binding AddCredentialCommand}"
                                         ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
                             </StackPanel>
