@@ -240,8 +240,11 @@
                     <TextBlock Text="Listen port" Classes="section"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <!-- No UpdateSourceTrigger: writing on every keystroke is Avalonia's default. -->
-                        <TextBox Width="100" Text="{Binding ListenPort}"/>
-                        <Button Content="Save" Margin="8,0,0,0" Width="70" Command="{Binding SavePortCommand}"/>
+                        <TextBox Width="100" AutomationProperties.AutomationId="settings.port"
+                                 Text="{Binding ListenPort}"/>
+                        <Button Content="Save" Margin="8,0,0,0" Width="70"
+                                AutomationProperties.AutomationId="settings.port.save"
+                                Command="{Binding SavePortCommand}"/>
                     </StackPanel>
                     <TextBlock Text="Changing the port requires restarting RavensPort." Classes="hint"/>
                 </StackPanel>
@@ -335,12 +338,16 @@
 
                     <WrapPanel>
                         <Button Content="Open activity log" Margin="0,0,8,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.log.activity"
                                 Command="{Binding OpenActivityLogCommand}"/>
                         <Button Content="Open error log" Margin="0,0,8,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.log.errors"
                                 Command="{Binding OpenErrorLogCommand}"/>
                         <Button Content="Open log folder" Margin="0,0,8,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.log.folder"
                                 Command="{Binding OpenLogFolderCommand}"/>
                         <Button Content="Prune old logs" Margin="0,0,0,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.log.prune"
                                 Command="{Binding PruneLogsCommand}"/>
                     </WrapPanel>
 

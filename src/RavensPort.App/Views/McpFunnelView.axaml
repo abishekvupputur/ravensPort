@@ -184,7 +184,8 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
                                     <Button Content="Delete" Margin="2" Classes="ghost"
-                                            Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteFunnelCommand}"
+                                            AutomationProperties.AutomationId="funnels.funnel.delete"
+                                                Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteFunnelCommand}"
                                             CommandParameter="{Binding}"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -389,6 +390,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                                 CommandParameter="{Binding}"
                                                 ToolTip.Tip="Connect and re-read the tools, resources, and prompts this server offers"/>
                                         <Button Content="Delete" Margin="2" Classes="ghost"
+                                                AutomationProperties.AutomationId="funnels.source.delete"
                                                 Command="{Binding $parent[UserControl].((vm:McpFunnelViewModel)DataContext).DeleteSourceCommand}"
                                                 CommandParameter="{Binding}"/>
                                     </StackPanel>

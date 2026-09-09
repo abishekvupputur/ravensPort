@@ -93,6 +93,11 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<McpFunnelViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
 
+        // The shell itself, as App registers it. Worth having in the container rather than newed up
+        // in a test: MainWindow takes all five tab view models plus the shell’s own, so resolving it
+        // is what proves those six fit together the way the product wires them.
+        builder.Services.AddSingleton<MainWindow>();
+
         var upstream = await StartEchoUpstreamAsync();
 
         var proxy = builder.Build();
