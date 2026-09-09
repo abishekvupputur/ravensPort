@@ -140,6 +140,17 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!--
+    The single-use UI suite registers the same platform adapters App.StartHost does —
+    AvaloniaUiDispatcher and the five beside it — so that a view under test reaches the desktop
+    through the objects the product uses rather than through stand-ins written for the test. They
+    are internal because nothing outside this assembly has any business constructing one, and that
+    stays true: one test project can see them, and it is the one that boots this app headlessly.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RavensPort.UI.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />

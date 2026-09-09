@@ -10,5 +10,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj" />
     <Project Path="tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj" />
+    <Project Path="tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj" />
   </Folder>
 </Solution>
