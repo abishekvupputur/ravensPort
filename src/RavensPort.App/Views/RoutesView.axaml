@@ -99,6 +99,7 @@ Entries may reuse the same credential in different places, or use different cred
                                                         <TextBlock Text="{Binding InjectionSummary, StringFormat='Upstream receives: {0}'}"
                                                                    Classes="hint" VerticalAlignment="Center"/>
                                                         <Button Content="Remove" HorizontalAlignment="Right" Width="80"
+                                                                AutomationProperties.AutomationId="routes.detail.removeCredential"
                                                                 Classes="ghost"
                                                                 Command="{Binding $parent[DataGridRow].((vm:RouteItemViewModel)DataContext).RemoveCredentialCommand}"
                                                                 CommandParameter="{Binding}"
@@ -255,7 +256,8 @@ Entries may reuse the same credential in different places, or use different cred
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="vm:RouteItemViewModel">
                                 <Button Content="Delete" Margin="2" Classes="ghost"
-                                        Command="{Binding $parent[UserControl].((vm:RoutesViewModel)DataContext).DeleteRouteCommand}"
+                                        AutomationProperties.AutomationId="routes.row.delete"
+                                                Command="{Binding $parent[UserControl].((vm:RoutesViewModel)DataContext).DeleteRouteCommand}"
                                         CommandParameter="{Binding}"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
@@ -308,6 +310,7 @@ Entries may reuse the same credential in different places, or use different cred
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate x:DataType="models:UpstreamRecord">
                                         <Button Content="Delete" Margin="2" Classes="ghost"
+                                                AutomationProperties.AutomationId="routes.upstream.delete"
                                                 Command="{Binding $parent[UserControl].((vm:RoutesViewModel)DataContext).DeleteUpstreamCommand}"
                                                 CommandParameter="{Binding}"/>
                                     </DataTemplate>

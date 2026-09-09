@@ -68,6 +68,21 @@ internal static class UiDriver
     private static readonly Dictionary<Window, Button> FocusParks = [];
 
     /// <summary>
+    /// Shows a window that already exists, rather than wrapping a view in one.
+    ///
+    /// For the shell: MainWindow is a Window, so it cannot be the content of another, and it comes
+    /// from the container with all five tabs wired the way the app wires them. No focus park — it
+    /// owns its own content, so anything typed into it must be a control this window already has.
+    /// </summary>
+    public static Window ShowWindow(Window window)
+    {
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        return window;
+    }
+
+    /// <summary>
     /// Every control carrying this automation id, in visual-tree order.
     ///
     /// Needed because some ids are on a template rather than on a control: a route's credential
@@ -411,6 +426,30 @@ internal static class UiDriver
     /// asserting straight after a click is a race that passes on a fast machine. A timeout failure
     /// names the condition rather than reporting a stale assertion further down.
     /// </summary>
+    /// <summary>
+    /// The same, with the reason built only if it is needed.
+    ///
+    /// Worth having as its own overload: an interpolated string is evaluated where it is written, so
+    /// a message that reports live state describes the moment before the wait rather than the moment
+    /// it gave up — which is exactly backwards for a diagnostic.
+    /// </summary>
+    public static async Task UntilAsync(Func<bool> condition, Func<string> because)
+    {
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            await PumpAsync();
+
+            if (condition()) return;
+
+            await Task.Delay(25);
+        }
+
+        throw new TimeoutException(
+            $"Waited {Patience.TotalSeconds:N0}s for {because()} and it never came true.");
+    }
+
     public static async Task UntilAsync(Func<bool> condition, string? because = null)
     {
         var deadline = DateTime.UtcNow + Patience;
@@ -426,6 +465,18 @@ internal static class UiDriver
 
         throw new TimeoutException(
             $"Waited {Patience.TotalSeconds:N0}s for {because ?? "a UI condition"} and it never came true.");
+    }
+
+    /// <summary>
+    /// Runs something on the UI thread and lets what it started settle.
+    ///
+    /// For the few things a test drives that no control exposes — a command bound to a template this
+    /// suite has no id for, on a window it did not build.
+    /// </summary>
+    public static async Task RunOnUiAsync(Action action)
+    {
+        await Dispatcher.UIThread.InvokeAsync(action);
+        await PumpAsync();
     }
 
     /// <summary>Lets queued UI work run, including the continuations a command posted back.</summary>
