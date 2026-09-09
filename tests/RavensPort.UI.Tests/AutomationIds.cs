@@ -11,35 +11,26 @@ internal static class AutomationIds
 {
     // Setup
     public const string StartSingleUse = "setup.startSingleUse";
-    public const string SetupStatus = "setup.status";
 
     // Credentials
-    public const string AddCredential = "credentials.add";
-    public const string CredentialName = "credentials.editor.name";
     public const string CredentialKind = "credentials.editor.kind";
+    public const string CredentialName = "credentials.editor.name";
     public const string CredentialApiKey = "credentials.editor.apiKey";
     public const string CredentialPlacement = "credentials.editor.placement";
     public const string CredentialParameter = "credentials.editor.parameter";
     public const string SaveCredential = "credentials.editor.save";
 
-    // Routes
-    public const string AddRoute = "routes.add";
-    public const string RouteName = "routes.editor.name";
+    // Routes — an upstream first, then a route pointing at it.
+    public const string UpstreamName = "routes.upstream.name";
+    public const string UpstreamBaseUrl = "routes.upstream.baseUrl";
+    public const string AddUpstream = "routes.upstream.add";
     public const string RoutePrefix = "routes.editor.prefix";
     public const string RouteUpstream = "routes.editor.upstream";
     public const string RouteCredential = "routes.editor.credential";
-    public const string RouteKey = "routes.editor.key";
-    public const string SaveRoute = "routes.editor.save";
+    public const string AddRoute = "routes.editor.add";
 
-    // MCP funnels
-    public const string AddFunnel = "funnels.add";
-    public const string FunnelName = "funnels.editor.name";
-    public const string FunnelSlug = "funnels.editor.slug";
-    public const string FunnelUpstream = "funnels.editor.upstream";
-    public const string FunnelKey = "funnels.editor.key";
-    public const string SaveFunnel = "funnels.editor.save";
-
-    // Settings
+    // Settings. Disconnect is two presses: the first asks, the second does it — and the second is a
+    // different button, which is the point of the confirmation rather than an accident of layout.
     public const string Disconnect = "settings.disconnect";
-    public const string SingleUseBanner = "settings.singleUseBanner";
+    public const string ConfirmDisconnect = "settings.disconnect.confirm";
 }

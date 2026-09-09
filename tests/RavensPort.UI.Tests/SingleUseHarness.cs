@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using RavensPort.Core;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Proxy;
@@ -33,24 +35,31 @@ namespace RavensPort.UI.Tests;
 /// </summary>
 internal sealed class SingleUseHarness : IAsyncDisposable
 {
-    /// <summary>
-    /// The proxy key every caller has to present. A fixture, not a credential: it is generated per
-    /// harness so two runs never share one, and it never leaves this process.
-    /// </summary>
-    public string ApiKey { get; } = $"ui-suite-{Guid.NewGuid():n}";
-
     private readonly WebApplication _proxy;
+    private readonly WebApplication _upstream;
 
     public IServiceProvider Services => _proxy.Services;
 
     /// <summary>Where Kestrel actually bound, port 0 having been resolved by then.</summary>
     public string BaseUrl { get; }
 
-    private SingleUseHarness(WebApplication proxy, string baseUrl)
+    /// <summary>
+    /// Where routes created by these tests point. It echoes what it was sent — headers and body —
+    /// as JSON, which is the whole mechanism behind "the credential arrived": the only way to know
+    /// a header was injected is to ask something on the far side what it received.
+    /// </summary>
+    public string UpstreamUrl { get; }
+
+    private SingleUseHarness(WebApplication proxy, string baseUrl, WebApplication upstream, string upstreamUrl)
     {
         _proxy = proxy;
         BaseUrl = baseUrl;
+        _upstream = upstream;
+        UpstreamUrl = upstreamUrl;
     }
+
+    /// <summary>What the echo upstream saw on the last request it answered.</summary>
+    public sealed record Echoed(Dictionary<string, string> Headers, string Body);
 
     public static async Task<SingleUseHarness> StartAsync()
     {
@@ -82,6 +91,8 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<McpFunnelViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
 
+        var upstream = await StartEchoUpstreamAsync();
+
         var proxy = builder.Build();
 
         // Middleware in the order App.StartProxyAsync installs it: the guard first, so a caller
@@ -94,10 +105,36 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
         await proxy.StartAsync();
 
-        var baseUrl = proxy.Services.GetRequiredService<IServer>()
-            .Features.Get<IServerAddressesFeature>()!.Addresses.First();
+        var baseUrl = AddressOf(proxy);
 
-        return new SingleUseHarness(proxy, baseUrl);
+        return new SingleUseHarness(proxy, baseUrl, upstream, AddressOf(upstream));
+    }
+
+    private static string AddressOf(WebApplication app) => app.Services
+        .GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+
+    private static async Task<WebApplication> StartEchoUpstreamAsync()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+
+        var app = builder.Build();
+
+        app.Run(async context =>
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            var body = await reader.ReadToEndAsync();
+
+            var headers = context.Request.Headers
+                .ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase);
+
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new { headers, body }));
+        });
+
+        await app.StartAsync();
+        return app;
     }
 
     /// <summary>
@@ -119,21 +156,42 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         await UiDriver.UntilAsync(() => Services.GetRequiredService<VaultGateService>().IsSingleUse);
     }
 
-    /// <summary>An HTTP caller the guard will admit.</summary>
-    public HttpClient CreateClient()
+    /// <summary>
+    /// An HTTP caller the guard will admit, carrying the key the app generated for this route.
+    ///
+    /// Read back rather than supplied, unlike the approval suite, which creates its routes in code
+    /// and can name the key. A route added through the Routes tab gets its key from the app, so a
+    /// test that wants in has to present the one the user would copy out of the UI.
+    /// </summary>
+    public HttpClient CreateClientFor(string routeKey)
     {
         var client = new HttpClient { BaseAddress = new Uri(BaseUrl) };
-        client.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, ApiKey);
+        client.DefaultRequestHeaders.Add(LocalAccessGuard.ApiKeyHeaderName, routeKey);
         return client;
     }
 
     /// <summary>An HTTP caller the guard will refuse, for the test that says so.</summary>
     public HttpClient CreateClientWithNoKey() => new() { BaseAddress = new Uri(BaseUrl) };
 
+    /// <summary>Reads back what the echo upstream reported.</summary>
+    public static Echoed ReadEcho(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        var headers = document.RootElement.GetProperty("headers")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase);
+
+        return new Echoed(headers, document.RootElement.GetProperty("body").GetString() ?? "");
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _proxy.StopAsync();
         await _proxy.DisposeAsync();
+
+        await _upstream.StopAsync();
+        await _upstream.DisposeAsync();
     }
 }
 
