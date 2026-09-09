@@ -263,14 +263,18 @@ Entries may reuse the same credential in different places, or use different cred
                     <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                         <StackPanel Margin="0,0,6,0">
                             <TextBlock Text="Name" Classes="label"/>
-                            <TextBox Text="{Binding NewUpstreamName}"/>
+                            <TextBox AutomationProperties.AutomationId="routes.upstream.name"
+                                     Text="{Binding NewUpstreamName}"/>
                         </StackPanel>
                         <StackPanel Margin="6,0,0,0">
                             <TextBlock Text="Base URL" Classes="label"/>
-                            <TextBox Text="{Binding NewUpstreamBaseUrl}"/>
+                            <TextBox AutomationProperties.AutomationId="routes.upstream.baseUrl"
+                                     Text="{Binding NewUpstreamBaseUrl}"/>
                         </StackPanel>
                     </UniformGrid>
-                    <Button Content="Add upstream" HorizontalAlignment="Left" Width="120" Command="{Binding AddUpstreamCommand}" Margin="0,0,0,10"/>
+                    <Button Content="Add upstream" HorizontalAlignment="Left" Width="120"
+                            AutomationProperties.AutomationId="routes.upstream.add"
+                            Command="{Binding AddUpstreamCommand}" Margin="0,0,0,10"/>
                     <TextBlock Classes="empty" Text="No upstreams yet." IsVisible="{Binding HasNoUpstreams}"/>
                     <!-- No MaxHeight: a nested scroll region here is exactly what made the
                          wheel feel stuck. The page scrolls instead. -->
@@ -312,11 +316,13 @@ Entries may reuse the same credential in different places, or use different cred
                 <StackPanel>
                     <TextBlock Text="Add route" Classes="section"/>
                     <TextBlock Text="Path prefix (e.g. /app/gmail-mcp)" Classes="label"/>
-                    <TextBox Text="{Binding NewRoutePathPrefix}" Margin="0,0,0,8"/>
+                    <TextBox AutomationProperties.AutomationId="routes.editor.prefix"
+                             Text="{Binding NewRoutePathPrefix}" Margin="0,0,0,8"/>
                     <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
                         <StackPanel Margin="0,0,6,0">
                             <TextBlock Text="Upstream" Classes="label"/>
                             <ComboBox ItemsSource="{Binding Upstreams}" SelectedItem="{Binding NewRouteUpstream}"
+                                      AutomationProperties.AutomationId="routes.editor.upstream"
                                       HorizontalAlignment="Stretch">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="models:UpstreamRecord">
@@ -331,6 +337,7 @@ Entries may reuse the same credential in different places, or use different cred
                             <Grid ColumnDefinitions="*,Auto">
                                 <ComboBox Grid.Column="0" ItemsSource="{Binding Credentials}"
                                           SelectedItem="{Binding NewRouteCredential}"
+                                          AutomationProperties.AutomationId="routes.editor.credential"
                                           HorizontalAlignment="Stretch">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate x:DataType="models:CredentialRecord">
@@ -393,7 +400,9 @@ Entries may reuse the same credential in different places, or use different cred
                     <TextBlock Classes="hint" Margin="0,0,0,10"
                                Text="More credentials can be attached after the route exists — select it above and use 'Add credential'."
                                ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
-                    <Button Content="Add route" HorizontalAlignment="Left" Width="100" Command="{Binding AddRouteCommand}"/>
+                    <Button Content="Add route" HorizontalAlignment="Left" Width="100"
+                            AutomationProperties.AutomationId="routes.editor.add"
+                            Command="{Binding AddRouteCommand}"/>
                 </StackPanel>
             </Border>
 

@@ -53,6 +53,7 @@
                         <!-- Never disabled by the mode. In single use this is the only thing that
                              purges the configuration on demand, which is the whole bargain. -->
                         <Button Content="Disconnect" Margin="0,0,8,6" Classes="ghost"
+                                AutomationProperties.AutomationId="settings.disconnect"
                                 Command="{Binding DisconnectCommand}"
                                 IsVisible="{Binding !IsConfirmingDisconnect}"/>
 
@@ -109,7 +110,9 @@
                         <TextBlock Text="{Binding DisconnectWarning}" Classes="hint" Margin="0,0,0,8"
                                    Foreground="{StaticResource ErrorBrush}"/>
                         <WrapPanel>
-                            <Button Content="Disconnect" Margin="0,0,8,6" Command="{Binding DisconnectCommand}"/>
+                            <Button Content="Disconnect" Margin="0,0,8,6"
+                                    AutomationProperties.AutomationId="settings.disconnect.confirm"
+                                    Command="{Binding DisconnectCommand}"/>
                             <Button Content="Cancel" Margin="0,0,0,6" Classes="ghost"
                                     Command="{Binding CancelDisconnectCommand}"/>
                         </WrapPanel>
