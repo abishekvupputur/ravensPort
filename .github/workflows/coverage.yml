@@ -260,6 +260,7 @@ jobs:
       #   - the wait ran out              -> it is still queued, unit only
       - name: Wait for the system suite's coverage
         id: system
+        if: always()
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -313,8 +314,14 @@ jobs:
           # exited 1 anyway. The three outcomes above are all fine; the summary says which one it was.
           exit 0
 
+      # always(), for the same reason the end step below is: a suite that failed still executed the
+      # code it executed before failing, and that coverage is worth having. It also stops a failed
+      # test run from turning into a confusing second failure — SonarCloud end runs regardless and
+      # was being handed a report this step never got to write, which it reported as a malformed
+      # generic coverage file rather than as the missing one it was.
       - name: Merge and summarise
         id: merge
+        if: always()
         shell: pwsh
         env:
           HAVE_SYSTEM: ${{ steps.system.outputs.have }}

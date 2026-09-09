@@ -226,6 +226,16 @@ internal static class ApprovalSeeding
         await ExpandAsync(() => Model().IsExpanded, () => UiDriver.ClickAsync(Source(), AutomationIds.ExpandSource),
             $"'{sourceName}' to expand");
 
+        // Waited for, not assumed. A source shows its three group headers only once it is expanded
+        // *and* the row has been laid out again, and the second half is not instant — on a slower
+        // machine the next click arrives while the tree still holds none of them, which is what
+        // "'funnels.group.expand' #0 but the view has 0" was reporting on CI while passing here.
+        await UiDriver.UntilAsync(
+            () => UiDriver.FindAll<Button>(Source(), AutomationIds.ExpandGroup).Count >= 3,
+            () => $"the three group headers of '{sourceName}' to be drawn "
+                  + $"(expanded={Model().IsExpanded}, showDetail={Model().ShowDetail}, "
+                  + $"headers={UiDriver.FindAll<Button>(Source(), AutomationIds.ExpandGroup).Count})");
+
         await ExpandAsync(() => Model().Tools.IsExpanded,
             () => UiDriver.ClickNthAsync(Source(), AutomationIds.ExpandGroup, 0),
             $"the tools list of '{sourceName}' to open");
@@ -275,7 +285,17 @@ internal static class ApprovalSeeding
     {
         for (var attempt = 0; attempt < 5 && !isOpen(); attempt++)
         {
-            await toggle();
+            try
+            {
+                await toggle();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Xunit.Sdk.XunitException)
+            {
+                // The control is not in the tree yet. That is the condition this loop exists to ride
+                // out, so a throw from the press has to be as retryable as a press that did nothing
+                // — without this the very first attempt escapes and the remaining four never run.
+            }
+
             await UiDriver.PumpAsync();
         }
 
