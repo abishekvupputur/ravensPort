@@ -48,6 +48,16 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // channel deadlocked it the same way. Both are fixed in v0.56.0 and both are scoped to
 // golang.org/x/crypto/ssh, which nothing here imports. Raising it pulled nothing else in.
 //
+// And grpc again, this time for something the build could not reach even if it linked it.
+// CVE-2026-84445 (GHSA-2v4p-qf9q-27wj) is a panic in servers built with xds.NewGRPCServer: the xDS
+// routing interceptor it installs reads the request's :authority to pick a virtual host, the HTTP/2
+// transport used to accept a request carrying neither :authority nor Host, and the interceptor then
+// indexed the first element of an empty slice. The per-RPC goroutine does not recover, so the whole
+// process dies -- unauthenticated where the server takes plaintext or unverified TLS. This module
+// starts no gRPC server of any kind, so the pin is again about what the scanners read rather than
+// about anything reachable from onepassword.dll. Fixed in v1.83.2, and raising it carried x/net to
+// v0.58.0 on its own, exactly as every step before it has.
+//
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
 // unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
 // statement about the package existing, not about a release. No version of x/crypto clears it, and
@@ -58,7 +68,7 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.57.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.1 go.opentelemetry.io/otel/sdk@v1.44.0 golang.org/x/crypto@v0.56.0 go.opentelemetry.io/otel@v1.44.0
+//	go get golang.org/x/net@v0.58.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.2 go.opentelemetry.io/otel/sdk@v1.44.0 golang.org/x/crypto@v0.56.0 go.opentelemetry.io/otel@v1.44.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -76,10 +86,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
