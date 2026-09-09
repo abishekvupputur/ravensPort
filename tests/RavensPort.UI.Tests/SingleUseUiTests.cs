@@ -105,7 +105,7 @@ public class SingleUseUiTests
         using var stranger = harness.CreateClientWithNoKey();
         var refused = await stranger.GetAsync("/app/echo/whatever");
 
-        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
     });
 
     /// <summary>

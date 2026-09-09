@@ -149,8 +149,23 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 
         // What App.StartHost subscribes StartProxyAsync to. The listener is already up here, so
         // what remains of that method is the part single use needs: read the store into the cache
-        // so every tab is built from it.
-        setup.ReadyToStart += () => Services.GetRequiredService<ConfigStoreCache>().InitializeAsync();
+        // so every tab is built from it — and then tell the store which port that listener is on.
+        //
+        // The app has this the other way round: it reads ListenPort out of the vault and binds
+        // exactly that, so the two agree by construction. This harness binds port 0 instead, because
+        // a developer running the suite very likely has RavensPort itself on 5559 and a fixed port
+        // would mean the tests either fail or, worse, talk to their real proxy. Writing the bound
+        // port back is what keeps the setting honest — and it is not cosmetic: a funnel whose source
+        // is one of this proxy’s own routes dials 127.0.0.1 at the port the *store* names, so
+        // leaving it at 5559 sends the funnel somewhere else entirely and its sources come back
+        // empty with nothing in the log to say why.
+        setup.ReadyToStart += async () =>
+        {
+            var cache = Services.GetRequiredService<ConfigStoreCache>();
+
+            await cache.InitializeAsync();
+            await cache.MutateAsync(store => store.Settings.ListenPort = new Uri(BaseUrl).Port);
+        };
 
         var window = UiDriver.Show<SetupView>(setup);
 
