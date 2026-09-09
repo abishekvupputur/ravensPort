@@ -12,11 +12,16 @@
 
   Instrumenting RavensPort.Core and nothing else is deliberate, not an oversight:
 
-    - RavensPort.App is WPF. 239 files of windows, view models and tray plumbing that no test
-      references — neither test project has a ProjectReference to it, so it cannot be reached from
-      a test at all. Including it would not report a gap anybody could close; it would add a fixed
-      block of zeroes that halves the headline percentage and makes a real regression in Core
-      invisible inside the noise.
+    - RavensPort.UI is the view models, and it is measured because something now drives them:
+      RavensPort.UI.Tests presses the buttons on real Avalonia views in a single-use session. It was
+      not measured while the only suites were Core.Tests and the approval run, because neither could
+      reach it — and an assembly nothing exercises contributes a fixed block of zeroes rather than a
+      gap anybody could close.
+
+    - RavensPort.App is the views themselves: axaml, the tray, the window plumbing. Still not
+      measured, and for the reason above rather than by tradition — what a test can assert about a
+      Border is that it exists, which is not worth a number. The behaviour behind those views lives
+      in RavensPort.UI, which is measured.
 
     - The test assemblies themselves are excluded for the obvious reason, and the 1Password native
       client is Go, so it is outside this tool's reach entirely (it has its own `go test`).
@@ -42,8 +47,8 @@
             not, and "a new assembly is not counted until someone says so" is the safer default for
             a number people read as a quality gate.
           -->
-          <Include>[RavensPort.Core]*</Include>
-          <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[xunit.*]*</Exclude>
+          <Include>[RavensPort.Core]*,[RavensPort.UI]*</Include>
+          <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[RavensPort.UI.Tests]*,[xunit.*]*</Exclude>
 
           <!--
             Generated code is not code anybody wrote or can test: GeneratedCodeAttribute covers the
