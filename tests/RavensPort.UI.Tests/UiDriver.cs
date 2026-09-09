@@ -290,6 +290,40 @@ internal static class UiDriver
                 + grid.GetVisualDescendants().OfType<DataGridRow>().Count());
     }
 
+    /// <summary>
+    /// The smallest visual holding one item of a list, to be searched inside instead of the view.
+    ///
+    /// The grid rows above have a type to look for; an ItemsControl has no such thing, so this
+    /// finds the outermost control whose DataContext is the item — everything inside it inherits
+    /// that DataContext, so the whole item is reachable from there. Same purpose either way: "the
+    /// tools list of the beta source" rather than "one of the six tool lists on this tab".
+    /// </summary>
+    public static Control Container<TItem>(Visual root, Func<TItem, bool> match)
+    {
+        var matches = root.GetVisualDescendants()
+            .OfType<Control>()
+            .Where(c => c.DataContext is TItem item && match(item))
+            .ToList();
+
+        if (matches.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Nothing in this view is bound to a matching {typeof(TItem).Name}.");
+        }
+
+        // The shallowest, which is the item's own container. Everything inside an item inherits its
+        // DataContext, so most of those matches are controls *within* the item — a check box, the
+        // panel holding its name — and searching from one of those finds only its own subtree.
+        return matches.MinBy(Depth)!;
+    }
+
+    private static int Depth(Visual visual)
+    {
+        var depth = 0;
+        for (var v = visual.GetVisualParent(); v is not null; v = v.GetVisualParent()) depth++;
+        return depth;
+    }
+
     /// <summary>Selects a row and hands back the row itself, ready to be driven.</summary>
     public static async Task<DataGridRow> SelectAndOpenRowAsync<TItem>(
         Visual root, string gridAutomationId, Func<TItem, bool> match)
@@ -325,6 +359,31 @@ internal static class UiDriver
                     + string.Join(", ", combo.Items.Select(Label)));
 
             combo.SelectedItem = match;
+        });
+
+        await PumpAsync();
+    }
+
+    /// <summary>Presses the nth button carrying this id — see <see cref="FindAll{T}"/>.</summary>
+    public static async Task ClickNthAsync(Visual root, string automationId, int index)
+    {
+        var buttons = FindAll<Button>(root, automationId);
+        Assert.True(index < buttons.Count,
+            $"wanted '{automationId}' #{index} but the view has {buttons.Count}");
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var button = buttons[index];
+            Assert.True(button.IsEnabled, $"'{automationId}' #{index} is disabled.");
+
+            if (button.Command is { } command && command.CanExecute(button.CommandParameter))
+            {
+                command.Execute(button.CommandParameter);
+            }
+            else
+            {
+                throw new InvalidOperationException($"'{automationId}' #{index} cannot execute right now.");
+            }
         });
 
         await PumpAsync();

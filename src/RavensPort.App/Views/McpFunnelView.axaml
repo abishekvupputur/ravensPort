@@ -49,6 +49,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                              the dark theme and rendered dark-on-dark. Kept because the glyph and
                              the row layout are the same either way. -->
                         <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
+                                AutomationProperties.AutomationId="funnels.group.expand"
                                 Classes="ghost" Width="26" Padding="0"
                                 ToolTip.Tip="Show or hide this list"/>
                         <TextBlock Text="{Binding Title}" Classes="label"
@@ -57,6 +58,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                    FontSize="10" Foreground="{StaticResource MutedTextBrush}"/>
                     </StackPanel>
                     <ComboBox ItemsSource="{Binding AllModes}" SelectedItem="{Binding Mode, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="funnels.group.mode"
                               HorizontalAlignment="Right" Width="110"
                               ToolTip.Tip="{StaticResource SelectionModeHelpText}"/>
                 </Grid>
@@ -71,6 +73,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:McpSelectableItemViewModel">
                             <CheckBox Content="{Binding Name}"
+                                      AutomationProperties.AutomationId="funnels.group.item"
                                       IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                       Margin="0,1"/>
                         </DataTemplate>
@@ -239,6 +242,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                                 </CheckBox>
 
                                                 <Button Content="{Binding ExpandGlyph}" Command="{Binding ToggleExpandedCommand}"
+                                                        AutomationProperties.AutomationId="funnels.source.expand"
                                                         Classes="ghost"
                                                         HorizontalAlignment="Right" VerticalAlignment="Top"
                                                         Width="30" Padding="0"
@@ -302,6 +306,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                          Content. Avalonia selectors cannot match on a binding, and a converter for
                          one button would be more machinery than the two words it produces. -->
                     <Button HorizontalAlignment="Right" Width="100" Classes="ghost"
+                            AutomationProperties.AutomationId="funnels.refreshAllSources"
                             Command="{Binding RefreshAllSourcesCommand}"
                             ToolTip.Tip="Connect to every enabled source and re-read the tools it offers">
                         <Panel>
