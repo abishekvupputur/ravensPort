@@ -94,4 +94,9 @@ internal static class AutomationIds
     public const string OpenErrorLog = "settings.log.errors";
     public const string OpenLogFolder = "settings.log.folder";
     public const string PruneLogs = "settings.log.prune";
+    public const string MtlsEnabled = "settings.mtls.enabled";
+    public const string GenerateMtls = "settings.mtls.generate";
+    public const string ConfirmGenerateMtls = "settings.mtls.generate.confirm";
+    public const string ExportMtls = "settings.mtls.export";
+    public const string MtlsPassword = "settings.mtls.password";
 }
