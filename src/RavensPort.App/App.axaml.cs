@@ -42,7 +42,10 @@ public partial class App : Application
 
     private Mutex? _singleInstanceMutex;
 
-    private readonly IDialogService _dialogs = new AvaloniaDialogService();
+    // Typed as the implementation rather than the interface (CA1859): this field is constructed
+    // here and used here, so the indirection bought nothing and cost a virtual call per dialog.
+    // The seam that matters is IDialogService on the view models, which is unchanged.
+    private readonly AvaloniaDialogService _dialogs = new();
 
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private WebApplication? _webApp;
