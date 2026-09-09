@@ -3,6 +3,8 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -31,9 +33,22 @@ internal static class UiDriver
     /// </summary>
     public static Window Show<TView>(object dataContext) where TView : Control, new()
     {
+        // The parking spot exists so that leaving a field means something. Several boxes bind with
+        // UpdateSourceTrigger=LostFocus, and focus only leaves a control when it arrives somewhere
+        // else — focusing the window is a no-op headlessly, so without a real focusable control to
+        // move to, typing changes the screen and never reaches the view model.
+        var park = new Button { Content = "focus park", Width = 1, Height = 1 };
+
         var window = new Window
         {
-            Content = new TView(),
+            Content = new DockPanel
+            {
+                Children =
+                {
+                    park,
+                    new TView(),
+                },
+            },
             DataContext = dataContext,
 
             // Big enough that nothing this suite drives is scrolled out of the visual tree.
@@ -44,8 +59,13 @@ internal static class UiDriver
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
+        FocusParks[window] = park;
+
         return window;
     }
+
+    /// <summary>Where focus goes when a field is left. One per window shown.</summary>
+    private static readonly Dictionary<Window, Button> FocusParks = [];
 
     /// <summary>
     /// Every control carrying this automation id, in visual-tree order.
@@ -111,7 +131,40 @@ internal static class UiDriver
         await PumpAsync();
     }
 
-    /// <summary>Types into a box the way a user does — through the property the binding watches.</summary>
+    /// <summary>
+    /// Presses the button belonging to one row of a list.
+    ///
+    /// Matched on the item the button would act on rather than on its position, because position is
+    /// what a sort order or a filter changes. Every one of these buttons already carries its row's
+    /// view model as CommandParameter — that is how the command knows what to act on — so it is
+    /// also the thing that identifies the button.
+    /// </summary>
+    public static async Task ClickForItemAsync<TItem>(Visual root, string automationId, Func<TItem, bool> match)
+    {
+        var buttons = FindAll<Button>(root, automationId);
+
+        var button = buttons.FirstOrDefault(b => b.CommandParameter is TItem item && match(item))
+            ?? throw new InvalidOperationException(
+                $"No '{automationId}' button belongs to a matching row; the view has {buttons.Count} of them.");
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            Assert.True(button.IsEnabled, $"'{automationId}' is disabled for this row.");
+
+            if (button.Command is { } command && command.CanExecute(button.CommandParameter))
+            {
+                command.Execute(button.CommandParameter);
+            }
+            else
+            {
+                throw new InvalidOperationException($"'{automationId}' cannot execute for this row.");
+            }
+        });
+
+        await PumpAsync();
+    }
+
+    /// <summary>Types into a box the way a user does — including leaving it afterwards.</summary>
     public static async Task TypeAsync(Visual root, string automationId, string text)
     {
         var box = Find<TextBox>(root, automationId);
@@ -119,10 +172,35 @@ internal static class UiDriver
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             Assert.True(box.IsEnabled, $"'{automationId}' is disabled, so a user could not type in it.");
-            box.Text = text;
+            Fill(box, text);
         });
 
         await PumpAsync();
+    }
+
+    /// <summary>
+    /// Puts text in a box and then leaves it, which is not a flourish.
+    ///
+    /// Several of these boxes bind with UpdateSourceTrigger=LostFocus — sensibly, so a route’s
+    /// parameter name is not rewritten and re-saved on every keystroke. Setting Text alone therefore
+    /// changes what is on screen and nothing else: the view model never hears about it, the route is
+    /// saved with a blank field, and the only symptom is a header that does not arrive. Focusing the
+    /// box and then clearing focus is what a person does by moving to the next field, and it is what
+    /// makes the binding fire.
+    /// </summary>
+    private static void Fill(TextBox box, string text)
+    {
+        box.Focus();
+        box.Text = text;
+
+        // Leaving the field, which is what makes a LostFocus binding fire. Focus has to genuinely
+        // arrive somewhere else: raising the event by hand throws, because Avalonia builds a
+        // FocusChangedEventArgs its handler expects, and focusing the window does nothing at all
+        // headlessly. So it moves to the parking button Show put in the window.
+        if (TopLevel.GetTopLevel(box) is Window window && FocusParks.TryGetValue(window, out var park))
+        {
+            park.Focus();
+        }
     }
 
     /// <summary>Picks an item in a combo box by the text it shows.</summary>
@@ -192,6 +270,34 @@ internal static class UiDriver
         await PumpAsync();
     }
 
+    /// <summary>
+    /// The grid row belonging to one item, to be searched inside instead of the whole view.
+    ///
+    /// Necessary because a DataGrid does not keep only the selected row's details realized: the
+    /// previously selected row's are still in the tree, so ids inside that template appear twice
+    /// and looking for exactly one of them fails. Scoping to the row makes the position of a
+    /// credential editor mean "on this route" rather than "somewhere in this grid".
+    /// </summary>
+    public static DataGridRow Row<TItem>(Visual root, string gridAutomationId, Func<TItem, bool> match)
+    {
+        var grid = Find<DataGrid>(root, gridAutomationId);
+
+        return grid.GetVisualDescendants()
+            .OfType<DataGridRow>()
+            .FirstOrDefault(r => r.DataContext is TItem item && match(item))
+            ?? throw new InvalidOperationException(
+                $"No realized row in '{gridAutomationId}' matched. Rows present: "
+                + grid.GetVisualDescendants().OfType<DataGridRow>().Count());
+    }
+
+    /// <summary>Selects a row and hands back the row itself, ready to be driven.</summary>
+    public static async Task<DataGridRow> SelectAndOpenRowAsync<TItem>(
+        Visual root, string gridAutomationId, Func<TItem, bool> match)
+    {
+        await SelectRowAsync(root, gridAutomationId, match);
+        return Row(root, gridAutomationId, match);
+    }
+
     /// <summary>Types into the nth box carrying this id — see <see cref="FindAll{T}"/>.</summary>
     public static async Task TypeNthAsync(Visual root, string automationId, int index, string text)
     {
@@ -199,7 +305,7 @@ internal static class UiDriver
         Assert.True(index < boxes.Count,
             $"wanted '{automationId}' #{index} but the view has {boxes.Count}");
 
-        await Dispatcher.UIThread.InvokeAsync(() => boxes[index].Text = text);
+        await Dispatcher.UIThread.InvokeAsync(() => Fill(boxes[index], text));
         await PumpAsync();
     }
 
