@@ -77,17 +77,33 @@ jobs:
       # Named rather than left to fail somewhere inside the scan. Without the token the CLI exits
       # with an authentication error several steps later, which reads as a broken workflow rather
       # than as a repository that has never been given the secret.
+      #
+      # Whether a missing token is an error depends on who is asking, which is the distinction the
+      # first version of this step did not draw. A push to main or a scheduled run is this
+      # repository scanning itself, and a token that is not there is a real misconfiguration worth
+      # failing over. A pull request from a fork -- or from Dependabot, which is handed Dependabot
+      # secrets rather than Actions secrets -- was never going to have it, and failing there is a
+      # red check for a credential the contributor cannot supply. coverage.yml already declined to
+      # make that trade for SONAR_TOKEN; this follows it.
       - name: Check for SNYK_TOKEN
+        id: token_gate
         shell: pwsh
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SNYK_TOKEN)) {
-            Write-Host "::error::SNYK_TOKEN is not set. Add it under Settings -> Secrets and variables -> Actions."
-            exit 1
+          $ready = -not [string]::IsNullOrWhiteSpace($env:SNYK_TOKEN)
+          "ready=$($ready.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Append
+          if ($ready) { exit 0 }
+          if ($env:IS_PULL_REQUEST -eq 'true') {
+            Write-Host "::warning::SNYK_TOKEN is not available to this pull request, so the Snyk scan is skipped. It runs on the push to main."
+            exit 0
           }
+          Write-Host "::error::SNYK_TOKEN is not set. Add it under Settings -> Secrets and variables -> Actions."
+          exit 1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - if: steps.token_gate.outputs.ready == 'true'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
 
@@ -101,7 +117,8 @@ jobs:
       # Confirmed against a local run: a machine on go1.26.5 reported three High stdlib advisories
       # (std/net, std/net/http, std/net/url) that go 1.26.6, which go.mod requires, already fixes.
       # Re-running the same command with GOTOOLCHAIN=go1.26.6 returned all seven projects clean.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - if: steps.token_gate.outputs.ready == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: src/OnePasswordNative/go.mod
           cache-dependency-path: src/OnePasswordNative/go.sum
@@ -114,6 +131,7 @@ jobs:
       # whole reason this workflow exists. Snyk reads obj/project.assets.json for the resolved
       # transitive graph; without a restore it sees only what each csproj declares directly.
       - name: Restore
+        if: steps.token_gate.outputs.ready == 'true'
         run: dotnet restore RavensPort.slnx
 
       # Deliberately not snyk/actions. That action is published only as a floating branch ref, and
@@ -150,6 +168,7 @@ jobs:
       # needs no conversion in either. Snyk reads manifests, so an extra exe sitting in the tree
       # during the scan changes nothing it reports.
       - name: Install Snyk CLI
+        if: steps.token_gate.outputs.ready == 'true'
         shell: bash
         env:
           SNYK_VERSION: v1.1306.4
@@ -177,6 +196,7 @@ jobs:
       # whole reason this job exists. The cost is accepted rather than unnoticed: a Go toolchain
       # problem can now fail a job that also gates NuGet, and the log names which project failed.
       - name: Run Snyk (SARIF, for code scanning)
+        if: steps.token_gate.outputs.ready == 'true'
         shell: pwsh
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -190,7 +210,7 @@ jobs:
       # is what tells code scanning that a previously reported finding is gone, and skipping the
       # upload leaves the old alert open forever.
       - name: Upload Snyk SARIF
-        if: always()
+        if: always() && steps.token_gate.outputs.ready == 'true'
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: snyk.sarif
@@ -212,7 +232,7 @@ jobs:
       # trade taken deliberately, since the fix is one line and the alternative is a known advisory
       # sitting in the graph until somebody reads an alert.
       - name: Run Snyk (gate)
-        if: always()
+        if: always() && steps.token_gate.outputs.ready == 'true'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         shell: pwsh

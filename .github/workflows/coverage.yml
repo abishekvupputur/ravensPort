@@ -285,6 +285,15 @@ jobs:
           "reason=$reason" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "System coverage: $reason"
 
+          # Explicit, because a missing artifact is a normal outcome and must not fail this step.
+          # GitHub's pwsh wrapper exits with whatever $LASTEXITCODE holds when the script ends, and
+          # the cmdlets above do not touch it -- so the 1 from the `gh run download` that found
+          # nothing survives all the way to the end and fails the job. That is exactly what happens
+          # on a Dependabot pull request: it gets no repository secrets, system-approval.yml skips
+          # the suite and uploads no artifact, and this step reported "covered nothing" and then
+          # exited 1 anyway. The three outcomes above are all fine; the summary says which one it was.
+          exit 0
+
       - name: Merge and summarise
         id: merge
         shell: pwsh
