@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
@@ -124,45 +126,103 @@ public static class ProxyStartupExtensions
         // test host included.
         services.AddSingleton<KestrelMtlsState>();
 
+        // One definition of how this app dials its own listener, shared by the funnel's pool and
+        // by the API bridge's tool calls.
+        services.AddSingleton<LoopbackHttpClient>();
+
         services.AddSingleton<McpSourceConnectionPool>();
         services.AddSingleton<McpCatalogCache>();
         services.AddSingleton<McpFunnelHandlerFactory>();
+        services.AddSingleton<McpApiBridgeHandlerFactory>();
 
         services.AddMcpServer()
             .WithHttpTransport(options =>
             {
                 options.Stateless = true;
 
+                // Both endpoints are mapped against this one registration, so which server a
+                // request belongs to is decided here rather than by the mapping. The route value
+                // the pattern matched is the evidence.
                 options.ConfigureSessionOptions = (httpContext, serverOptions, _) =>
-                {
-                    var handlerFactory = httpContext.RequestServices.GetRequiredService<McpFunnelHandlerFactory>();
-
-                    // The gate has already refused unknown slugs, so a miss here means the funnel
-                    // was deleted between the two — answer as an empty server rather than throw.
-                    var slug = httpContext.Request.RouteValues[McpFunnelEndpoints.SlugRouteValue]?.ToString();
-                    if (handlerFactory.FindFunnel(slug) is not { } funnel) return Task.CompletedTask;
-
-                    serverOptions.ServerInfo = new Implementation
-                    {
-                        Name = $"RavensPort funnel: {funnel.Name}",
-                        Version = typeof(ProxyStartupExtensions).Assembly.GetName().Version?.ToString() ?? "1.0.0",
-                    };
-
-                    // Declared unconditionally. A funnel's sources can gain or lose prompts and
-                    // resources at any time, and capabilities are negotiated once per request —
-                    // advertising only what happens to exist right now would make a client that
-                    // connected a moment earlier believe the funnel can never offer them.
-                    serverOptions.Capabilities = new ServerCapabilities
-                    {
-                        Tools = new ToolsCapability(),
-                        Resources = new ResourcesCapability(),
-                        Prompts = new PromptsCapability(),
-                    };
-
-                    serverOptions.Handlers = handlerFactory.Create(funnel.Id, funnel.Name);
-
-                    return Task.CompletedTask;
-                };
+                    httpContext.Request.RouteValues.ContainsKey(McpApiBridgeEndpoints.SlugRouteValue)
+                        ? ConfigureBridge(httpContext, serverOptions)
+                        : ConfigureFunnel(httpContext, serverOptions);
             });
+    }
+
+    private static Task ConfigureFunnel(HttpContext httpContext, McpServerOptions serverOptions)
+    {
+        var handlerFactory = httpContext.RequestServices.GetRequiredService<McpFunnelHandlerFactory>();
+
+        // The gate has already refused unknown slugs, so a miss here means the funnel
+        // was deleted between the two — answer as an empty server rather than throw.
+        var slug = httpContext.Request.RouteValues[McpFunnelEndpoints.SlugRouteValue]?.ToString();
+        if (handlerFactory.FindFunnel(slug) is not { } funnel) return Task.CompletedTask;
+
+        serverOptions.ServerInfo = new Implementation
+        {
+            Name = $"RavensPort funnel: {funnel.Name}",
+            Version = typeof(ProxyStartupExtensions).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+        };
+
+        // Declared unconditionally. A funnel's sources can gain or lose prompts and
+        // resources at any time, and capabilities are negotiated once per request —
+        // advertising only what happens to exist right now would make a client that
+        // connected a moment earlier believe the funnel can never offer them.
+        serverOptions.Capabilities = new ServerCapabilities
+        {
+            Tools = new ToolsCapability(),
+            Resources = new ResourcesCapability(),
+            Prompts = new PromptsCapability(),
+        };
+
+        serverOptions.Handlers = handlerFactory.Create(funnel.Id, funnel.Name);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The API bridge half of the same callback.
+    ///
+    /// It inherits Stateless from the shared transport options above, which is what makes this run
+    /// per request and a re-imported manifest land on the agent's next call. The cost is the same
+    /// one the funnel pays — no sampling, no elicitation, no subscriptions — and for a bridge it
+    /// is not a cost at all: a manifest has nothing to elicit. Do not "fix" this by asking for a
+    /// per-endpoint session mode; there is one transport registration, and changing it here would
+    /// silently change the funnel too.
+    /// </summary>
+    private static Task ConfigureBridge(HttpContext httpContext, McpServerOptions serverOptions)
+    {
+        var handlerFactory = httpContext.RequestServices.GetRequiredService<McpApiBridgeHandlerFactory>();
+
+        // The gate has already refused unknown slugs, so a miss here means the bridge was deleted
+        // between the two — answer as an empty server rather than throw.
+        var slug = httpContext.Request.RouteValues[McpApiBridgeEndpoints.SlugRouteValue]?.ToString();
+        if (handlerFactory.FindBridge(slug) is not { } bridge) return Task.CompletedTask;
+
+        serverOptions.ServerInfo = new Implementation
+        {
+            Name = $"RavensPort API bridge: {bridge.Name}",
+            Version = typeof(ProxyStartupExtensions).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+        };
+
+        // Declared unconditionally, all three, for the same reason the funnel declares its three:
+        // a manifest can gain a prompt or a skill at any moment, capabilities are negotiated once
+        // per request, and advertising only what happens to exist right now would tell a client
+        // that connected a moment earlier that this endpoint can never offer them.
+        serverOptions.Capabilities = new ServerCapabilities
+        {
+            Tools = new ToolsCapability(),
+            Resources = new ResourcesCapability(),
+            Prompts = new PromptsCapability(),
+        };
+
+        // How to use this API well, in the initialize result. Every MCP client shows it, which is
+        // what makes it the cheapest of the manifest's three guidance forms.
+        serverOptions.ServerInstructions = bridge.Manifest.Instructions;
+
+        serverOptions.Handlers = handlerFactory.Create(bridge.Id, bridge.Name);
+
+        return Task.CompletedTask;
     }
 }

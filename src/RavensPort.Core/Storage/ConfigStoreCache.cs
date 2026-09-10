@@ -178,14 +178,18 @@ public sealed class ConfigStoreCache
     }
 
     /// <summary>
-    /// Issues a never-expiring key to every route and funnel that has none. Returns how many were
-    /// issued, so the caller can skip the write when there is nothing to do.
+    /// Issues a never-expiring key to every route, funnel, and API bridge that has none. Returns
+    /// how many were issued, so the caller can skip the write when there is nothing to do.
     /// </summary>
     private static int BackfillKeys(ConfigStore store)
     {
         var issued = 0;
 
-        foreach (var key in store.Routes.Select(r => r.Key).Concat(store.McpFunnels.Select(f => f.Key)))
+        var keys = store.Routes.Select(r => r.Key)
+            .Concat(store.McpFunnels.Select(f => f.Key))
+            .Concat(store.McpApiBridges.Select(b => b.Key));
+
+        foreach (var key in keys)
         {
             if (key.IsConfigured) continue;
 
@@ -382,8 +386,10 @@ public sealed class ConfigStoreCache
         List<RouteMapping> Routes,
         List<McpSourceRecord> McpSources,
         List<McpFunnelRecord> McpFunnels,
+        List<McpApiBridgeRecord> McpApiBridges,
         int ListenPort,
         bool McpFunnelEnabled,
+        bool McpApiBridgeEnabled,
         bool MtlsEnabled,
         string MtlsClientCertificatePfx,
         string MtlsClientCertificatePassword);
@@ -394,8 +400,10 @@ public sealed class ConfigStoreCache
         [.. store.Routes],
         [.. store.McpSources],
         [.. store.McpFunnels],
+        [.. store.McpApiBridges],
         store.Settings.ListenPort,
         store.Settings.McpFunnelEnabled,
+        store.Settings.McpApiBridgeEnabled,
         store.Settings.MtlsEnabled,
         store.Settings.MtlsClientCertificatePfx,
         store.Settings.MtlsClientCertificatePassword);
@@ -407,9 +415,11 @@ public sealed class ConfigStoreCache
         ReplaceAll(store.Routes, snapshot.Routes);
         ReplaceAll(store.McpSources, snapshot.McpSources);
         ReplaceAll(store.McpFunnels, snapshot.McpFunnels);
+        ReplaceAll(store.McpApiBridges, snapshot.McpApiBridges);
 
         store.Settings.ListenPort = snapshot.ListenPort;
         store.Settings.McpFunnelEnabled = snapshot.McpFunnelEnabled;
+        store.Settings.McpApiBridgeEnabled = snapshot.McpApiBridgeEnabled;
         store.Settings.MtlsEnabled = snapshot.MtlsEnabled;
         store.Settings.MtlsClientCertificatePfx = snapshot.MtlsClientCertificatePfx;
         store.Settings.MtlsClientCertificatePassword = snapshot.MtlsClientCertificatePassword;

@@ -11,6 +11,14 @@ namespace RavensPort.Core.Models;
 public static class McpFunnelValidation
 {
     /// <summary>
+    /// Ceiling on an alias, and therefore on how much of a 128-character MCP name is left for the
+    /// tool itself. Public because McpApiBridgeValidation derives its own tool-name cap from it:
+    /// a name that no longer fits once prefixed is dropped from a funnel's listing entirely, and
+    /// deriving is what stops raising this from silently deleting tools.
+    /// </summary>
+    public const int MaxAliasLength = 32;
+
+    /// <summary>
     /// The slug becomes a literal path segment in "/mcp/{slug}". Restricting it to lowercase
     /// letters, digits, and hyphens keeps it unambiguous in a URL with no escaping anywhere.
     /// </summary>
@@ -56,9 +64,9 @@ public static class McpFunnelValidation
 
         var trimmed = alias.Trim();
 
-        if (trimmed.Length > 32)
+        if (trimmed.Length > MaxAliasLength)
         {
-            return "Alias may be at most 32 characters.";
+            return $"Alias may be at most {MaxAliasLength} characters.";
         }
 
         if (!trimmed.All(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-'))
@@ -83,15 +91,29 @@ public static class McpFunnelValidation
 
     /// <summary>
     /// Validates the "where does this source live" half of a record: a route-backed source needs
-    /// a route that still exists, a URL-backed one needs a URL this app is willing to talk to.
+    /// a route that still exists, a bridge-backed one a bridge that still exists, and a URL-backed
+    /// one a URL this app is willing to talk to.
     /// </summary>
-    public static string? ValidateTarget(McpSourceKind kind, Guid routeId, string? url, IEnumerable<RouteMapping> routes)
+    public static string? ValidateTarget(
+        McpSourceKind kind,
+        Guid routeId,
+        string? url,
+        IEnumerable<RouteMapping> routes,
+        Guid bridgeId = default,
+        IEnumerable<McpApiBridgeRecord>? bridges = null)
     {
         if (kind == McpSourceKind.ProxyRoute)
         {
             return routes.Any(r => r.Id == routeId)
                 ? null
                 : "Pick the route this MCP server is reached through.";
+        }
+
+        if (kind == McpSourceKind.ApiBridge)
+        {
+            return bridges?.Any(b => b.Id == bridgeId) == true
+                ? null
+                : "Pick the API bridge this source exposes.";
         }
 
         if (string.IsNullOrWhiteSpace(url))

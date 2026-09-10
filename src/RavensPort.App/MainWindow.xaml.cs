@@ -14,6 +14,7 @@ public partial class MainWindow : Window
         CredentialsViewModel credentialsViewModel,
         RoutesViewModel routesViewModel,
         McpFunnelViewModel mcpFunnelViewModel,
+        ApiBridgeViewModel apiBridgeViewModel,
         SettingsViewModel settingsViewModel)
     {
         InitializeComponent();
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
         CredentialsViewControl.DataContext = credentialsViewModel;
         RoutesViewControl.DataContext = routesViewModel;
         McpFunnelViewControl.DataContext = mcpFunnelViewModel;
+        ApiBridgeViewControl.DataContext = apiBridgeViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
         SourceInitialized += (_, _) => WindowHelper.ApplyDarkTitleBar(this);
@@ -56,6 +58,13 @@ public partial class MainWindow : Window
         if (McpFunnelViewControl.DataContext is McpFunnelViewModel mcpFunnelViewModel)
         {
             mcpFunnelViewModel.Reload();
+        }
+
+        // The API to MCP tab lists routes owned by the Routes tab, and its endpoint URLs embed
+        // the listen port owned by Settings — both can change while this tab is off screen.
+        if (ApiBridgeViewControl.DataContext is ApiBridgeViewModel apiBridgeViewModel)
+        {
+            apiBridgeViewModel.Reload();
         }
 
         // Settings shows the autostart state, which the tray menu can also change.

@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="media/logo.png" alt="RavensPort" width="140">
 </p>
 
@@ -86,6 +86,11 @@ reach on its own.
 ## Features
 
 - **MCP Funnel** — per-agent endpoints pooling multiple MCP servers with per-tool filtering
+- **API to MCP** — turn an API you already proxy into an MCP endpoint from a JSON manifest: tools
+  with JSON Schema arguments, several near-identical endpoints collapsed into one tool the model
+  picks a variant of, plus prompts and skill documents. Each call goes out through the route you
+  chose, so its credential is attached exactly as for any other call and no token ever goes in a
+  manifest
 - **Multi-provider OAuth2** — Google (via `Google.Apis.Auth`), GitHub, Nextcloud, or any custom
   OAuth2 provider (via `IdentityModel.OidcClient`; plain OAuth2, no OIDC discovery required)
 - **Device code sign-in** — the RFC 8628 grant: the provider issues a short code, you enter it on
@@ -109,7 +114,7 @@ reach on its own.
 - **1Password without the desktop app** — sign in with a service account token instead, so nothing
   local has to be installed, running, or unlocked; the token is kept only in memory unless you ask
   for it to be saved behind Windows Hello
-- **A proxy key per endpoint** — every route and every funnel has its own, with its own expiry, so
+- **A proxy key per endpoint** — every route, funnel, and API bridge has its own, with its own expiry, so
   other processes on your machine cannot spend your grants and a key leaked from one client cannot
   reach the rest
 - **Client certificates (mTLS)** — optionally require a certificate on every connection as well as
@@ -564,6 +569,142 @@ reach a funnel — see [The proxy key](#the-proxy-key).
 - A route-backed source that keys sessions on a **cookie** rather than the standard
   `Mcp-Session-Id` header cannot hold a session: `Cookie` is stripped on the way upstream,
   deliberately, so a caller cannot launder its own credentials through the proxy.
+
+---
+
+## API to MCP <sub><sup>new in 4.6.0</sup></sub>
+
+A **bridge** turns one API you already proxy into an MCP endpoint at `/api-mcp/{slug}`, described
+by a JSON manifest you write. It is the other half of a route: the route knows how to reach an
+upstream with a credential attached, and the manifest says which of that upstream's operations are
+worth offering to an agent and what to call them.
+
+Point an agent straight at a bridge, or add it as a source on the **MCP Funnel** tab and pool it
+with everything else.
+
+### 1. Pick a route and write a manifest
+
+On the **API to MCP** tab, press **Load sample** for a worked example using every part of the
+format, or **Save sample…** to edit one outside the app. Importing a file fills the editor rather
+than saving directly, so a manifest that fails validation can be fixed where it is. The preview
+below the editor lists every call the manifest would make before you save it.
+
+```json
+{
+  "version": 1,
+  "instructions": "Search with list_tasks first; ids are opaque and only come from a listing.",
+  "tools": [
+    {
+      "name": "list_tasks",
+      "description": "Lists tasks matching a query.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": { "query": { "type": "string" }, "limit": { "type": "integer" } },
+        "required": ["query"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tasks",
+        "query": { "q": "{query}", "limit": "{limit}" },
+        "headers": { "Accept": "application/json" }
+      }
+    }
+  ]
+}
+```
+
+Paths are relative to the route's prefix. **Never put a token in a manifest** — the route's
+credential is attached for you, one hop later, by the same transform that serves every other call.
+
+### 2. Let the model choose between variants
+
+Several near-identical endpoints belong in one tool. Declare `variants` instead of `request`, and
+`variantBy` naming the argument the model sets to choose:
+
+```json
+{
+  "name": "list_by_state",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "state": { "type": "string", "enum": ["open", "done", "archived"] } },
+    "required": ["state"]
+  },
+  "variantBy": "state",
+  "variants": {
+    "open":     { "description": "Live tasks",       "method": "GET", "path": "/tasks",         "query": { "status": "open" } },
+    "done":     { "description": "Finished tasks",   "method": "GET", "path": "/tasks",         "query": { "status": "done" } },
+    "archived": { "description": "Out of the list",  "method": "GET", "path": "/archive/tasks" }
+  }
+}
+```
+
+The enum on that argument is how the model learns its choices, so it must list exactly the variants
+that exist — RavensPort refuses a manifest where the two disagree in either direction. Each
+variant's `description` is appended to the tool description, because an enum of three strings tells
+a model the shape of the choice but nothing about the meaning. The selector never reaches the
+upstream; it is a routing decision, not a parameter.
+
+### 3. Add guidance the agent can use
+
+Beyond tools, a manifest carries three kinds of guidance:
+
+| Field | Becomes | Seen by |
+|---|---|---|
+| `instructions` | the server's instructions in the initialize result | every MCP client |
+| `prompts` | MCP prompts, with arguments substituted into their text | clients that list prompts |
+| `skills` | markdown documents served as resources at `skill://{slug}/{name}` | clients that read resources |
+
+All three are answered from the manifest itself. A prompt or a skill never causes an HTTP call.
+
+### How arguments are used
+
+A placeholder is `{name}`, resolved against the arguments the model passed.
+
+| Where | Missing argument | Object or list | Escaping |
+|---|---|---|---|
+| Path | **refused**, naming the argument | refused | escaped per placeholder |
+| Query value | parameter omitted | refused | escaped |
+| Header value | header omitted | refused | control characters refused |
+| Body template | property omitted | allowed when the value is exactly `"{name}"` | none, it is JSON |
+
+Absent means omit, except in the path, where absent means refuse — a path with a hole in it is not
+a path. Declare what is required in the schema's `required` list, once, and the template never
+invents a null. `bodyMode` is `none`, `template`, or `arguments` (everything the path, query,
+headers and selector did not already carry).
+
+Nothing validates arguments against the schema: it is advertisement to the model, and the only
+enforcement on the call path is that a placeholder the template needs is present and is a single
+value.
+
+### Behaviour
+
+- **A bridge has its own proxy key.** The key of the route it calls does not open it, and its key
+  does not open that route — so an agent handed it reaches the manifest's operations and nothing
+  else that route serves.
+- **A manifest edit lands on the agent's next call.** Nothing is cached and no session holds it.
+- **Tool paths cannot leave the route.** Absolute and protocol-relative URLs, `..` segments and
+  percent-escapes are refused at import, and argument values are escaped so a `../` an agent passes
+  arrives as one path segment.
+- **A manifest cannot write the headers authorization rests on** — `Authorization`, `Cookie`, the
+  proxy's own headers, and the ones the forward itself owns.
+- **A redirect is refused, not followed.** The second request would leave the route and would not
+  carry its credential.
+- **Responses are capped at 1 MB** and truncated with a note rather than being carried whole into
+  an agent's context.
+- **Arguments and response bodies are never logged.** The tool name and the status code are.
+- `/api-mcp` is reserved, and both MCP endpoints refuse a request that already passed through a
+  bridge.
+
+### Limits
+
+- One route per bridge. A tool spanning several APIs would need a credential per variant, which is
+  not offered yet.
+- Manifests are capped at 128 KB each, and the whole vault note at 512 KB — the note is rewritten
+  on every save, including every token refresh.
+- No OpenAPI import. The manifest is written by hand, or generated by something else.
+- No structured output: results come back as text, since there is no schema validator here to
+  honour an `outputSchema`.
 
 ---
 
@@ -1256,7 +1397,7 @@ Every other command on this page builds the full app, unchanged.
 
 ```
 src/RavensPort.Core/            OAuth flows, password-manager storage, YARP proxy config, MCP funnel,
-                                activity log — no WPF dependency, just the engine
+                                API to MCP bridges, activity log — no WPF dependency, just the engine
 src/RavensPort.App/             WPF tray app: hosts Kestrel + YARP in-process, tray icon, UI
 tests/RavensPort.Core.Tests/    xunit tests for Core — InMemoryVault, no side effects
 tests/RavensPort.SystemTests/   the approval suite: one real 1Password vault, end to end

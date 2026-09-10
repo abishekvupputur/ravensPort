@@ -13,6 +13,7 @@ public sealed partial class RoutesViewModel : ObservableObject
 {
     private readonly ConfigStoreCache _configStoreCache;
     private readonly ProxyConfigChangeNotifier _proxyConfigChangeNotifier;
+    private readonly McpSourceConnectionPool _connectionPool;
     private readonly KestrelMtlsState _mtlsState;
 
     public ObservableCollection<UpstreamRecord> Upstreams { get; } = [];
@@ -144,10 +145,12 @@ public sealed partial class RoutesViewModel : ObservableObject
     public RoutesViewModel(
         ConfigStoreCache configStoreCache,
         ProxyConfigChangeNotifier proxyConfigChangeNotifier,
+        McpSourceConnectionPool connectionPool,
         KestrelMtlsState mtlsState)
     {
         _configStoreCache = configStoreCache;
         _proxyConfigChangeNotifier = proxyConfigChangeNotifier;
+        _connectionPool = connectionPool;
         _mtlsState = mtlsState;
 
         // Empty-state visibility is derived from these collections, so re-evaluate on change.
@@ -368,11 +371,33 @@ public sealed partial class RoutesViewModel : ObservableObject
         try
         {
             await SaveAndRebuildAsync();
+            await InvalidateSourcesForAsync(item.Route.Id);
             StatusMessage = message;
         }
         catch (Exception ex)
         {
             StatusMessage = $"Could not save change to '{item.PathPrefix}': {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Drops any pooled MCP session that reaches this route.
+    ///
+    /// A source's transport headers are fixed when it connects, and one of them is this route's
+    /// proxy key — so regenerating the key here would otherwise leave every funnel edge over this
+    /// route authenticating with the old value until the pool's ten-minute idle eviction got to
+    /// it, answering 403 the whole time with nothing on screen explaining why.
+    /// </summary>
+    private async Task InvalidateSourcesForAsync(Guid routeId)
+    {
+        var sources = _configStoreCache.Current.McpSources
+            .Where(s => s.Kind == McpSourceKind.ProxyRoute && s.RouteId == routeId)
+            .Select(s => s.Id)
+            .ToList();
+
+        foreach (var sourceId in sources)
+        {
+            await _connectionPool.InvalidateSourceAsync(sourceId);
         }
     }
 

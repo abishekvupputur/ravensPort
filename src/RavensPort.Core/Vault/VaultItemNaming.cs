@@ -10,6 +10,27 @@ public enum VaultItemRole
     Credential,
     RouteKey,
     FunnelKey,
+    ApiBridgeKey,
+}
+
+/// <summary>
+/// The roles that carry a secret of their own, in one place.
+///
+/// Every provider resolves secrets by walking this list, and each of them used to spell it out
+/// itself. The failure mode of a missed copy is the quiet kind: the new role's items are written
+/// to the vault correctly and never read back, so the endpoint works until the first restart and
+/// then answers 403 with nothing logged anywhere. One list means adding a role cannot be done
+/// halfway.
+/// </summary>
+public static class VaultItemRoles
+{
+    public static readonly VaultItemRole[] SecretBearing =
+    [
+        VaultItemRole.Credential,
+        VaultItemRole.RouteKey,
+        VaultItemRole.FunnelKey,
+        VaultItemRole.ApiBridgeKey,
+    ];
 }
 
 /// <summary>
@@ -39,6 +60,9 @@ public static partial class VaultItemNaming
 
     public static string ForFunnelKey(Guid id, string slug) =>
         $"{Prefix}funnel key — /mcp/{Clean(slug)} [{id:D}]";
+
+    public static string ForApiBridgeKey(Guid id, string slug) =>
+        $"{Prefix}api bridge key — /api-mcp/{Clean(slug)} [{id:D}]";
 
     public static bool IsOwned(string title) =>
         title.StartsWith(Prefix, StringComparison.Ordinal);
@@ -80,6 +104,7 @@ public static partial class VaultItemNaming
         if (title.Contains("credential —", StringComparison.Ordinal)) return VaultItemRole.Credential;
         if (title.Contains("route key —", StringComparison.Ordinal)) return VaultItemRole.RouteKey;
         if (title.Contains("funnel key —", StringComparison.Ordinal)) return VaultItemRole.FunnelKey;
+        if (title.Contains("api bridge key —", StringComparison.Ordinal)) return VaultItemRole.ApiBridgeKey;
 
         return default;
     }

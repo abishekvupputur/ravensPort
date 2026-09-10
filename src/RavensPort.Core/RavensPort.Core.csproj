@@ -25,6 +25,13 @@
       whole page is base64'd into one response, so pixels above what it displays are pure weight.
     -->
     <EmbeddedResource Include="Assets\logo.png" />
+
+    <!--
+      The worked example the API to MCP tab loads into its editor and saves to disk. Embedded
+      rather than written as a string literal so a test can parse the very bytes the user gets,
+      which is what stops the documented shape from drifting away from the validator.
+    -->
+    <EmbeddedResource Include="Assets\sample-api-mcp-manifest.json" />
   </ItemGroup>
 
   <ItemGroup>

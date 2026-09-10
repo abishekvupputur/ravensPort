@@ -15,11 +15,13 @@ public sealed partial class McpSourceItemViewModel : ObservableObject
     public McpSourceItemViewModel(
         McpSourceRecord source,
         RouteMapping? route,
+        McpApiBridgeRecord? bridge,
         McpSourceCatalog? catalog,
         Action<McpSourceItemViewModel, string> onChanged)
     {
         Source = source;
         Route = route;
+        Bridge = bridge;
         Catalog = catalog;
         _onChanged = onChanged;
         _enabled = source.Enabled;
@@ -27,18 +29,31 @@ public sealed partial class McpSourceItemViewModel : ObservableObject
 
     public McpSourceRecord Source { get; }
     public RouteMapping? Route { get; }
+    public McpApiBridgeRecord? Bridge { get; }
     public McpSourceCatalog? Catalog { get; }
 
     public string Name => Source.Name;
     public string Alias => Source.Alias;
 
-    public string Target => Source.Kind == McpSourceKind.ProxyRoute
-        ? Route?.PathPrefix ?? "⚠ route missing"
-        : Source.Url;
+    public string Target => Source.Kind switch
+    {
+        McpSourceKind.ProxyRoute => Route?.PathPrefix ?? "⚠ route missing",
+        McpSourceKind.ApiBridge => Bridge is null
+            ? "⚠ API bridge missing"
+            : $"{McpApiBridgeEndpoints.BasePath}/{Bridge.Slug}",
+        _ => Source.Url,
+    };
 
-    public string KindLabel => Source.Kind == McpSourceKind.ProxyRoute ? "Route (credentialed)" : "URL (no auth)";
+    public string KindLabel => Source.Kind switch
+    {
+        McpSourceKind.ProxyRoute => "Route (credentialed)",
+        McpSourceKind.ApiBridge => "API bridge",
+        _ => "URL (no auth)",
+    };
 
-    public bool IsBroken => Source.Kind == McpSourceKind.ProxyRoute && Route is null;
+    public bool IsBroken =>
+        (Source.Kind == McpSourceKind.ProxyRoute && Route is null)
+        || (Source.Kind == McpSourceKind.ApiBridge && Bridge is null);
 
     /// <summary>Result of the last Refresh, or a nudge to run one.</summary>
     public string Status => Catalog?.Describe() ?? "not checked yet — press Refresh";

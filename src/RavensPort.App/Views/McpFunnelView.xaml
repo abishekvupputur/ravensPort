@@ -15,7 +15,8 @@ Point one AI agent at each funnel. The agent sees a single server offering exact
         <sys:String x:Key="SourceKindHelpText">Where this MCP server lives.
 
 Route (credentialed) — an MCP server reached through one of your routes on the Routes tab. The route's OAuth token is attached automatically, so authenticated servers work with no extra setup.
-URL (no auth)        — any MCP server that needs no credential.</sys:String>
+URL (no auth)        — any MCP server that needs no credential.
+API bridge           — one of your own bridges from the API to MCP tab. Its tools reach this funnel like any other source's, and the credential is attached one hop further along, by the route the bridge calls.</sys:String>
 
         <sys:String x:Key="AliasHelpText">Prefixes every name this source contributes, so two servers offering a "search" tool stay distinguishable.
 
@@ -425,6 +426,20 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                             </ComboBox>
                             <TextBlock Style="{StaticResource HintTextStyle}"
                                        Text="The route's OAuth token is attached automatically — that is the point of pooling an authenticated server here."/>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,8"
+                                    Visibility="{Binding IsBridgeSource, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="API bridge" Style="{StaticResource FieldLabelStyle}"/>
+                            <ComboBox ItemsSource="{Binding ApiBridges}" SelectedItem="{Binding NewSourceBridge}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Style="{StaticResource HintTextStyle}"
+                                       Text="Both switches have to be on for this to work: the funnel above, and API bridges on the API to MCP tab."/>
                         </StackPanel>
 
                         <StackPanel Margin="0,0,0,8"

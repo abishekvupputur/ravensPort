@@ -29,6 +29,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     public ObservableCollection<McpSourceItemViewModel> Sources { get; } = [];
     public ObservableCollection<McpFunnelItemViewModel> Funnels { get; } = [];
     public ObservableCollection<RouteMapping> Routes { get; } = [];
+    public ObservableCollection<McpApiBridgeRecord> ApiBridges { get; } = [];
 
     /// <summary>Rows of the selected funnel's source editor.</summary>
     public ObservableCollection<McpFunnelSourceItemViewModel> FunnelSources { get; } = [];
@@ -39,6 +40,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     [ObservableProperty] private string _newSourceAlias = "";
     [ObservableProperty] private McpSourceKind _newSourceKind = McpSourceKind.RemoteUrl;
     [ObservableProperty] private RouteMapping? _newSourceRoute;
+    [ObservableProperty] private McpApiBridgeRecord? _newSourceBridge;
     [ObservableProperty] private string _newSourceUrl = "";
     [ObservableProperty] private McpTransportPreference _newSourceTransport = McpTransportPreference.Auto;
 
@@ -66,6 +68,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
 
     public bool IsRouteSource => NewSourceKind == McpSourceKind.ProxyRoute;
     public bool IsUrlSource => NewSourceKind == McpSourceKind.RemoteUrl;
+    public bool IsBridgeSource => NewSourceKind == McpSourceKind.ApiBridge;
 
     public bool HasSources => Sources.Count > 0;
     public bool HasNoSources => Sources.Count == 0;
@@ -108,6 +111,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsRouteSource));
         OnPropertyChanged(nameof(IsUrlSource));
+        OnPropertyChanged(nameof(IsBridgeSource));
     }
 
     partial void OnSelectedFunnelChanged(McpFunnelItemViewModel? value)
@@ -126,11 +130,15 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         var store = _configStoreCache.Current;
         var selectedFunnelId = SelectedFunnel?.Funnel.Id;
         var selectedRouteId = NewSourceRoute?.Id;
+        var selectedBridgeId = NewSourceBridge?.Id;
 
         IsEnabled = store.Settings.McpFunnelEnabled;
 
         Routes.Clear();
         foreach (var route in store.Routes) Routes.Add(route);
+
+        ApiBridges.Clear();
+        foreach (var bridge in store.McpApiBridges) ApiBridges.Add(bridge);
 
         Sources.Clear();
         foreach (var source in store.McpSources)
@@ -138,6 +146,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
             Sources.Add(new McpSourceItemViewModel(
                 source,
                 store.Routes.FirstOrDefault(r => r.Id == source.RouteId),
+                store.McpApiBridges.FirstOrDefault(b => b.Id == source.BridgeId),
                 _catalogCache.Get(source.Id),
                 OnSourceEdited));
         }
@@ -157,6 +166,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         }
 
         NewSourceRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);
+        NewSourceBridge = ApiBridges.FirstOrDefault(b => b.Id == selectedBridgeId);
         SelectedFunnel = Funnels.FirstOrDefault(f => f.Funnel.Id == selectedFunnelId);
 
         LoadFunnelSources();
@@ -231,7 +241,10 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         var routeId = NewSourceRoute?.Id ?? Guid.Empty;
         var url = NewSourceUrl.Trim();
 
-        if (McpFunnelValidation.ValidateTarget(NewSourceKind, routeId, url, store.Routes) is { } targetError)
+        var bridgeId = NewSourceBridge?.Id ?? Guid.Empty;
+
+        if (McpFunnelValidation.ValidateTarget(NewSourceKind, routeId, url, store.Routes, bridgeId, store.McpApiBridges)
+            is { } targetError)
         {
             StatusMessage = targetError;
             return;
@@ -243,6 +256,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
             Alias = alias,
             Kind = NewSourceKind,
             RouteId = routeId,
+            BridgeId = bridgeId,
             Url = NewSourceKind == McpSourceKind.RemoteUrl ? url : "",
             Transport = NewSourceTransport,
         };

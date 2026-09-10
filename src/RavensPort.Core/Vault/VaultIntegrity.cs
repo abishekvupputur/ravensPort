@@ -171,6 +171,8 @@ public sealed class VaultIntegrityService(
             "the route's key exists only in memory — clients keep working until RavensPort exits",
         VaultItemRole.FunnelKey =>
             "the funnel's key exists only in memory — clients keep working until RavensPort exits",
+        VaultItemRole.ApiBridgeKey =>
+            "the API bridge's key exists only in memory — clients keep working until RavensPort exits",
         _ => "it is not in the vault",
     };
 
@@ -237,8 +239,36 @@ public sealed class VaultIntegrityService(
         VaultItemRole.Credential => DropCredential(store, record.RecordId),
         VaultItemRole.RouteKey => store.Routes.RemoveAll(r => r.Id == record.RecordId) > 0,
         VaultItemRole.FunnelKey => store.McpFunnels.RemoveAll(f => f.Id == record.RecordId) > 0,
+        VaultItemRole.ApiBridgeKey => DropApiBridge(store, record.RecordId),
         _ => false,
     };
+
+    /// <summary>
+    /// Removes a bridge, and any funnel source that pointed at it. A source left behind would
+    /// name a bridge that no longer exists and fail on every connect — the same silent
+    /// half-configured state that dropping a credential's routes avoids one layer up.
+    /// </summary>
+    private static bool DropApiBridge(ConfigStore store, Guid bridgeId)
+    {
+        if (store.McpApiBridges.RemoveAll(b => b.Id == bridgeId) == 0) return false;
+
+        var stranded = store.McpSources
+            .Where(s => s.Kind == McpSourceKind.ApiBridge && s.BridgeId == bridgeId)
+            .Select(s => s.Id)
+            .ToList();
+
+        foreach (var sourceId in stranded)
+        {
+            store.McpSources.RemoveAll(s => s.Id == sourceId);
+
+            foreach (var funnel in store.McpFunnels)
+            {
+                funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
+            }
+        }
+
+        return true;
+    }
 
     private static bool DropCredential(ConfigStore store, Guid credentialId)
     {

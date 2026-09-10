@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using RavensPort.Core.Diagnostics;
@@ -200,6 +200,7 @@ public partial class App : Application
         builder.Services.AddSingleton<CredentialsViewModel>();
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
+        builder.Services.AddSingleton<ApiBridgeViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<TrayIconManager>();
@@ -254,6 +255,7 @@ public partial class App : Application
             _webApp.Services.GetRequiredService<CredentialsViewModel>().Reload();
             _webApp.Services.GetRequiredService<RoutesViewModel>().Reload();
             _webApp.Services.GetRequiredService<McpFunnelViewModel>().Reload();
+            _webApp.Services.GetRequiredService<ApiBridgeViewModel>().Reload();
         };
 
         // Every tab rebuilt from the emptied store, so a disconnect leaves no row belonging to the
@@ -508,6 +510,12 @@ public partial class App : Application
                 // forbidden from claiming that prefix.
                 _webApp.UseMcpFunnelGate();
                 _webApp.MapMcpFunnel();
+
+                // Same arrangement, same reasons, for the API bridges: after the guard so a caller
+                // must hold the bridge's own key, and before MapReverseProxy so /api-mcp is
+                // unambiguously theirs.
+                _webApp.UseMcpApiBridgeGate();
+                _webApp.MapMcpApiBridge();
 
                 _webApp.MapReverseProxy();
                 await _webApp.StartAsync();
