@@ -11,5 +11,6 @@ public sealed class ConfigStore
     public List<RouteMapping> Routes { get; set; } = [];
     public List<McpSourceRecord> McpSources { get; set; } = [];
     public List<McpFunnelRecord> McpFunnels { get; set; } = [];
+    public List<McpApiBridgeRecord> McpApiBridges { get; set; } = [];
     public AppSettings Settings { get; set; } = new();
 }

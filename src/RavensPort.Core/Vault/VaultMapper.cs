@@ -44,6 +44,10 @@ public sealed record VaultSecretItem(VaultItemRole Role, Guid RecordId, VaultIte
 /// reference upstreams reference credentials) and splitting a graph across items would turn every
 /// save into a consistency problem.
 ///
+/// A bridge's manifest is in the note as well, and deliberately so: it is not secret, and keeping
+/// it there is what lets a user read and hand-edit their tool definitions in the password manager
+/// the same way they can read their routes.
+///
 /// Each field lives on exactly one side. A credential's scopes and endpoints are in the note and
 /// nowhere else; its secret is in its item and nowhere else. There is no field with two homes, so
 /// there is never a question of which copy wins.
@@ -95,6 +99,23 @@ public static class VaultMapper
             {
                 ItemId = index.Find(VaultItemRole.FunnelKey, funnel.Id),
                 Caption = $"Proxy key for MCP funnel '{funnel.Name}' — {funnel.Key.DescribeExpiry(DateTimeOffset.UtcNow)}",
+            }));
+        }
+
+        foreach (var bridge in store.McpApiBridges)
+        {
+            if (!bridge.Key.IsConfigured) continue;
+
+            items.Add(new VaultSecretItem(VaultItemRole.ApiBridgeKey, bridge.Id, new VaultItemSpec(
+                VaultItemNaming.ForApiBridgeKey(bridge.Id, bridge.Slug),
+                VaultItemCategory.Password,
+                [
+                    new VaultItemField(VaultFields.Password, bridge.Key.Value),
+                    new VaultItemField(VaultFields.RecordId, bridge.Id.ToString("D")),
+                ])
+            {
+                ItemId = index.Find(VaultItemRole.ApiBridgeKey, bridge.Id),
+                Caption = $"Proxy key for API bridge '{bridge.Name}' — {bridge.Key.DescribeExpiry(DateTimeOffset.UtcNow)}",
             }));
         }
 
@@ -262,6 +283,14 @@ public static class VaultMapper
             if (secrets.TryGetValue((VaultItemRole.FunnelKey, funnel.Id), out var item))
             {
                 funnel.Key.Value = item.Field(VaultFields.Password) ?? "";
+            }
+        }
+
+        foreach (var bridge in store.McpApiBridges)
+        {
+            if (secrets.TryGetValue((VaultItemRole.ApiBridgeKey, bridge.Id), out var item))
+            {
+                bridge.Key.Value = item.Field(VaultFields.Password) ?? "";
             }
         }
 

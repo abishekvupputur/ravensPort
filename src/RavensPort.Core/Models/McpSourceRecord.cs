@@ -16,6 +16,18 @@ public enum McpSourceKind
 
     /// <summary>An MCP server that needs no credential, addressed directly by URL.</summary>
     RemoteUrl,
+
+    /// <summary>
+    /// One of this proxy's own API to MCP bridges, dialled back through the loopback listener with
+    /// the bridge's key so it passes LocalAccessGuard exactly as an agent's own client would.
+    ///
+    /// Two hops rather than one — funnel to bridge, then bridge to route — and the credential is
+    /// still attached in the one place it has ever been attached, by the transform on the second
+    /// hop. Nothing about tokens is duplicated here; what the bridge does duplicate is the
+    /// loopback dialling itself, which is why that lives in LoopbackHttpClient rather than being
+    /// copied.
+    /// </summary>
+    ApiBridge,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -67,6 +79,13 @@ public sealed class McpSourceRecord
 
     /// <summary>Set when <see cref="Kind"/> is <see cref="McpSourceKind.RemoteUrl"/>.</summary>
     public string Url { get; set; } = "";
+
+    /// <summary>
+    /// Set when <see cref="Kind"/> is <see cref="McpSourceKind.ApiBridge"/>. Its own field rather
+    /// than a reuse of <see cref="RouteId"/>: one field meaning two things reads correctly and
+    /// behaves wrongly the first time someone switches a source's kind.
+    /// </summary>
+    public Guid BridgeId { get; set; }
 
     public McpTransportPreference Transport { get; set; } = McpTransportPreference.Auto;
 

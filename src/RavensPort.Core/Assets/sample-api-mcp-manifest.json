@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "title": "Sample task tracker",
+  "description": "A worked example of every part of an API to MCP manifest. Replace the paths, arguments and text with your own API's, then import it against the route that reaches that API.",
+  "instructions": "Every path below is relative to the route this bridge is attached to, so the credential on that route is what these calls spend. Search with list_tasks before fetching one by id: ids are opaque and are only ever learned from a listing.",
+  "tools": [
+    {
+      "name": "list_tasks",
+      "title": "List tasks",
+      "description": "Lists tasks matching a search query. Returns ids you can pass to get_task.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Free-text search. Leave empty to list everything."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": ["query"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tasks",
+        "query": {
+          "q": "{query}",
+          "limit": "{limit}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "get_task",
+      "title": "Get one task",
+      "description": "Fetches a single task by id. A placeholder in the path is required: unlike a query parameter, it cannot be left out.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Task id, as returned by list_tasks."
+          }
+        },
+        "required": ["id"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tasks/{id}"
+      }
+    },
+    {
+      "name": "list_by_state",
+      "title": "List tasks in one state",
+      "description": "Several near-identical endpoints presented as one tool. The model picks a variant by setting 'state', and the enum on that argument is how it learns the choices.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Which set of tasks to list.",
+            "enum": ["open", "done", "archived"]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": ["state"]
+      },
+      "variantBy": "state",
+      "variants": {
+        "open": {
+          "description": "Tasks nobody has finished yet",
+          "method": "GET",
+          "path": "/tasks",
+          "query": { "status": "open", "limit": "{limit}" }
+        },
+        "done": {
+          "description": "Tasks completed but still in the active list",
+          "method": "GET",
+          "path": "/tasks",
+          "query": { "status": "done", "limit": "{limit}" }
+        },
+        "archived": {
+          "description": "Tasks moved out of the active list entirely",
+          "method": "GET",
+          "path": "/archive/tasks",
+          "query": { "limit": "{limit}" }
+        }
+      }
+    },
+    {
+      "name": "create_task",
+      "title": "Create a task",
+      "description": "Creates a task. Shows a JSON body template: a value that is exactly one placeholder is replaced by that argument's whole JSON value, so 'tags' arrives as an array rather than as text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "notes": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["title"]
+      },
+      "request": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMode": "template",
+        "contentType": "application/json",
+        "body": {
+          "title": "{title}",
+          "notes": "{notes}",
+          "tags": "{tags}"
+        }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "daily_review",
+      "title": "Daily review",
+      "description": "Walks through open tasks and proposes what to do next.",
+      "arguments": [
+        {
+          "name": "focus",
+          "description": "An area to weight the review towards. Optional.",
+          "required": false
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "List the open tasks, then group them by how soon they need attention. Weight the review towards {focus} where that applies. Finish with the three you would start today and why."
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "task-triage",
+      "title": "Triaging this tracker",
+      "description": "How to work through a backlog with these tools.",
+      "content": "# Triaging the task tracker\n\n## When to use this\nThe user asks what to work on, or asks for the backlog to be cleaned up.\n\n## Steps\n1. Call `list_by_state` with `state: \"open\"` to see what is live.\n2. For anything ambiguous, call `get_task` for the full notes before judging it.\n3. Group by whether the task is blocked, ready, or stale.\n4. Propose a short list. Do not create or change tasks unless asked.\n\n## Notes\n- Ids are opaque. Never construct one; only use ids a listing returned.\n- `limit` caps at 100. Ask for a narrower query rather than paging blindly."
+    }
+  ]
+}

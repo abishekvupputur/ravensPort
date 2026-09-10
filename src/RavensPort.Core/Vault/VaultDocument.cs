@@ -65,6 +65,7 @@ public sealed class VaultIndex
     public Dictionary<Guid, string> Credentials { get; set; } = [];
     public Dictionary<Guid, string> RouteKeys { get; set; } = [];
     public Dictionary<Guid, string> FunnelKeys { get; set; } = [];
+    public Dictionary<Guid, string> ApiBridgeKeys { get; set; } = [];
     public Dictionary<Guid, string> Fingerprints { get; set; } = [];
 
     public Dictionary<Guid, string> For(VaultItemRole role) => role switch
@@ -72,6 +73,7 @@ public sealed class VaultIndex
         VaultItemRole.Credential => Credentials,
         VaultItemRole.RouteKey => RouteKeys,
         VaultItemRole.FunnelKey => FunnelKeys,
+        VaultItemRole.ApiBridgeKey => ApiBridgeKeys,
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "The config note is not indexed by record."),
     };
 

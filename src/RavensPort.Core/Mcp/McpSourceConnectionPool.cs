@@ -37,15 +37,21 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
     private readonly ConfigStoreCache _configStoreCache;
     private readonly ActivityLog _activityLog;
     private readonly KestrelMtlsState _kestrelMtls;
+    private readonly LoopbackHttpClient _loopback;
 
     private readonly ConcurrentDictionary<ConnectionKey, ConnectionEntry> _connections = new();
     private volatile bool _disposed;
 
-    public McpSourceConnectionPool(ConfigStoreCache configStoreCache, ActivityLog activityLog, KestrelMtlsState kestrelMtls)
+    public McpSourceConnectionPool(
+        ConfigStoreCache configStoreCache,
+        ActivityLog activityLog,
+        KestrelMtlsState kestrelMtls,
+        LoopbackHttpClient loopback)
     {
         _configStoreCache = configStoreCache;
         _activityLog = activityLog;
         _kestrelMtls = kestrelMtls;
+        _loopback = loopback;
     }
 
     private readonly record struct ConnectionKey(Guid FunnelId, Guid SourceId);
@@ -143,10 +149,11 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
     {
         var options = BuildTransportOptions(source);
 
-        // Only the hop back into this app's own listener speaks mTLS. A remote source is whatever
+        // Only the hop back into this app's own listener speaks mTLS — a route-backed source and
+        // an API bridge are both that. A remote source is whatever
         // it is — usually ordinary public TLS — and handing it this proxy's private certificate,
         // or pinning its server certificate to one it has never heard of, would break it.
-        var transport = source.Kind == McpSourceKind.ProxyRoute && _kestrelMtls.IsEnabled
+        var transport = source.Kind is McpSourceKind.ProxyRoute or McpSourceKind.ApiBridge && _kestrelMtls.IsEnabled
             ? new HttpClientTransport(options, new HttpClient(CreateMtlsHandler()), null, ownsHttpClient: true)
             : new HttpClientTransport(options);
 
@@ -159,99 +166,14 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
     /// <summary>
     /// The handler for the hop back into this app's own mTLS listener.
     ///
-    /// Both ends hold the same self-signed certificate, so neither can validate the other by
-    /// chain: the server has no issuer the client trusts, and vice versa. Pinning replaces that —
-    /// on loopback, the only certificate accepted is the one the user generated, and chain and
-    /// name errors are expected and deliberately not consulted.
-    ///
-    /// The word "loopback" is doing real work there, because this handler does not only ever see
-    /// this app. The hop is one HTTP request and the upstream behind the route is free to answer
-    /// with a redirect somewhere else entirely — Google Apps Script always answers 302 to
-    /// script.googleusercontent.com — and HttpClient follows it on this same handler. Applying the
-    /// pin to that leg rejected a perfectly good public certificate, which is what turned every
-    /// Apps Script MCP source into "The SSL connection could not be established"; offering the
-    /// user's private client certificate on it was the quieter half of the same mistake. Off
-    /// loopback this is therefore an ordinary HTTPS client and nothing more.
+    /// Delegated rather than defined here: the API bridge dials the same listener and needs the
+    /// same pin, and the redirect rules this encodes are not the kind that survive being written
+    /// twice. See <see cref="LoopbackHttpClient.CreateHandler"/> for what they are and why.
     /// </summary>
-    internal SocketsHttpHandler CreateMtlsHandler()
-    {
-        // Not null: IsEnabled is exactly "a certificate is loaded", and this is only reached
-        // behind that check.
-        var certificate = _kestrelMtls.Certificate!;
-        var expectedThumbprint = certificate.Thumbprint;
+    internal SocketsHttpHandler CreateMtlsHandler() => _loopback.CreateHandler();
 
-        return new SocketsHttpHandler
-        {
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-            {
-                ClientCertificates = [certificate],
-
-                // targetHost is the name being dialled on this connection, so it still says
-                // "somewhere else" after a redirect, when the endpoint this handler was built for
-                // no longer does.
-                LocalCertificateSelectionCallback = (_, targetHost, _, _, _) =>
-                    IsLoopback(targetHost) ? certificate : null!,
-
-                RemoteCertificateValidationCallback = (_, presented, _, errors) =>
-                {
-                    // GetCertHashString on the base type rather than X509Certificate2.Thumbprint:
-                    // both are the SHA-1 hash in the same hex form, but SslStream is only
-                    // contracted to hand back an X509Certificate, and a type check that failed
-                    // would read as "wrong certificate" — the one conclusion that is definitely
-                    // not what happened.
-                    var actual = presented?.GetCertHashString();
-                    if (string.Equals(actual, expectedThumbprint, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // The pin does not exempt it from its own dates. Pinning replaces chain
-                        // validation, which is what would ordinarily have caught this; leaving it
-                        // out would mean the listener refuses an expired certificate while the
-                        // funnel accepts one, and the two are the same certificate.
-                        if (MtlsCertificateFactory.IsWithinValidity(presented!, DateTimeOffset.UtcNow)) return true;
-
-                        _activityLog.Log(
-                            $"The MCP funnel refused the stored mTLS certificate {Redact(actual)}: it is "
-                            + "outside its validity window. Generate a new one on the Settings tab, install "
-                            + "it on every client, and restart RavensPort.");
-
-                        return false;
-                    }
-
-                    // Anything that is not the pinned certificate has to earn trust the ordinary
-                    // way. On loopback nothing can: a public CA does not issue for 127.0.0.1, so
-                    // this stays a pin there and only relaxes where it has to.
-                    if (errors == System.Net.Security.SslPolicyErrors.None) return true;
-
-                    _activityLog.Log(
-                        "The MCP funnel refused a TLS certificate: expected the stored mTLS "
-                        + $"certificate {Redact(expectedThumbprint)}, was offered "
-                        + $"{Redact(actual) ?? "no certificate"} ({errors}).");
-
-                    return false;
-                },
-            },
-        };
-
-        // Enough to tell two certificates apart in a log without writing a full identifier of the
-        // user's own credential into it.
-        static string? Redact(string? thumbprint) =>
-            thumbprint is null ? null : $"…{thumbprint[^8..]}";
-    }
-
-    /// <summary>
-    /// Whether a host being dialled is this machine. Only these get the client certificate and the
-    /// pinned server certificate; a redirect anywhere else is ordinary public HTTPS.
-    /// </summary>
-    internal static bool IsLoopback(string? host)
-    {
-        if (string.IsNullOrEmpty(host)) return false;
-        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)) return true;
-
-        // Strips the brackets an IPv6 literal carries in a URI authority; IPAddress.TryParse does
-        // not accept them.
-        var trimmed = host.StartsWith('[') && host.EndsWith(']') ? host[1..^1] : host;
-
-        return System.Net.IPAddress.TryParse(trimmed, out var address) && System.Net.IPAddress.IsLoopback(address);
-    }
+    /// <inheritdoc cref="LoopbackHttpClient.IsLoopback"/>
+    internal static bool IsLoopback(string? host) => LoopbackHttpClient.IsLoopback(host);
 
     /// <summary>
     /// Builds the transport for a source. A route-backed source is dialled back through this
@@ -293,6 +215,24 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
             // /mcp from recursing.
             headers[LocalAccessGuard.FunnelHopHeaderName] = "1";
         }
+        else if (source.Kind == McpSourceKind.ApiBridge)
+        {
+            var bridge = store.McpApiBridges.FirstOrDefault(b => b.Id == source.BridgeId)
+                         ?? throw new InvalidOperationException(
+                             $"MCP source '{source.Name}' points at an API bridge that no longer exists.");
+
+            endpoint = new Uri($"{_kestrelMtls.Scheme}://127.0.0.1:{store.Settings.ListenPort}"
+                               + $"{McpApiBridgeEndpoints.BasePath}/{bridge.Slug}");
+
+            // The bridge's own key, not the route's. The guard resolves this path to the bridge,
+            // and the route's key is spent one hop further along, by the bridge itself.
+            headers[LocalAccessGuard.ApiKeyHeaderName] = bridge.Key.Value;
+
+            // Marks the request as coming from a funnel. The bridge gate tolerates it — a funnel
+            // pooling a bridge is the feature — while the funnel gate refuses it, which is what
+            // stops a bridge whose route resolves back to /mcp from recursing.
+            headers[LocalAccessGuard.FunnelHopHeaderName] = "1";
+        }
         else
         {
             endpoint = new Uri(source.Url);
@@ -302,7 +242,11 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
         {
             Endpoint = endpoint,
             Name = source.Name,
-            TransportMode = source.Transport switch
+            // A bridge is this app's own endpoint and speaks streamable HTTP, so AutoDetect would
+            // only ever probe our own listener for a legacy transport it does not serve.
+            TransportMode = source.Kind == McpSourceKind.ApiBridge
+                ? HttpTransportMode.StreamableHttp
+                : source.Transport switch
             {
                 McpTransportPreference.StreamableHttp => HttpTransportMode.StreamableHttp,
                 McpTransportPreference.Sse => HttpTransportMode.Sse,

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -60,6 +60,22 @@ public static class LocalAccessGuard
     /// </summary>
     public const string FunnelHopItemKey = "RavensPort.FunnelHop";
 
+    /// <summary>
+    /// Stamped by an API bridge on every request it makes to its own route. Deliberately a
+    /// separate marker from <see cref="FunnelHopHeaderName"/>, because the two hops mean
+    /// different things: a funnel calling a bridge is the feature, while a bridge reached from a
+    /// bridge is the loop. Each gate refuses exactly the markers that would recurse — /mcp
+    /// refuses both, /api-mcp refuses only this one — which bounds the chain at
+    /// funnel then bridge then route.
+    /// </summary>
+    public const string BridgeHopHeaderName = "X-Proxy-Bridge-Hop";
+
+    /// <summary>
+    /// Where the stripped bridge marker is preserved for later middleware, for the same reason as
+    /// <see cref="FunnelHopItemKey"/>: the gates run after this guard has already removed it.
+    /// </summary>
+    public const string BridgeHopItemKey = "RavensPort.BridgeHop";
+
     private static readonly string[] AllowedHosts = ["127.0.0.1", "localhost", "[::1]", "::1"];
 
     public static IApplicationBuilder UseLocalAccessGuard(this IApplicationBuilder app)
@@ -75,6 +91,7 @@ public static class LocalAccessGuard
 
             // Read before stripping, since the funnel gate downstream needs to know.
             context.Items[FunnelHopItemKey] = context.Request.Headers.ContainsKey(FunnelHopHeaderName);
+            context.Items[BridgeHopItemKey] = context.Request.Headers.ContainsKey(BridgeHopHeaderName);
 
             // Unconditionally, whether or not the request was allowed: the key authenticates
             // the caller to *this* proxy and has no business reaching the upstream, which will
@@ -88,7 +105,7 @@ public static class LocalAccessGuard
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync(
                     "Forbidden. This endpoint requires its own proxy key — copy it from the row for "
-                    + "this route on RavensPort's Routes tab, or for this funnel on the MCP Funnel tab — "
+                    + "this endpoint on RavensPort's Routes, MCP Funnel, or API to MCP tab — "
                     + $"sent as the '{ApiKeyHeaderName}' request header. The key is only ever read from "
                     + $"that header; a '{ApiKeyQueryName}' query parameter is ignored and stripped.");
                 return;
@@ -114,7 +131,7 @@ public static class LocalAccessGuard
 
     /// <summary>
     /// Removes this proxy's own signalling headers — the local API key in both forms it can
-    /// arrive in, and the funnel hop marker — so none of it is forwarded upstream or reaches the
+    /// arrive in, and both hop markers — so none of it is forwarded upstream or reaches the
     /// activity log. Everything else is preserved untouched: callers legitimately pass their own
     /// headers and parameters (an upstream's own <c>?token=</c>, for instance), and those still
     /// have to arrive intact.
@@ -123,6 +140,7 @@ public static class LocalAccessGuard
     {
         request.Headers.Remove(ApiKeyHeaderName);
         request.Headers.Remove(FunnelHopHeaderName);
+        request.Headers.Remove(BridgeHopHeaderName);
 
         if (!request.Query.ContainsKey(ApiKeyQueryName)) return;
 
@@ -203,7 +221,8 @@ public static class LocalAccessGuard
     }
 
     /// <summary>
-    /// The route or funnel a request is addressed to, and therefore whose key it must present.
+    /// The route, funnel, or API bridge a request is addressed to, and therefore whose key it
+    /// must present.
     /// Null when the path belongs to neither.
     /// </summary>
     public sealed record ProxyTarget(string Description, ProxyKey Key);
@@ -212,8 +231,10 @@ public static class LocalAccessGuard
     /// Resolves a request path to the endpoint that owns it.
     ///
     /// Everything under <see cref="McpFunnelEndpoints.BasePath"/> belongs to the funnel named by
-    /// the first segment after it — routes are forbidden from claiming that space, so there is no
-    /// overlap to arbitrate. Everything else is matched against route prefixes, longest first:
+    /// the first segment after it, and everything under
+    /// <see cref="McpApiBridgeEndpoints.BasePath"/> to the bridge named the same way — routes are
+    /// forbidden from claiming either space, so there is no overlap to arbitrate. Everything else
+    /// is matched against route prefixes, longest first:
     /// with routes at "/app" and "/app/mail" a request to /app/mail/x is the second route's, which
     /// is the same choice ASP.NET routing makes when it later picks the endpoint.
     ///
@@ -233,6 +254,17 @@ public static class LocalAccessGuard
                 string.Equals(f.Slug, slug, StringComparison.OrdinalIgnoreCase));
 
             return funnel is null ? null : new ProxyTarget($"funnel '{funnel.Name}'", funnel.Key);
+        }
+
+        if (path.StartsWithSegments(McpApiBridgeEndpoints.BasePath))
+        {
+            var slug = McpApiBridgeEndpoints.ExtractSlug(path);
+            if (slug is null) return null;
+
+            var bridge = store.McpApiBridges.FirstOrDefault(b =>
+                string.Equals(b.Slug, slug, StringComparison.OrdinalIgnoreCase));
+
+            return bridge is null ? null : new ProxyTarget($"API bridge '{bridge.Name}'", bridge.Key);
         }
 
         RouteMapping? match = null;

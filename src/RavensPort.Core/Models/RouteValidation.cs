@@ -1,4 +1,6 @@
-﻿namespace RavensPort.Core.Models;
+using RavensPort.Core.Mcp;
+
+namespace RavensPort.Core.Models;
 
 /// <summary>
 /// One place deciding whether a route's path prefix is usable, so the UI and the YARP config
@@ -20,13 +22,15 @@ public static class RouteValidation
     private static readonly char[] ForbiddenCharacters = ['{', '}', '?', '#', '\\'];
 
     /// <summary>
-    /// Path space this app serves itself. A route claiming "/mcp" would sit next to the funnel
-    /// endpoints in the same routing table — and, worse, a funnel source pointing at that route
-    /// would forward straight back into the funnel, so a single tools/list would recurse until
-    /// something ran out. Endpoint routing already prefers the funnel's literal segments over a
-    /// catch-all, so this is about removing the ambiguity rather than resolving it.
+    /// Path space this app serves itself. A route claiming one of these would sit next to that
+    /// endpoint in the same routing table — and, worse, a funnel source or an API bridge pointing
+    /// at that route would forward straight back into the endpoint it came from, so a single
+    /// tools/list would recurse until something ran out. Endpoint routing already prefers the
+    /// literal segments over a catch-all, so this is about removing the ambiguity rather than
+    /// resolving it.
     /// </summary>
-    public static readonly string[] ReservedPathPrefixes = ["/mcp"];
+    public static readonly string[] ReservedPathPrefixes =
+        [McpFunnelEndpoints.BasePath, McpApiBridgeEndpoints.BasePath];
 
     /// <summary>
     /// Validates a route path prefix. Returns null when acceptable, or a message suitable for
@@ -79,7 +83,7 @@ public static class RouteValidation
 
         return reserved is null
             ? null
-            : $"'{reserved}' is reserved for this proxy's own MCP funnel endpoints. Pick another prefix.";
+            : $"'{reserved}' is reserved for this proxy's own MCP endpoints. Pick another prefix.";
     }
 
     /// <summary>Convenience for callers that only need the yes/no answer.</summary>
@@ -159,6 +163,22 @@ public static class RouteValidation
                     : null;
         }
     }
+
+    /// <summary>
+    /// Whether a name is a legal HTTP field name (RFC 9110 "token"). Exposed because the API
+    /// bridge validates manifest-supplied header names against the same rule — one definition,
+    /// so a header the routes tab refuses cannot be smuggled in through a manifest.
+    /// </summary>
+    public static bool IsValidHeaderName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && name.Trim().All(c => char.IsAsciiLetterOrDigit(c) || HeaderNameSpecials.Contains(c));
+
+    /// <summary>
+    /// Whether this pipeline owns the named header's value. Same list, same reasoning, as the
+    /// check inside <see cref="ValidateCredentialInjection"/>; exposed for the API bridge.
+    /// </summary>
+    public static bool IsReservedHeaderName(string? name) =>
+        name is not null && ReservedHeaderNames.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Convenience for callers that only need the yes/no answer.</summary>
     public static bool IsValidCredentialInjection(CredentialInjection injection) =>

@@ -23,6 +23,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
     private readonly CredentialsViewModel _credentials;
     private readonly RoutesViewModel _routes;
     private readonly McpFunnelViewModel _funnels;
+    private readonly ApiBridgeViewModel _bridges;
     private readonly SettingsViewModel _settings;
 
     public VaultStatusViewModel(
@@ -32,6 +33,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
         CredentialsViewModel credentials,
         RoutesViewModel routes,
         McpFunnelViewModel funnels,
+        ApiBridgeViewModel bridges,
         SettingsViewModel settings)
     {
         _configStoreCache = configStoreCache;
@@ -40,6 +42,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
         _credentials = credentials;
         _routes = routes;
         _funnels = funnels;
+        _bridges = bridges;
         _settings = settings;
 
         _dispatcher = Dispatcher.CurrentDispatcher;
@@ -190,6 +193,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
         _credentials.Reload();
         _routes.Reload();
         _funnels.Reload();
+        _bridges.Reload();
         _settings.Reload();
     }
 

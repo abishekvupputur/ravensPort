@@ -25,8 +25,11 @@ public static class McpFunnelEndpoints
     ///
     ///   • the feature is switched off, so /mcp should look like it does not exist;
     ///   • the slug names no enabled funnel, likewise;
-    ///   • the request carries the funnel's hop marker, meaning a funnel reached one of its own
-    ///     sources and that source led back here. Left alone it recurses until something breaks.
+    ///   • the request carries either hop marker. The funnel's own means a funnel reached one of
+    ///     its sources and that source led back here; a bridge's means a bridge's tool call
+    ///     reached a route that led here. Left alone, both recurse until something breaks. The
+    ///     bridge gate refuses only its own marker, because a funnel calling a bridge is the
+    ///     feature — this is the direction that never is.
     ///
     /// Unknown and disabled both answer 404 rather than 403: a caller with a valid key still
     /// should not be able to enumerate which funnels exist by watching status codes.
@@ -54,9 +57,10 @@ public static class McpFunnelEndpoints
                 return;
             }
 
-            if (context.Items.TryGetValue(LocalAccessGuard.FunnelHopItemKey, out var hop) && hop is true)
+            if (HasHopMarker(context, LocalAccessGuard.FunnelHopItemKey)
+                || HasHopMarker(context, LocalAccessGuard.BridgeHopItemKey))
             {
-                activityLog.Log($"MCP funnel refused a request that had already passed through a funnel — {context.Request.Path} would loop");
+                activityLog.Log($"MCP funnel refused a request that had already passed through a funnel or an API bridge — {context.Request.Path} would loop");
                 await NotFound(context);
                 return;
             }
@@ -93,6 +97,9 @@ public static class McpFunnelEndpoints
         var slash = value.IndexOf('/');
         return slash < 0 ? value : value[..slash];
     }
+
+    private static bool HasHopMarker(HttpContext context, string itemKey) =>
+        context.Items.TryGetValue(itemKey, out var hop) && hop is true;
 
     private static async Task NotFound(HttpContext context)
     {

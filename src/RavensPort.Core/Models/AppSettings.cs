@@ -12,6 +12,14 @@ public sealed class AppSettings
     public bool McpFunnelEnabled { get; set; }
 
     /// <summary>
+    /// Master switch for the API bridge endpoints under /api-mcp. Off by default, and separate
+    /// from <see cref="McpFunnelEnabled"/> on purpose: turning one of the user's own routes into a
+    /// tool surface an agent can drive is a different grant from pooling MCP servers, and someone
+    /// who wants one should not have to switch on the other to get it.
+    /// </summary>
+    public bool McpApiBridgeEnabled { get; set; }
+
+    /// <summary>
     /// If true, the proxy and funnel routes require a client certificate for authentication.
     /// Kestrel binds to https://127.0.0.1 and enforces client certificate validation.
     /// </summary>

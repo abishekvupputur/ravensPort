@@ -1,0 +1,750 @@
+using System.Text;
+using System.Text.Json;
+using RavensPort.Core.Mcp;
+using RavensPort.Core.Proxy;
+using RavensPort.Core.Vault;
+
+namespace RavensPort.Core.Models;
+
+/// <summary>
+/// One place deciding whether a bridge and its manifest are usable, shared by the UI and by the
+/// endpoint for the same reason <see cref="RouteValidation"/> and <see cref="McpFunnelValidation"/>
+/// are: the two must not disagree, or the UI accepts a manifest the endpoint then refuses to serve.
+///
+/// Every method returns null when acceptable, or a message fit for the UI footer. Messages name
+/// the offending tool or field, because a manifest is a document the user wrote and "invalid
+/// manifest" sends them looking through all of it.
+/// </summary>
+public static class McpApiBridgeValidation
+{
+    public const int MaxTools = 64;
+    public const int MaxVariantsPerTool = 16;
+    public const int MaxPrompts = 32;
+    public const int MaxSkills = 8;
+    public const int MaxDescriptionLength = 4096;
+    public const int MaxInstructionsLength = 16 * 1024;
+
+    /// <summary>
+    /// Per-manifest ceiling, measured on the indented form that actually lands in the note.
+    /// Generous enough for a documented API with skills attached, small enough that a paste
+    /// accident does not become the vault's problem.
+    /// </summary>
+    public const int MaxManifestBytes = 128 * 1024;
+
+    /// <summary>
+    /// Ceiling for the whole topology note.
+    ///
+    /// The note is rewritten in full on every save — including every OAuth token refresh — so
+    /// space used here is not paid once at import but on every rotation, re-encrypted and
+    /// re-synced by the password manager each time. That is the real cost of keeping manifests in
+    /// the note, and this is the guard on it.
+    /// </summary>
+    public const int MaxNoteBytes = 512 * 1024;
+
+    /// <summary>
+    /// A tool name has to survive being prefixed with a source alias when a funnel pools this
+    /// bridge — <see cref="McpNameMapper.Encode"/> truncates past 128 characters, and a truncated
+    /// name is dropped from the funnel's listing entirely. Derived rather than written as 94, so
+    /// that raising the alias cap cannot silently start deleting tools from funnels.
+    /// </summary>
+    public const int MaxToolNameLength =
+        McpNameMapper.MaxNameLength - McpFunnelValidation.MaxAliasLength - 2;
+
+    private static readonly string[] PermittedMethods =
+        ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
+
+    /// <summary>
+    /// Headers a manifest may not write, on top of the ones the forward itself owns (see
+    /// <see cref="RouteValidation.IsReservedHeaderName"/>).
+    ///
+    /// Authorization is the sharp one. It is the slot the credential transform writes, and a
+    /// manifest able to set it could replace the user's token with one of its own choosing —
+    /// which is the whole of what a bridge must never be able to do. Cookie is here because the
+    /// transform strips the caller's cookies deliberately and a manifest-set one would put them
+    /// back; Content-Type because the request's own field owns it; and the proxy's internal
+    /// headers because they decide authentication and loop protection.
+    /// </summary>
+    private static readonly string[] BridgeReservedHeaders =
+    [
+        "authorization",
+        "cookie",
+        "content-type",
+        LocalAccessGuard.ApiKeyHeaderName,
+        LocalAccessGuard.FunnelHopHeaderName,
+        LocalAccessGuard.BridgeHopHeaderName,
+    ];
+
+    /// <summary>
+    /// Forgiving on the way in: case-insensitive property names, trailing commas, and comments
+    /// are all accepted, because a manifest is hand-written JSON and none of those three change
+    /// its meaning. The stored form is normalized regardless.
+    /// </summary>
+    private static readonly JsonSerializerOptions ImportOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+    };
+
+    // ---- the record ------------------------------------------------------------------------
+
+    /// <summary>
+    /// The slug becomes a literal path segment in "/api-mcp/{slug}", so it is restricted exactly
+    /// as a funnel's is. Deliberately not checked against funnel slugs: the two live in different
+    /// path space, and refusing 'gmail' for a bridge because a funnel already used it would be a
+    /// rule with no mechanism behind it.
+    /// </summary>
+    public static string? ValidateSlug(string? slug, IEnumerable<McpApiBridgeRecord> existing, Guid? editingId = null)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return "Endpoint slug is required.";
+        }
+
+        var trimmed = slug.Trim();
+
+        if (trimmed.Length > 64)
+        {
+            return "Endpoint slug may be at most 64 characters.";
+        }
+
+        if (!trimmed.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-'))
+        {
+            return "Endpoint slug may only contain lowercase letters, digits, and hyphens.";
+        }
+
+        if (existing.Any(b => b.Id != editingId && string.Equals(b.Slug, trimmed, StringComparison.OrdinalIgnoreCase)))
+        {
+            return $"Another API bridge already uses the slug '{trimmed}'.";
+        }
+
+        return null;
+    }
+
+    public static string? ValidateName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "Name is required." : null;
+
+    public static string? ValidateRoute(Guid routeId, IEnumerable<RouteMapping> routes) =>
+        routes.Any(r => r.Id == routeId)
+            ? null
+            : "Pick the route this API is reached through — its credential is what the tools will use.";
+
+    // ---- the manifest ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Parses and validates raw manifest text. The one entry point the UI uses, so that what the
+    /// preview shows and what the endpoint serves cannot come apart.
+    /// </summary>
+    public static string? TryReadManifest(string? json, out McpApiBridgeManifest? manifest)
+    {
+        manifest = null;
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return "Paste a manifest, or import one from a file.";
+        }
+
+        McpApiBridgeManifest? parsed;
+
+        try
+        {
+            parsed = JsonSerializer.Deserialize<McpApiBridgeManifest>(json, ImportOptions);
+        }
+        catch (JsonException ex)
+        {
+            // The SDK's message already carries the line and position, which is the only part of
+            // a parse failure worth putting in front of someone editing JSON by hand.
+            return $"This is not valid JSON: {ex.Message}";
+        }
+
+        if (parsed is null)
+        {
+            return "This manifest is empty.";
+        }
+
+        McpApiBridgeSchema.Normalize(parsed);
+
+        if (ValidateManifest(parsed) is { } error) return error;
+
+        manifest = parsed;
+        return null;
+    }
+
+    public static string? ValidateManifest(McpApiBridgeManifest manifest)
+    {
+        if (manifest.Version > McpApiBridgeManifest.CurrentVersion)
+        {
+            return $"This manifest declares version {manifest.Version}, and this build understands "
+                   + $"version {McpApiBridgeManifest.CurrentVersion}. Serving it anyway would mean "
+                   + "guessing which HTTP calls it meant.";
+        }
+
+        if (manifest.Version < 1)
+        {
+            return "Manifest version must be 1 or higher.";
+        }
+
+        if (manifest.Instructions is { Length: > MaxInstructionsLength })
+        {
+            return $"Instructions may be at most {MaxInstructionsLength} characters.";
+        }
+
+        if (manifest.Tools.Count == 0)
+        {
+            return "A manifest needs at least one tool.";
+        }
+
+        if (manifest.Tools.Count > MaxTools)
+        {
+            return $"A manifest may declare at most {MaxTools} tools. This one declares {manifest.Tools.Count}.";
+        }
+
+        if (FirstDuplicate(manifest.Tools.Select(t => t.Name)) is { } duplicateTool)
+        {
+            // Case-insensitively, even though MCP names are case-sensitive: two tools differing
+            // only in case is a trap for a model, not a feature.
+            return $"Two tools are both named '{duplicateTool}'. Tool names must be unique.";
+        }
+
+        foreach (var tool in manifest.Tools)
+        {
+            if (ValidateTool(tool) is { } error) return $"Tool '{tool.Name}': {error}";
+        }
+
+        if (manifest.Prompts.Count > MaxPrompts)
+        {
+            return $"A manifest may declare at most {MaxPrompts} prompts.";
+        }
+
+        if (FirstDuplicate(manifest.Prompts.Select(p => p.Name)) is { } duplicatePrompt)
+        {
+            return $"Two prompts are both named '{duplicatePrompt}'. Prompt names must be unique.";
+        }
+
+        foreach (var prompt in manifest.Prompts)
+        {
+            if (ValidatePrompt(prompt) is { } error) return $"Prompt '{prompt.Name}': {error}";
+        }
+
+        if (manifest.Skills.Count > MaxSkills)
+        {
+            return $"A manifest may declare at most {MaxSkills} skills.";
+        }
+
+        if (FirstDuplicate(manifest.Skills.Select(s => s.Name)) is { } duplicateSkill)
+        {
+            return $"Two skills are both named '{duplicateSkill}'. Skill names must be unique.";
+        }
+
+        foreach (var skill in manifest.Skills)
+        {
+            if (ValidateSkill(skill) is { } error) return $"Skill '{skill.Name}': {error}";
+        }
+
+        var size = MeasureBytes(manifest);
+
+        return size > MaxManifestBytes
+            ? $"This manifest is {size / 1024} KB. The limit is {MaxManifestBytes / 1024} KB — it is "
+              + "stored in the vault note, which is rewritten in full every time a token refreshes."
+            : null;
+    }
+
+    // ---- tools -----------------------------------------------------------------------------
+
+    public static string? ValidateTool(McpApiBridgeTool tool)
+    {
+        if (ValidateMcpName(tool.Name, "Tool name") is { } nameError) return nameError;
+
+        if (tool.Description is { Length: > MaxDescriptionLength })
+        {
+            return $"description may be at most {MaxDescriptionLength} characters.";
+        }
+
+        // Undefined is what a tool with no "inputSchema" key deserializes to, and it is normalized
+        // to the empty object schema rather than refused — declaring no arguments is a real thing
+        // for a tool that takes none.
+        if (tool.InputSchema.ValueKind != JsonValueKind.Undefined
+            && !McpApiBridgeSchema.IsUsableToolSchema(tool.InputSchema))
+        {
+            return "inputSchema must be a JSON Schema object with \"type\": \"object\". MCP requires "
+                   + "that shape, and a client is entitled to refuse anything else.";
+        }
+
+        if (tool.Request is not null && tool.HasVariants)
+        {
+            return "declares both 'request' and 'variants'. Use one: a single request, or several "
+                   + "the model picks between.";
+        }
+
+        return tool.HasVariants ? ValidateVariants(tool) : ValidateSingleRequest(tool);
+    }
+
+    private static string? ValidateSingleRequest(McpApiBridgeTool tool)
+    {
+        if (tool.Request is null)
+        {
+            return "has no 'request'. A tool needs either one request or a set of variants.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(tool.VariantBy))
+        {
+            return "sets 'variantBy' but declares no variants.";
+        }
+
+        return ValidateRequest(tool.Request, "Tool path");
+    }
+
+    private static string? ValidateVariants(McpApiBridgeTool tool)
+    {
+        if (tool.Variants.Count < 2)
+        {
+            return "declares one variant. A tool with a single variant is a tool with a pointless "
+                   + "argument — give it a plain 'request' instead.";
+        }
+
+        if (tool.Variants.Count > MaxVariantsPerTool)
+        {
+            return $"declares {tool.Variants.Count} variants. The limit is {MaxVariantsPerTool}.";
+        }
+
+        if (string.IsNullOrWhiteSpace(tool.VariantBy))
+        {
+            return "declares variants but no 'variantBy'. Name the argument the model sets to "
+                   + "choose between them.";
+        }
+
+        var selector = tool.VariantBy.Trim();
+
+        if (!selector.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+        {
+            return "'variantBy' may only contain letters, digits, and underscores.";
+        }
+
+        if (!McpApiBridgeSchema.DeclaresProperty(tool.InputSchema, selector))
+        {
+            return $"'variantBy' names '{selector}', which inputSchema does not declare. The model "
+                   + "can only choose a variant it has been told about.";
+        }
+
+        var advertised = McpApiBridgeSchema.ReadEnumValues(tool.InputSchema, selector);
+
+        if (advertised is null)
+        {
+            return $"inputSchema declares '{selector}' without a string \"enum\". That enum is how "
+                   + "the model learns which variants exist.";
+        }
+
+        foreach (var key in tool.Variants.Keys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return "has a variant with an empty name.";
+            }
+
+            if (!advertised.Contains(key, StringComparer.Ordinal))
+            {
+                return $"has a variant '{key}' that the enum on '{selector}' does not list, so "
+                       + "nothing would ever call it.";
+            }
+        }
+
+        foreach (var value in advertised)
+        {
+            if (!tool.Variants.ContainsKey(value))
+            {
+                return $"the enum on '{selector}' offers '{value}', but no variant implements it, "
+                       + "so choosing it would always fail.";
+            }
+        }
+
+        foreach (var (key, request) in tool.Variants)
+        {
+            if (ValidateRequest(request, $"Variant '{key}' path") is { } error)
+            {
+                return $"variant '{key}': {error}";
+            }
+        }
+
+        return null;
+    }
+
+    // ---- one request template ----------------------------------------------------------------
+
+    public static string? ValidateRequest(McpApiBridgeRequest request, string pathLabel)
+    {
+        if (!PermittedMethods.Contains(request.Method?.Trim().ToUpperInvariant(), StringComparer.Ordinal))
+        {
+            return $"method '{request.Method}' is not one of {string.Join(", ", PermittedMethods)}.";
+        }
+
+        if (ValidatePathTemplate(request.Path, pathLabel) is { } pathError) return pathError;
+        if (ValidateQuery(request.Query) is { } queryError) return queryError;
+        if (ValidateHeaders(request.Headers) is { } headerError) return headerError;
+        if (ValidateBody(request) is { } bodyError) return bodyError;
+
+        if (request.Description is { Length: > MaxDescriptionLength })
+        {
+            return $"description may be at most {MaxDescriptionLength} characters.";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The escape surface, so it is a deny-list of everything structural.
+    ///
+    /// A bridge is confined to one route, and the path is the only part of a call the manifest
+    /// author controls that could leave it. Absolute and protocol-relative URLs would land the
+    /// request on another host; '..' would climb out of the route prefix; and a percent-escape
+    /// would survive this check only to be decoded by the listener afterwards, which is how a
+    /// literal "%2f" becomes a path separator that the '..' test never saw.
+    /// </summary>
+    public static string? ValidatePathTemplate(string? path, string what = "Tool path")
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return $"{what} is required.";
+        }
+
+        var value = path.Trim();
+
+        if (!value.StartsWith('/'))
+        {
+            return $"{what} must start with '/' — it is relative to the route's path prefix.";
+        }
+
+        if (value.StartsWith("//", StringComparison.Ordinal) || value.Contains("://", StringComparison.Ordinal))
+        {
+            return $"{what} may not be an absolute or protocol-relative URL. Every tool of a bridge "
+                   + "goes through its one route, so the path is relative to that route's prefix.";
+        }
+
+        if (value.Split('/').Any(segment => segment == ".."))
+        {
+            return $"{what} may not contain '..' segments.";
+        }
+
+        if (value.Contains('%'))
+        {
+            return $"{what} may not contain '%'. Write literal characters — argument values are "
+                   + "URL-escaped for you.";
+        }
+
+        if (value.IndexOfAny(['?', '#', '\\']) >= 0)
+        {
+            return $"{what} may not contain '?', '#' or '\\' — use the query map for parameters.";
+        }
+
+        if (value.Any(char.IsWhiteSpace))
+        {
+            return $"{what} may not contain spaces.";
+        }
+
+        return McpApiBridgePlaceholders.Validate(value, what);
+    }
+
+    public static string? ValidateQuery(IReadOnlyDictionary<string, string> query)
+    {
+        foreach (var (name, value) in query)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return "has a query parameter with no name.";
+            }
+
+            // Escaped on the way out, so these would still arrive intact — but a key containing
+            // '&' reads to its author as two parameters, and that is a bug nobody finds by looking.
+            if (name.IndexOfAny(['&', '=', '#', '?']) >= 0)
+            {
+                return $"query parameter '{name}' contains one of & = # ?, which read as structure "
+                       + "rather than as part of the name.";
+            }
+
+            if (name.Any(char.IsControl))
+            {
+                return $"query parameter '{name}' contains control characters.";
+            }
+
+            if (McpApiBridgePlaceholders.Validate(value, $"Query parameter '{name}'") is { } error)
+            {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    public static string? ValidateHeaders(IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (var (name, value) in headers)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return "has a header with no name.";
+            }
+
+            var trimmed = name.Trim();
+
+            if (!RouteValidation.IsValidHeaderName(trimmed))
+            {
+                return $"header '{trimmed}' is not a valid HTTP header name.";
+            }
+
+            if (RouteValidation.IsReservedHeaderName(trimmed))
+            {
+                return $"header '{trimmed}' is set by the proxy itself and cannot be written by a manifest.";
+            }
+
+            if (BridgeReservedHeaders.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+            {
+                return $"header '{trimmed}' is owned by this proxy's own authentication and cannot "
+                       + "be written by a manifest. The route's credential is attached for you.";
+            }
+
+            // A CR or LF here would end the header line and let the rest be read as further
+            // headers — request splitting, aimed at the upstream. Checked again at expansion,
+            // because the value can come from a call argument.
+            if (value.Any(char.IsControl))
+            {
+                return $"header '{trimmed}' has a value containing control characters.";
+            }
+
+            if (McpApiBridgePlaceholders.Validate(value, $"Header '{trimmed}'") is { } error)
+            {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    public static string? ValidateBody(McpApiBridgeRequest request)
+    {
+        var method = request.Method?.Trim().ToUpperInvariant() ?? "";
+        var sendsBody = request.BodyMode != McpApiBridgeBodyMode.None;
+
+        if (sendsBody && (method == "GET" || method == "HEAD"))
+        {
+            return $"sends a body with {method}, which has no defined meaning and which many "
+                   + "upstreams reject outright.";
+        }
+
+        if (request.BodyMode == McpApiBridgeBodyMode.Template)
+        {
+            if (request.Body is not { } body)
+            {
+                return "has bodyMode 'template' but no 'body'.";
+            }
+
+            if (body.ValueKind is not (JsonValueKind.Object or JsonValueKind.Array))
+            {
+                return "has a 'body' that is not a JSON object or array.";
+            }
+
+            if (ValidateBodyPlaceholders(body) is { } error) return error;
+        }
+        else if (request.Body is not null)
+        {
+            return $"has a 'body' but bodyMode is '{request.BodyMode}'. Set bodyMode to 'template' "
+                   + "to send it.";
+        }
+
+        if (sendsBody && string.IsNullOrWhiteSpace(request.ContentType))
+        {
+            return "has an empty contentType.";
+        }
+
+        if (request.ContentType.Any(char.IsControl))
+        {
+            return "has a contentType containing control characters.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateBodyPlaceholders(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return McpApiBridgePlaceholders.Validate(element.GetString(), "Body value");
+
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (ValidateBodyPlaceholders(property.Value) is { } error) return error;
+                }
+
+                return null;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (ValidateBodyPlaceholders(item) is { } error) return error;
+                }
+
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    // ---- prompts and skills ------------------------------------------------------------------
+
+    public static string? ValidatePrompt(McpApiBridgePrompt prompt)
+    {
+        if (ValidateMcpName(prompt.Name, "Prompt name") is { } nameError) return nameError;
+
+        if (FirstDuplicate(prompt.Arguments.Select(a => a.Name)) is { } duplicate)
+        {
+            return $"declares the argument '{duplicate}' twice.";
+        }
+
+        foreach (var argument in prompt.Arguments)
+        {
+            if (string.IsNullOrWhiteSpace(argument.Name))
+            {
+                return "has an argument with no name.";
+            }
+
+            if (!argument.Name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+            {
+                return $"argument '{argument.Name}' may only contain letters, digits, and underscores.";
+            }
+        }
+
+        if (prompt.Messages.Count == 0)
+        {
+            return "has no messages.";
+        }
+
+        var declared = prompt.Arguments.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var message in prompt.Messages)
+        {
+            if (message.Role is not ("user" or "assistant"))
+            {
+                return $"has a message with role '{message.Role}'. Use 'user' or 'assistant'.";
+            }
+
+            if (string.IsNullOrWhiteSpace(message.Content))
+            {
+                return "has a message with no content.";
+            }
+
+            if (message.Content.Length > MaxDescriptionLength * 4)
+            {
+                return "has a message longer than a prompt should be. Put long guidance in a skill.";
+            }
+
+            if (McpApiBridgePlaceholders.Validate(message.Content, "Prompt message") is { } error)
+            {
+                return error;
+            }
+
+            foreach (var name in McpApiBridgePlaceholders.Names(message.Content))
+            {
+                if (!declared.Contains(name))
+                {
+                    return $"a message uses '{{{name}}}', which is not one of its declared arguments.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public static string? ValidateSkill(McpApiBridgeSkill skill)
+    {
+        if (string.IsNullOrWhiteSpace(skill.Name))
+        {
+            return "name is required.";
+        }
+
+        var trimmed = skill.Name.Trim();
+
+        if (trimmed.Length > 64)
+        {
+            return "name may be at most 64 characters.";
+        }
+
+        // The name becomes a URI path segment, so it is restricted the way a slug is rather than
+        // the way an MCP tool name is.
+        if (!trimmed.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_'))
+        {
+            return "name may only contain letters, digits, hyphens, and underscores — it becomes "
+                   + "part of the resource URI.";
+        }
+
+        return string.IsNullOrWhiteSpace(skill.Content) ? "has no content." : null;
+    }
+
+    // ---- size --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Whether importing this manifest keeps the whole note within budget. Checked against the
+    /// store the bridge is being saved into, with the bridge's current manifest discounted, so
+    /// re-importing a large manifest over itself does not read as doubling.
+    /// </summary>
+    public static string? ValidateNoteBudget(ConfigStore store, Guid editingBridgeId, McpApiBridgeManifest incoming)
+    {
+        var others = store.McpApiBridges
+            .Where(b => b.Id != editingBridgeId)
+            .Sum(b => (long)MeasureBytes(b.Manifest));
+
+        var projected = others + MeasureBytes(incoming) + MeasureBaseBytes(store);
+
+        return projected <= MaxNoteBytes
+            ? null
+            : $"Saving this would take the vault note to about {projected / 1024} KB, past the "
+              + $"{MaxNoteBytes / 1024} KB limit. The note is rewritten on every save, including "
+              + "every token refresh. Trim a manifest, or delete a bridge you no longer use.";
+    }
+
+    /// <summary>The manifest's size in the note, measured on the indented form actually written.</summary>
+    public static int MeasureBytes(McpApiBridgeManifest manifest) =>
+        Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(manifest, VaultRedaction.NoteOptions));
+
+    /// <summary>Everything in the note that is not a bridge manifest.</summary>
+    private static long MeasureBaseBytes(ConfigStore store)
+    {
+        var manifests = store.McpApiBridges.Sum(b => (long)MeasureBytes(b.Manifest));
+        var whole = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(store, VaultRedaction.NoteOptions));
+
+        return Math.Max(0, whole - manifests);
+    }
+
+    // ---- shared ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The MCP name rules, applied to tools and prompts alike. Both are prefixed with a source
+    /// alias when a funnel pools this bridge, so both carry the same length ceiling.
+    /// </summary>
+    private static string? ValidateMcpName(string? name, string what)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return $"{what} is required.";
+        }
+
+        var trimmed = name.Trim();
+
+        if (trimmed.Length > MaxToolNameLength)
+        {
+            return $"{what} may be at most {MaxToolNameLength} characters, so that it still fits "
+                   + "when a funnel prefixes it with a source alias.";
+        }
+
+        return trimmed.All(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-')
+            ? null
+            : $"{what} may only contain letters, digits, underscores, and hyphens.";
+    }
+
+    private static string? FirstDuplicate(IEnumerable<string> names)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return names.FirstOrDefault(name => !seen.Add(name ?? ""));
+    }
+}

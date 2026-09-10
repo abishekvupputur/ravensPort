@@ -319,7 +319,7 @@ public sealed class InMemoryVault : IConfigVault
     {
         var resolved = new Dictionary<(VaultItemRole, Guid), VaultItemContents>();
 
-        foreach (var role in new[] { VaultItemRole.Credential, VaultItemRole.RouteKey, VaultItemRole.FunnelKey })
+        foreach (var role in VaultItemRoles.SecretBearing)
         {
             foreach (var (recordId, itemId) in index.For(role))
             {

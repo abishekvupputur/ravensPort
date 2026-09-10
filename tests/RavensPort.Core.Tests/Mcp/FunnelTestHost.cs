@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -122,6 +122,8 @@ internal sealed class FunnelTestHost : IAsyncDisposable
         proxy.UseLocalAccessGuard();
         proxy.UseMcpFunnelGate();
         proxy.MapMcpFunnel();
+        proxy.UseMcpApiBridgeGate();
+        proxy.MapMcpApiBridge();
         proxy.MapReverseProxy();
 
         await proxy.StartAsync();
@@ -133,6 +135,7 @@ internal sealed class FunnelTestHost : IAsyncDisposable
         await host.Cache.MutateAsync(store =>
         {
             store.Settings.McpFunnelEnabled = true;
+            store.Settings.McpApiBridgeEnabled = true;
             store.Settings.MtlsEnabled = mtls;
             store.Settings.MtlsClientCertificatePfx = pfx ?? "";
             store.Settings.MtlsClientCertificatePassword = pfx is null ? "" : PfxPassword;
@@ -181,6 +184,63 @@ internal sealed class FunnelTestHost : IAsyncDisposable
         return source;
     }
 
+    /// <summary>Registers a source that exposes one of this app's own API bridges.</summary>
+    public async Task<McpSourceRecord> AddBridgeSourceAsync(string alias, Guid bridgeId)
+    {
+        var source = new McpSourceRecord
+        {
+            Name = $"source-{alias}",
+            Alias = alias,
+            Kind = McpSourceKind.ApiBridge,
+            BridgeId = bridgeId,
+        };
+
+        await Cache.MutateAsync(store => store.McpSources.Add(source));
+        return source;
+    }
+
+    /// <summary>Registers an API bridge over a route, from manifest JSON.</summary>
+    public async Task<McpApiBridgeRecord> AddApiBridgeAsync(string slug, Guid routeId, string manifestJson)
+    {
+        var error = McpApiBridgeValidation.TryReadManifest(manifestJson, out var manifest);
+        Assert.Null(error);
+
+        var bridge = new McpApiBridgeRecord
+        {
+            Name = slug,
+            Slug = slug,
+            RouteId = routeId,
+            Manifest = manifest!,
+        };
+
+        await MutateAsync(store => store.McpApiBridges.Add(bridge));
+        return bridge;
+    }
+
+    /// <summary>Connects an MCP client to one API bridge endpoint, exactly as an agent would.</summary>
+    public async Task<McpClient> ConnectBridgeAsync(string slug, string? apiKey = ApiKey)
+    {
+        var headers = new Dictionary<string, string>();
+        if (apiKey is not null) headers[LocalAccessGuard.ApiKeyHeaderName] = apiKey;
+
+        var options = new HttpClientTransportOptions
+        {
+            Endpoint = new Uri($"{BaseUrl}{McpApiBridgeEndpoints.BasePath}/{slug}"),
+            TransportMode = HttpTransportMode.StreamableHttp,
+            ConnectionTimeout = TimeSpan.FromSeconds(30),
+            AdditionalHeaders = headers,
+        };
+
+        var transport = CreateClientHandler() is { } handler
+            ? new HttpClientTransport(options, new HttpClient(handler), null, ownsHttpClient: true)
+            : new HttpClientTransport(options);
+
+        var client = await McpClient.CreateAsync(transport);
+        _clients.Add(client);
+
+        return client;
+    }
+
     public async Task<McpFunnelRecord> AddFunnelAsync(string slug, params McpFunnelSource[] sources)
     {
         var funnel = new McpFunnelRecord
@@ -207,7 +267,11 @@ internal sealed class FunnelTestHost : IAsyncDisposable
     {
         mutate(store);
 
-        foreach (var key in store.Routes.Select(r => r.Key).Concat(store.McpFunnels.Select(f => f.Key)))
+        var keys = store.Routes.Select(r => r.Key)
+            .Concat(store.McpFunnels.Select(f => f.Key))
+            .Concat(store.McpApiBridges.Select(b => b.Key));
+
+        foreach (var key in keys)
         {
             if (!key.IsConfigured) key.Value = ApiKey;
         }
