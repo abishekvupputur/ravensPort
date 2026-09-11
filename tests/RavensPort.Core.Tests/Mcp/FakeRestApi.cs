@@ -28,8 +28,31 @@ internal sealed class FakeRestApi : IAsyncDisposable
 
     public string Url { get; }
 
-    /// <summary>Every request that arrived, in order.</summary>
-    public List<RecordedRequest> Received { get; } = [];
+    private readonly List<RecordedRequest> _received = [];
+    private readonly Lock _gate = new();
+
+    /// <summary>
+    /// Every request that arrived, in order, as a snapshot.
+    ///
+    /// Guarded because the tests that matter most here are the concurrent ones: several agents on
+    /// one bridge at the same time means several ASP.NET request threads recording at once, and an
+    /// unguarded List loses entries when they collide. That failure looks exactly like the bug
+    /// those tests exist to catch — a call that never reached the upstream — which is the worst
+    /// possible thing for a test fixture to imitate.
+    /// </summary>
+    public IReadOnlyList<RecordedRequest> Received
+    {
+        get
+        {
+            lock (_gate) return [.. _received];
+        }
+    }
+
+    /// <summary>Forgets everything recorded so far, for a test that reuses one upstream.</summary>
+    public void Clear()
+    {
+        lock (_gate) _received.Clear();
+    }
 
     /// <summary>What to answer with. Defaults to 200 and a small JSON body.</summary>
     public int StatusCode { get; set; } = StatusCodes.Status200OK;
@@ -62,12 +85,14 @@ internal sealed class FakeRestApi : IAsyncDisposable
             using var reader = new StreamReader(context.Request.Body);
             var body = await reader.ReadToEndAsync();
 
-            instance!.Received.Add(new RecordedRequest(
+            var recorded = new RecordedRequest(
                 context.Request.Method,
                 context.Request.Path.Value ?? "",
                 context.Request.QueryString.Value ?? "",
                 context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase),
-                body));
+                body);
+
+            lock (instance!._gate) instance._received.Add(recorded);
 
             if (instance.RedirectTo is { } location)
             {

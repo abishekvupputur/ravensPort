@@ -28,6 +28,9 @@ public class McpApiBridgeCompatibilityTests : IAsyncLifetime
     /// <summary>The oldest revision the handshake admits to, and so the widest claim worth making.</summary>
     private const string OldestSupportedRevision = "2024-11-05";
 
+    /// <summary>The revision this build targets, reached through discovery rather than initialize.</summary>
+    private const string CurrentRevision = "2026-07-28";
+
     private const string Manifest = """
         {
           "version": 1,
@@ -218,22 +221,116 @@ public class McpApiBridgeCompatibilityTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// What a real agent from the future actually does: it does not pin, so it takes whichever
-    /// revision this build offers and carries on. Every other test in the suite connects this way;
-    /// this one says out loud that the negotiated result is a revision the bridge supports and
-    /// that the tools work on it.
+    /// What a current agent actually gets: 2026-07-28, the revision this build targets.
+    ///
+    /// It is reached through discovery rather than through the initialize handshake — SEP-2575
+    /// made <c>server/discover</c> the canonical way to learn what a server supports — which is
+    /// why the handshake's refusal above lists only the four older revisions. Pinned here as an
+    /// exact string: "some version was negotiated" would still pass if the bridge quietly fell
+    /// back to 2025, and the fields the newer revision adds would then stop being emitted.
     /// </summary>
     [Fact]
-    public async Task AnUnpinnedAgentNegotiatesSomethingThatWorks()
+    public async Task AnUnpinnedAgentNegotiatesTheCurrentRevision()
     {
         var client = await _host.ConnectBridgeAsync("tracker");
 
-        Assert.False(string.IsNullOrEmpty(client.NegotiatedProtocolVersion));
+        Assert.Equal(CurrentRevision, client.NegotiatedProtocolVersion);
 
         var result = await client.CallToolAsync("get_task", new Dictionary<string, object?> { ["id"] = "9" });
 
         Assert.True(result.IsError != true);
         Assert.Equal("/tasks/9", _upstream.Received[^1].Path);
+    }
+
+    /// <summary>
+    /// The 2026-07-28 discovery surface, answered by the bridge rather than by a source.
+    ///
+    /// A client can learn what this endpoint is, which revisions it speaks, and how to use the API
+    /// behind it, all without handshaking. The manifest's instructions ride on that answer, which
+    /// makes them the first thing an agent reads and the cheapest place to put "start with
+    /// list_tasks".
+    /// </summary>
+    [Fact]
+    public async Task DiscoveryAnswersWithTheCurrentRevisionAndTheManifestsInstructions()
+    {
+        // The discover RPC carries no payload of its own. What it needs is the per-request
+        // metadata the revision defines, and the protocol version is the part the server insists
+        // on: without it there is no way to know which shape of answer the caller can read.
+        var body = await PostAsync("server/discover", """
+            {"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{
+              "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+              "io.modelcontextprotocol/clientInfo":{"name":"probe","version":"1"},
+              "io.modelcontextprotocol/clientCapabilities":{}}}}
+            """);
+
+        Assert.DoesNotContain("\"error\"", body, StringComparison.Ordinal);
+        Assert.Contains(CurrentRevision, body, StringComparison.Ordinal);
+        Assert.Contains("Start with list_tasks.", body, StringComparison.Ordinal);
+
+        // The capabilities a bridge always declares, so a client that discovers before connecting
+        // is not told this endpoint has no prompts merely because none existed at that moment.
+        Assert.Contains("\"tools\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"prompts\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"resources\"", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The revision's cache fields, on the results the bridge builds itself.
+    ///
+    /// 2026-07-28 requires a ttl and a scope on every list, and for a bridge the only honest ttl
+    /// is zero: a re-imported manifest raises no notification of any kind, so anything a client
+    /// cached would survive the edit that removed the tool.
+    /// </summary>
+    [Fact]
+    public async Task EveryListTheBridgeReturnsIsPrivateAndNotCacheable()
+    {
+        var client = await _host.ConnectBridgeAsync("tracker");
+
+        var tools = await client.ListToolsAsync(new ListToolsRequestParams());
+        Assert.Equal(TimeSpan.Zero, tools.TimeToLive);
+        Assert.Equal(CacheScope.Private, tools.CacheScope);
+
+        var prompts = await client.ListPromptsAsync(new ListPromptsRequestParams());
+        Assert.Equal(TimeSpan.Zero, prompts.TimeToLive);
+        Assert.Equal(CacheScope.Private, prompts.CacheScope);
+
+        var resources = await client.ListResourcesAsync(new ListResourcesRequestParams());
+        Assert.Equal(TimeSpan.Zero, resources.TimeToLive);
+        Assert.Equal(CacheScope.Private, resources.CacheScope);
+    }
+
+    /// <summary>
+    /// Posts one JSON-RPC message to the bridge and returns the raw response body.
+    ///
+    /// The 2026-07-28 transport wants the method and the protocol version restated as headers
+    /// alongside the body, so a hand-built probe has to send all three. The SDK client does this
+    /// for its callers; these tests go around it precisely because the point is to see what the
+    /// server says rather than what the client is willing to ask.
+    /// </summary>
+    private async Task<string> PostAsync(string method, string payload)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri(_host.BaseUrl) };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api-mcp/tracker")
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+        };
+
+        request.Headers.TryAddWithoutValidation("Accept", "application/json, text/event-stream");
+        request.Headers.TryAddWithoutValidation(
+            RavensPort.Core.Proxy.LocalAccessGuard.ApiKeyHeaderName, FunnelTestHost.ApiKey);
+
+        // The transport checks this against the version declared in the request metadata and
+        // refuses the pair when they disagree, so a discover probe has to state it in both places.
+        request.Headers.TryAddWithoutValidation("MCP-Protocol-Version", CurrentRevision);
+        request.Headers.TryAddWithoutValidation("Mcp-Method", method);
+
+        using var response = await http.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.StatusCode == System.Net.HttpStatusCode.OK, $"{response.StatusCode}: {body}");
+
+        return body;
     }
 
     // ---- several clients at once ---------------------------------------------------------------
