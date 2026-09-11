@@ -247,26 +247,42 @@ public static class LocalAccessGuard
     {
         if (path.StartsWithSegments(McpFunnelEndpoints.BasePath))
         {
-            var slug = McpFunnelEndpoints.ExtractSlug(path);
-            if (slug is null) return null;
-
-            var funnel = store.McpFunnels.FirstOrDefault(f =>
-                string.Equals(f.Slug, slug, StringComparison.OrdinalIgnoreCase));
+            var funnel = FindBySlug(
+                store.McpFunnels,
+                McpFunnelEndpoints.ExtractSlug(path),
+                f => f.Slug);
 
             return funnel is null ? null : new ProxyTarget($"funnel '{funnel.Name}'", funnel.Key);
         }
 
         if (path.StartsWithSegments(McpApiBridgeEndpoints.BasePath))
         {
-            var slug = McpApiBridgeEndpoints.ExtractSlug(path);
-            if (slug is null) return null;
-
-            var bridge = store.McpApiBridges.FirstOrDefault(b =>
-                string.Equals(b.Slug, slug, StringComparison.OrdinalIgnoreCase));
+            var bridge = FindBySlug(
+                store.McpApiBridges,
+                McpApiBridgeEndpoints.ExtractSlug(path),
+                b => b.Slug);
 
             return bridge is null ? null : new ProxyTarget($"API bridge '{bridge.Name}'", bridge.Key);
         }
 
+        var match = LongestMatchingRoute(store, path);
+
+        return match is null ? null : new ProxyTarget($"route '{match.PathPrefix}'", match.Key);
+    }
+
+    private static T? FindBySlug<T>(IEnumerable<T> records, string? slug, Func<T, string> slugOf)
+        where T : class =>
+        slug is null
+            ? null
+            : records.FirstOrDefault(record => string.Equals(slugOf(record), slug, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Longest prefix wins: with routes at "/app" and "/app/mail" a request to /app/mail/x is the
+    /// second route's, which is the same choice ASP.NET routing makes when it later picks the
+    /// endpoint.
+    /// </summary>
+    private static RouteMapping? LongestMatchingRoute(ConfigStore store, PathString path)
+    {
         RouteMapping? match = null;
         var matchedLength = -1;
 
@@ -283,7 +299,7 @@ public static class LocalAccessGuard
             matchedLength = prefix.Length;
         }
 
-        return match is null ? null : new ProxyTarget($"route '{match.PathPrefix}'", match.Key);
+        return match;
     }
 
     /// <summary>

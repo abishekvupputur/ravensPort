@@ -21,6 +21,18 @@ namespace RavensPort.App.ViewModels;
 /// </summary>
 public sealed partial class ApiBridgeViewModel : ObservableObject
 {
+    /// <summary>
+    /// What a manifest typed or pasted into the editor is recorded as having come from, when it
+    /// did not come from a file.
+    /// </summary>
+    private const string PastedOrigin = "pasted";
+
+    /// <summary>
+    /// Cached rather than built per call: these options are immutable once used, and a fresh
+    /// instance per serialization throws away the serializer's own metadata cache each time.
+    /// </summary>
+    private static readonly System.Text.Json.JsonSerializerOptions EditorOptions = new() { WriteIndented = true };
+
     private readonly ConfigStoreCache _configStoreCache;
     private readonly McpSourceConnectionPool _connectionPool;
     private readonly ActivityLog _activityLog;
@@ -258,7 +270,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     }
 
     /// <summary>Where the text in the editor came from, recorded on the bridge when it is saved.</summary>
-    [ObservableProperty] private string _newBridgeManifestOrigin = "pasted";
+    [ObservableProperty] private string _newBridgeManifestOrigin = PastedOrigin;
 
     [RelayCommand]
     private void LoadSample()
@@ -303,9 +315,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     {
         if (item is null) return;
 
-        ManifestJson = System.Text.Json.JsonSerializer.Serialize(
-            item.Bridge.Manifest,
-            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        ManifestJson = System.Text.Json.JsonSerializer.Serialize(item.Bridge.Manifest, EditorOptions);
 
         EditingBridge = item;
         NewBridgeManifestOrigin = item.Bridge.ManifestOrigin;
@@ -325,7 +335,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
         EditingBridge = null;
         ManifestJson = "";
-        NewBridgeManifestOrigin = "pasted";
+        NewBridgeManifestOrigin = PastedOrigin;
 
         StatusMessage = wasEditing is null
             ? "Editor cleared."
@@ -400,7 +410,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         NewBridgeName = "";
         NewBridgeSlug = "";
         ManifestJson = "";
-        NewBridgeManifestOrigin = "pasted";
+        NewBridgeManifestOrigin = PastedOrigin;
 
         Reload();
     }
@@ -418,7 +428,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
         EditingBridge = null;
         ManifestJson = "";
-        NewBridgeManifestOrigin = "pasted";
+        NewBridgeManifestOrigin = PastedOrigin;
 
         Reload();
     }

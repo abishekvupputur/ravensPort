@@ -314,12 +314,12 @@ public sealed class McpApiBridgeHandlerFactory
             ? supplied.AsReadOnly()
             : new Dictionary<string, JsonElement>();
 
-        foreach (var declared in prompt.Arguments.Where(a => a.Required))
+        var missing = prompt.Arguments
+            .FirstOrDefault(a => a.Required && !arguments.ContainsKey(a.Name));
+
+        if (missing is not null)
         {
-            if (!arguments.ContainsKey(declared.Name))
-            {
-                throw new McpException($"'{declared.Name}' is required by prompt '{name}'.");
-            }
+            throw new McpException($"'{missing.Name}' is required by prompt '{name}'.");
         }
 
         return new GetPromptResult

@@ -165,74 +165,16 @@ public static class McpApiBridgeValidation
 
     public static string? ValidateManifest(McpApiBridgeManifest manifest)
     {
-        if (manifest.Version > McpApiBridgeManifest.CurrentVersion)
-        {
-            return $"This manifest declares version {manifest.Version}, and this build understands "
-                   + $"version {McpApiBridgeManifest.CurrentVersion}. Serving it anyway would mean "
-                   + "guessing which HTTP calls it meant.";
-        }
-
-        if (manifest.Version < 1)
-        {
-            return "Manifest version must be 1 or higher.";
-        }
+        if (ValidateVersion(manifest) is { } versionError) return versionError;
 
         if (manifest.Instructions is { Length: > MaxInstructionsLength })
         {
             return $"Instructions may be at most {MaxInstructionsLength} characters.";
         }
 
-        if (manifest.Tools.Count == 0)
-        {
-            return "A manifest needs at least one tool.";
-        }
-
-        if (manifest.Tools.Count > MaxTools)
-        {
-            return $"A manifest may declare at most {MaxTools} tools. This one declares {manifest.Tools.Count}.";
-        }
-
-        if (FirstDuplicate(manifest.Tools.Select(t => t.Name)) is { } duplicateTool)
-        {
-            // Case-insensitively, even though MCP names are case-sensitive: two tools differing
-            // only in case is a trap for a model, not a feature.
-            return $"Two tools are both named '{duplicateTool}'. Tool names must be unique.";
-        }
-
-        foreach (var tool in manifest.Tools)
-        {
-            if (ValidateTool(tool) is { } error) return $"Tool '{tool.Name}': {error}";
-        }
-
-        if (manifest.Prompts.Count > MaxPrompts)
-        {
-            return $"A manifest may declare at most {MaxPrompts} prompts.";
-        }
-
-        if (FirstDuplicate(manifest.Prompts.Select(p => p.Name)) is { } duplicatePrompt)
-        {
-            return $"Two prompts are both named '{duplicatePrompt}'. Prompt names must be unique.";
-        }
-
-        foreach (var prompt in manifest.Prompts)
-        {
-            if (ValidatePrompt(prompt) is { } error) return $"Prompt '{prompt.Name}': {error}";
-        }
-
-        if (manifest.Skills.Count > MaxSkills)
-        {
-            return $"A manifest may declare at most {MaxSkills} skills.";
-        }
-
-        if (FirstDuplicate(manifest.Skills.Select(s => s.Name)) is { } duplicateSkill)
-        {
-            return $"Two skills are both named '{duplicateSkill}'. Skill names must be unique.";
-        }
-
-        foreach (var skill in manifest.Skills)
-        {
-            if (ValidateSkill(skill) is { } error) return $"Skill '{skill.Name}': {error}";
-        }
+        if (ValidateTools(manifest) is { } toolError) return toolError;
+        if (ValidateSection(manifest.Prompts, "prompt", MaxPrompts, p => p.Name, ValidatePrompt) is { } promptError) return promptError;
+        if (ValidateSection(manifest.Skills, "skill", MaxSkills, s => s.Name, ValidateSkill) is { } skillError) return skillError;
 
         var size = MeasureBytes(manifest);
 
@@ -240,6 +182,63 @@ public static class McpApiBridgeValidation
             ? $"This manifest is {size / 1024} KB. The limit is {MaxManifestBytes / 1024} KB, which is "
               + "as much as a vault item can be relied on to carry."
             : null;
+    }
+
+    private static string? ValidateVersion(McpApiBridgeManifest manifest)
+    {
+        if (manifest.Version > McpApiBridgeManifest.CurrentVersion)
+        {
+            return $"This manifest declares version {manifest.Version}, and this build understands "
+                   + $"version {McpApiBridgeManifest.CurrentVersion}. Serving it anyway would mean "
+                   + "guessing which HTTP calls it meant.";
+        }
+
+        return manifest.Version < 1 ? "Manifest version must be 1 or higher." : null;
+    }
+
+    private static string? ValidateTools(McpApiBridgeManifest manifest)
+    {
+        if (manifest.Tools.Count == 0)
+        {
+            return "A manifest needs at least one tool.";
+        }
+
+        return ValidateSection(manifest.Tools, "tool", MaxTools, t => t.Name, ValidateTool);
+    }
+
+    /// <summary>
+    /// The three list-shaped sections of a manifest are checked identically — a ceiling, unique
+    /// names, then each entry — so they share one pass rather than three near-copies that would
+    /// drift in their wording.
+    /// </summary>
+    private static string? ValidateSection<T>(
+        List<T> entries,
+        string noun,
+        int maximum,
+        Func<T, string> name,
+        Func<T, string?> validate)
+    {
+        if (entries.Count > maximum)
+        {
+            return $"A manifest may declare at most {maximum} {noun}s. This one declares {entries.Count}.";
+        }
+
+        // Case-insensitively, even though MCP names are case-sensitive: two entries differing only
+        // in case is a trap for a model, not a feature.
+        if (FirstDuplicate(entries.Select(name)) is { } duplicate)
+        {
+            return $"Two {noun}s are both named '{duplicate}'. {char.ToUpperInvariant(noun[0])}{noun[1..]} names must be unique.";
+        }
+
+        foreach (var entry in entries)
+        {
+            if (validate(entry) is { } error)
+            {
+                return $"{char.ToUpperInvariant(noun[0])}{noun[1..]} '{name(entry)}': {error}";
+            }
+        }
+
+        return null;
     }
 
     // ---- tools -----------------------------------------------------------------------------
@@ -327,28 +326,7 @@ public static class McpApiBridgeValidation
                    + "the model learns which variants exist.";
         }
 
-        foreach (var key in tool.Variants.Keys)
-        {
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                return "has a variant with an empty name.";
-            }
-
-            if (!advertised.Contains(key, StringComparer.Ordinal))
-            {
-                return $"has a variant '{key}' that the enum on '{selector}' does not list, so "
-                       + "nothing would ever call it.";
-            }
-        }
-
-        foreach (var value in advertised)
-        {
-            if (!tool.Variants.ContainsKey(value))
-            {
-                return $"the enum on '{selector}' offers '{value}', but no variant implements it, "
-                       + "so choosing it would always fail.";
-            }
-        }
+        if (MatchVariantsToEnum(tool, selector, advertised) is { } mismatch) return mismatch;
 
         foreach (var (key, request) in tool.Variants)
         {
@@ -359,6 +337,33 @@ public static class McpApiBridgeValidation
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The enum and the variant keys have to name the same set, in both directions. An extra enum
+    /// value is a choice that always fails; an extra variant is a call nothing can reach.
+    /// </summary>
+    private static string? MatchVariantsToEnum(McpApiBridgeTool tool, string selector, List<string> advertised)
+    {
+        if (tool.Variants.Keys.Any(string.IsNullOrWhiteSpace))
+        {
+            return "has a variant with an empty name.";
+        }
+
+        var unadvertised = tool.Variants.Keys.FirstOrDefault(key => !advertised.Contains(key, StringComparer.Ordinal));
+
+        if (unadvertised is not null)
+        {
+            return $"has a variant '{unadvertised}' that the enum on '{selector}' does not list, so "
+                   + "nothing would ever call it.";
+        }
+
+        var unimplemented = advertised.FirstOrDefault(value => !tool.Variants.ContainsKey(value));
+
+        return unimplemented is null
+            ? null
+            : $"the enum on '{selector}' offers '{unimplemented}', but no variant implements it, "
+              + "so choosing it would always fail.";
     }
 
     // ---- one request template ----------------------------------------------------------------
@@ -438,12 +443,13 @@ public static class McpApiBridgeValidation
 
     public static string? ValidateQuery(IReadOnlyDictionary<string, string> query)
     {
+        if (query.Keys.Any(string.IsNullOrWhiteSpace))
+        {
+            return "has a query parameter with no name.";
+        }
+
         foreach (var (name, value) in query)
         {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return "has a query parameter with no name.";
-            }
 
             // Escaped on the way out, so these would still arrive intact — but a key containing
             // '&' reads to its author as two parameters, and that is a bug nobody finds by looking.
@@ -469,12 +475,13 @@ public static class McpApiBridgeValidation
 
     public static string? ValidateHeaders(IReadOnlyDictionary<string, string> headers)
     {
+        if (headers.Keys.Any(string.IsNullOrWhiteSpace))
+        {
+            return "has a header with no name.";
+        }
+
         foreach (var (name, value) in headers)
         {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return "has a header with no name.";
-            }
 
             var trimmed = name.Trim();
 
@@ -588,24 +595,7 @@ public static class McpApiBridgeValidation
     public static string? ValidatePrompt(McpApiBridgePrompt prompt)
     {
         if (ValidateMcpName(prompt.Name, "Prompt name") is { } nameError) return nameError;
-
-        if (FirstDuplicate(prompt.Arguments.Select(a => a.Name)) is { } duplicate)
-        {
-            return $"declares the argument '{duplicate}' twice.";
-        }
-
-        foreach (var argument in prompt.Arguments)
-        {
-            if (string.IsNullOrWhiteSpace(argument.Name))
-            {
-                return "has an argument with no name.";
-            }
-
-            if (!argument.Name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
-            {
-                return $"argument '{argument.Name}' may only contain letters, digits, and underscores.";
-            }
-        }
+        if (ValidatePromptArguments(prompt) is { } argumentError) return argumentError;
 
         if (prompt.Messages.Count == 0)
         {
@@ -616,36 +606,60 @@ public static class McpApiBridgeValidation
 
         foreach (var message in prompt.Messages)
         {
-            if (message.Role is not ("user" or "assistant"))
-            {
-                return $"has a message with role '{message.Role}'. Use 'user' or 'assistant'.";
-            }
-
-            if (string.IsNullOrWhiteSpace(message.Content))
-            {
-                return "has a message with no content.";
-            }
-
-            if (message.Content.Length > MaxDescriptionLength * 4)
-            {
-                return "has a message longer than a prompt should be. Put long guidance in a skill.";
-            }
-
-            if (McpApiBridgePlaceholders.Validate(message.Content, "Prompt message") is { } error)
-            {
-                return error;
-            }
-
-            foreach (var name in McpApiBridgePlaceholders.Names(message.Content))
-            {
-                if (!declared.Contains(name))
-                {
-                    return $"a message uses '{{{name}}}', which is not one of its declared arguments.";
-                }
-            }
+            if (ValidatePromptMessage(message, declared) is { } error) return error;
         }
 
         return null;
+    }
+
+    private static string? ValidatePromptArguments(McpApiBridgePrompt prompt)
+    {
+        if (FirstDuplicate(prompt.Arguments.Select(a => a.Name)) is { } duplicate)
+        {
+            return $"declares the argument '{duplicate}' twice.";
+        }
+
+        if (prompt.Arguments.Any(a => string.IsNullOrWhiteSpace(a.Name)))
+        {
+            return "has an argument with no name.";
+        }
+
+        var malformed = prompt.Arguments
+            .FirstOrDefault(a => !a.Name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'));
+
+        return malformed is null
+            ? null
+            : $"argument '{malformed.Name}' may only contain letters, digits, and underscores.";
+    }
+
+    private static string? ValidatePromptMessage(McpApiBridgePromptMessage message, HashSet<string> declared)
+    {
+        if (message.Role is not ("user" or "assistant"))
+        {
+            return $"has a message with role '{message.Role}'. Use 'user' or 'assistant'.";
+        }
+
+        if (string.IsNullOrWhiteSpace(message.Content))
+        {
+            return "has a message with no content.";
+        }
+
+        if (message.Content.Length > MaxDescriptionLength * 4)
+        {
+            return "has a message longer than a prompt should be. Put long guidance in a skill.";
+        }
+
+        if (McpApiBridgePlaceholders.Validate(message.Content, "Prompt message") is { } error)
+        {
+            return error;
+        }
+
+        var undeclared = McpApiBridgePlaceholders.Names(message.Content)
+            .FirstOrDefault(name => !declared.Contains(name));
+
+        return undeclared is null
+            ? null
+            : $"a message uses '{{{undeclared}}}', which is not one of its declared arguments.";
     }
 
     public static string? ValidateSkill(McpApiBridgeSkill skill)

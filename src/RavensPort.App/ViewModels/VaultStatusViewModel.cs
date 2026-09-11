@@ -20,30 +20,18 @@ public sealed partial class VaultStatusViewModel : ObservableObject
     private readonly VaultGateService _gate;
     private readonly Dispatcher _dispatcher;
 
-    private readonly CredentialsViewModel _credentials;
-    private readonly RoutesViewModel _routes;
-    private readonly McpFunnelViewModel _funnels;
-    private readonly ApiBridgeViewModel _bridges;
-    private readonly SettingsViewModel _settings;
+    private readonly AppTabs _tabs;
 
     public VaultStatusViewModel(
         ConfigStoreCache configStoreCache,
         VaultSyncQueue syncQueue,
         VaultGateService gate,
-        CredentialsViewModel credentials,
-        RoutesViewModel routes,
-        McpFunnelViewModel funnels,
-        ApiBridgeViewModel bridges,
-        SettingsViewModel settings)
+        AppTabs tabs)
     {
         _configStoreCache = configStoreCache;
         _syncQueue = syncQueue;
         _gate = gate;
-        _credentials = credentials;
-        _routes = routes;
-        _funnels = funnels;
-        _bridges = bridges;
-        _settings = settings;
+        _tabs = tabs;
 
         _dispatcher = Dispatcher.CurrentDispatcher;
 
@@ -190,11 +178,7 @@ public sealed partial class VaultStatusViewModel : ObservableObject
     /// </summary>
     public void ReloadTabs()
     {
-        _credentials.Reload();
-        _routes.Reload();
-        _funnels.Reload();
-        _bridges.Reload();
-        _settings.Reload();
+        _tabs.ReloadAll();
     }
 
     private void Apply()

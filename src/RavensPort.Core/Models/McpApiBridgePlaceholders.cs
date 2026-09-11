@@ -25,8 +25,7 @@ public static class McpApiBridgePlaceholders
     {
         if (template is null) return null;
 
-        var depth = 0;
-        var nameStart = 0;
+        var open = -1;
 
         for (var index = 0; index < template.Length; index++)
         {
@@ -34,47 +33,42 @@ public static class McpApiBridgePlaceholders
 
             if (current == '{')
             {
-                if (depth > 0)
-                {
-                    return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
-                }
+                if (open >= 0) return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
 
-                depth = 1;
-                nameStart = index + 1;
+                open = index;
                 continue;
             }
 
             if (current == '}')
             {
-                if (depth == 0)
-                {
-                    return $"{what} has a '}}' with no matching '{{'.";
-                }
+                if (open < 0) return $"{what} has a '}}' with no matching '{{'.";
 
-                var name = template[nameStart..index];
+                if (ValidateName(template[(open + 1)..index], what) is { } error) return error;
 
-                if (name.Length == 0)
-                {
-                    return $"{what} has an empty placeholder '{{}}'. Name the argument it stands for.";
-                }
-
-                if (!IsValidName(name))
-                {
-                    return $"{what} has the placeholder '{{{name}}}'. Placeholder names may only "
-                           + "contain letters, digits, and underscores.";
-                }
-
-                depth = 0;
+                open = -1;
                 continue;
             }
 
-            if (depth == 0 && char.IsControl(current))
+            if (open < 0 && char.IsControl(current))
             {
                 return $"{what} may not contain control characters.";
             }
         }
 
-        return depth == 0 ? null : $"{what} has a '{{' with no matching '}}'.";
+        return open < 0 ? null : $"{what} has a '{{' with no matching '}}'.";
+    }
+
+    private static string? ValidateName(string name, string what)
+    {
+        if (name.Length == 0)
+        {
+            return $"{what} has an empty placeholder '{{}}'. Name the argument it stands for.";
+        }
+
+        return IsValidName(name)
+            ? null
+            : $"{what} has the placeholder '{{{name}}}'. Placeholder names may only "
+              + "contain letters, digits, and underscores.";
     }
 
     /// <summary>
