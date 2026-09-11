@@ -61,11 +61,16 @@ An agent choosing between one tool's three values does better than the same agen
                            Text="No bridges yet — pick a route below, load the sample manifest, and edit it for that API."
                            Visibility="{Binding HasNoBridges, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
-                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,6"
-                           Text="Each bridge has its own proxy key — only that key opens it, and the key of the route it calls does not. Send it as the X-Proxy-Key header. An agent handed this key reaches the operations in the manifest and nothing else that route serves."
-                           Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <StackPanel Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Style="{StaticResource HintTextStyle}"
+                               Text="Each bridge has its own proxy key — only that key opens it, and the key of the route it calls does not. Send it as the X-Proxy-Key header. An agent handed this key reaches the operations in the manifest and nothing else that route serves."/>
+                    <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,6"
+                               Text="Select a bridge to show its key and the entry to paste into a client. Click it again to hide them."/>
+                </StackPanel>
 
-                <DataGrid ItemsSource="{Binding Bridges}" AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                <DataGrid ItemsSource="{Binding Bridges}" SelectedItem="{Binding SelectedBridge}"
+                          AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                          helpers:RowSelectionToggle.Enable="True"
                           Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="240">
@@ -165,34 +170,29 @@ An agent choosing between one tool's three values does better than the same agen
                     </DataGrid.Columns>
                 </DataGrid>
 
-                <!-- The key and the paste-ready client entry, one card per bridge. Shown below the
-                     grid rather than inside a cell, where a secret cannot be revealed or copied. -->
-                <ItemsControl ItemsSource="{Binding Bridges}" Margin="0,0,0,14"
-                              Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,8">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource SectionHeaderStyle}"/>
+                <!-- The key of the selected row only. A card per bridge meant every proxy key in
+                     the configuration sat on screen at once, which is poor on a shared screen and a
+                     long scroll besides. Same arrangement as the MCP Funnel tab. -->
+                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14"
+                        Visibility="{Binding HasSelectedBridge, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectedBridgeTitle}" Style="{StaticResource SectionHeaderStyle}"/>
 
-                                    <ContentControl Content="{Binding Key}"
-                                                    ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
+                        <ContentControl Content="{Binding SelectedBridge.Key}"
+                                        ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
 
-                                    <TextBlock Text="MCP client entry" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,0"
-                                               ToolTip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
-                                    <TextBox Text="{Binding ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
-                                             FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                             AcceptsReturn="True" TextWrapping="NoWrap"
-                                             HorizontalScrollBarVisibility="Auto"
-                                             Background="Transparent" BorderThickness="0" Padding="0"
-                                             Foreground="{StaticResource AccentBrush}"/>
-                                    <TextBlock Style="{StaticResource HintTextStyle}"
-                                               Text="Press Show above to reveal the key inside this snippet before copying it."/>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                        <TextBlock Text="MCP client entry" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,0"
+                                   ToolTip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
+                        <TextBox Text="{Binding SelectedBridge.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                 AcceptsReturn="True" TextWrapping="NoWrap"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Style="{StaticResource HintTextStyle}"
+                                   Text="Press Show above to reveal the key inside this snippet before copying it."/>
+                    </StackPanel>
+                </Border>
 
                 <!-- The manifest editor. Importing a file fills this box rather than going straight
                      into the store, so a manifest that fails validation can be fixed where it is. -->
