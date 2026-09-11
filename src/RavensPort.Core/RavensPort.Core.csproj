@@ -30,8 +30,14 @@
       The worked example the API to MCP tab loads into its editor and saves to disk. Embedded
       rather than written as a string literal so a test can parse the very bytes the user gets,
       which is what stops the documented shape from drifting away from the validator.
+
+      Linked out of templates/api-mcp/ rather than copied here: that folder is where someone —
+      or some agent — browsing the repository looks for a manifest to start from, and two copies
+      of a worked example is two things to keep in step. LogicalName pins the resource name so it
+      does not move with the file.
     -->
-    <EmbeddedResource Include="Assets\sample-api-mcp-manifest.json" />
+    <EmbeddedResource Include="../../templates/api-mcp/sample-task-tracker.json"
+                      LogicalName="RavensPort.Core.Assets.sample-api-mcp-manifest.json" />
   </ItemGroup>
 
   <ItemGroup>

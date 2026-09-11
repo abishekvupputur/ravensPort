@@ -1,0 +1,381 @@
+{
+  "version": 1,
+  "title": "Google Drive (read only)",
+  "description": "Read-only access to Google Drive v3. Attach this to a route whose upstream is https://www.googleapis.com/drive/v3 and whose credential holds the drive.readonly or drive.metadata.readonly scope. Every tool here reads; none of them create, change, or delete anything.",
+  "instructions": "Ids are opaque and are only ever learned from a listing, so start with list_files or list_by_kind and take fileId from the result. Never construct an id.\n\nDrive returns a small set of fields by default. Ask for what you need with the 'fields' argument using its partial-response syntax, for example 'files(id,name,mimeType,modifiedTime,owners(emailAddress))' on a listing or 'id,name,parents' on a single file. Asking for everything is slow and will be truncated.\n\nListings are paged. A response carrying nextPageToken has more; pass it back as pageToken. Keep pageSize at 100 or below.\n\nGoogle Workspace files (Docs, Sheets, Slides) have no bytes of their own: download_file fails on them. Use export_file with a target mimeType instead, such as text/plain or text/csv. Responses are capped at 1 MB, so export large documents in pieces or ask for a summary from a smaller field selection instead.\n\nSearch syntax for 'q' is Drive's own, for example \"name contains 'invoice' and trashed = false\". Listings include trashed files unless the query excludes them.",
+  "tools": [
+    {
+      "name": "list_files",
+      "title": "Search files",
+      "description": "Searches Drive and returns file ids with whatever fields you ask for. This is where a fileId for every other tool comes from. Returns nextPageToken when more results exist.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Drive query, e.g. \"name contains 'report' and trashed = false\". Omit to list everything."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Partial response, e.g. \"nextPageToken,files(id,name,mimeType,modifiedTime)\". Defaults to a compact set."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "e.g. \"modifiedTime desc\", \"name\", \"folder,name\"."
+          },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "pageToken": { "type": "string", "description": "nextPageToken from a previous call." },
+          "includeItemsFromAllDrives": {
+            "type": "boolean",
+            "description": "Include shared drives. Requires supportsAllDrives, which is always sent."
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files",
+        "query": {
+          "q": "{q}",
+          "fields": "{fields}",
+          "orderBy": "{orderBy}",
+          "pageSize": "{pageSize}",
+          "pageToken": "{pageToken}",
+          "includeItemsFromAllDrives": "{includeItemsFromAllDrives}",
+          "supportsAllDrives": "true"
+        },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "list_by_kind",
+      "title": "List one kind of file",
+      "description": "Lists files of a single kind, most recently modified first. Use this instead of writing a mimeType query by hand. Returns ids and names.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Which kind of file to list.",
+            "enum": ["documents", "spreadsheets", "presentations", "pdfs", "images", "folders"]
+          },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "pageToken": { "type": "string" }
+        },
+        "required": ["kind"]
+      },
+      "variantBy": "kind",
+      "variants": {
+        "documents": {
+          "description": "Google Docs",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType = 'application/vnd.google-apps.document' and trashed = false",
+            "orderBy": "modifiedTime desc",
+            "fields": "nextPageToken,files(id,name,modifiedTime,owners(emailAddress))",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        },
+        "spreadsheets": {
+          "description": "Google Sheets",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
+            "orderBy": "modifiedTime desc",
+            "fields": "nextPageToken,files(id,name,modifiedTime,owners(emailAddress))",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        },
+        "presentations": {
+          "description": "Google Slides",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType = 'application/vnd.google-apps.presentation' and trashed = false",
+            "orderBy": "modifiedTime desc",
+            "fields": "nextPageToken,files(id,name,modifiedTime,owners(emailAddress))",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        },
+        "pdfs": {
+          "description": "PDF files",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType = 'application/pdf' and trashed = false",
+            "orderBy": "modifiedTime desc",
+            "fields": "nextPageToken,files(id,name,size,modifiedTime)",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        },
+        "images": {
+          "description": "Images of any format",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType contains 'image/' and trashed = false",
+            "orderBy": "modifiedTime desc",
+            "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        },
+        "folders": {
+          "description": "Folders, for walking the tree",
+          "method": "GET",
+          "path": "/files",
+          "query": {
+            "q": "mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            "orderBy": "name",
+            "fields": "nextPageToken,files(id,name,parents)",
+            "pageSize": "{pageSize}",
+            "pageToken": "{pageToken}",
+            "supportsAllDrives": "true"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_folder",
+      "title": "List a folder's contents",
+      "description": "Lists what is directly inside one folder. folderId comes from list_by_kind with kind 'folders', or from the parents field of any file. Use 'root' for the top of My Drive.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "folderId": { "type": "string", "description": "Folder id, or the literal 'root'." },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "pageToken": { "type": "string" }
+        },
+        "required": ["folderId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files",
+        "query": {
+          "q": "'{folderId}' in parents and trashed = false",
+          "orderBy": "folder,name",
+          "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+          "pageSize": "{pageSize}",
+          "pageToken": "{pageToken}",
+          "supportsAllDrives": "true"
+        }
+      }
+    },
+    {
+      "name": "get_file",
+      "title": "Get one file's metadata",
+      "description": "Metadata for a single file: name, mimeType, size, owners, parents, timestamps. Not the contents — use download_file or export_file for those. fileId comes from a listing.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string", "description": "From list_files or list_by_kind." },
+          "fields": {
+            "type": "string",
+            "description": "Partial response, e.g. \"id,name,mimeType,size,parents,webViewLink\"."
+          }
+        },
+        "required": ["fileId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}",
+        "query": { "fields": "{fields}", "supportsAllDrives": "true" }
+      }
+    },
+    {
+      "name": "download_file",
+      "title": "Download a file's contents",
+      "description": "The bytes of an uploaded file, as text. Works for text, CSV, JSON, and similar; binary formats come back unreadable. Fails on Google Docs, Sheets and Slides, which have no bytes of their own — use export_file for those. Capped at 1 MB.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string", "description": "From a listing." }
+        },
+        "required": ["fileId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}",
+        "query": { "alt": "media", "supportsAllDrives": "true" }
+      }
+    },
+    {
+      "name": "export_file",
+      "title": "Export a Workspace document",
+      "description": "Converts a Google Doc, Sheet, or Slide deck to a readable format and returns it. Use text/plain for Docs, text/csv for a single Sheet tab, text/plain for Slides. Capped at 1 MB, so a long document comes back truncated.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string", "description": "A Google Workspace file id, from a listing." },
+          "mimeType": {
+            "type": "string",
+            "description": "Target format, e.g. text/plain, text/csv, text/html, application/pdf.",
+            "default": "text/plain"
+          }
+        },
+        "required": ["fileId", "mimeType"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}/export",
+        "query": { "mimeType": "{mimeType}" }
+      }
+    },
+    {
+      "name": "list_permissions",
+      "title": "Who can see a file",
+      "description": "Lists the permissions on one file: who it is shared with and at what role. Use this to answer questions about exposure before sharing anything further.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string" }
+        },
+        "required": ["fileId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}/permissions",
+        "query": {
+          "fields": "permissions(id,type,role,emailAddress,domain,allowFileDiscovery)",
+          "supportsAllDrives": "true"
+        }
+      }
+    },
+    {
+      "name": "list_revisions",
+      "title": "A file's revision history",
+      "description": "Lists revisions of one file, oldest first, with who made each and when. Useful for 'what changed and when', not for reading the content of a revision.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string" },
+          "pageToken": { "type": "string" }
+        },
+        "required": ["fileId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}/revisions",
+        "query": {
+          "fields": "nextPageToken,revisions(id,modifiedTime,lastModifyingUser(emailAddress),size)",
+          "pageToken": "{pageToken}"
+        }
+      }
+    },
+    {
+      "name": "list_comments",
+      "title": "Comments on a file",
+      "description": "Lists comments and their replies on one file. Drive requires a field selection here, so one is always sent.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string" },
+          "pageToken": { "type": "string" }
+        },
+        "required": ["fileId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/files/{fileId}/comments",
+        "query": {
+          "fields": "nextPageToken,comments(id,author(displayName),createdTime,resolved,content,replies(author(displayName),content))",
+          "pageToken": "{pageToken}"
+        }
+      }
+    },
+    {
+      "name": "list_shared_drives",
+      "title": "List shared drives",
+      "description": "Lists the shared drives this account can reach, with their ids. Pass a drive id as folderId to list_folder to walk into one.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "pageToken": { "type": "string" }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/drives",
+        "query": { "pageSize": "{pageSize}", "pageToken": "{pageToken}" }
+      }
+    },
+    {
+      "name": "get_about",
+      "title": "Account and storage",
+      "description": "Who this credential belongs to and how much storage is used. Worth one call when a question is about the account rather than about a file.",
+      "readOnly": true,
+      "inputSchema": { "type": "object", "properties": {} },
+      "request": {
+        "method": "GET",
+        "path": "/about",
+        "query": { "fields": "user(displayName,emailAddress),storageQuota" }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "find_and_summarise",
+      "title": "Find a document and summarise it",
+      "description": "Search Drive for something, then read the best match and summarise it.",
+      "arguments": [
+        { "name": "subject", "description": "What to look for.", "required": true },
+        { "name": "since", "description": "Optional ISO date; ignore anything older.", "required": false }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Find documents about {subject} in Google Drive, modified since {since} where that is given. Search with list_files, pick the most likely match and say why you picked it, then read it with export_file as text/plain and summarise it in under 200 words. Quote the file name and its id. Do not read more than three files."
+        }
+      ]
+    },
+    {
+      "name": "sharing_review",
+      "title": "Review how a file is shared",
+      "description": "Check who can reach one file and flag anything broad.",
+      "arguments": [
+        { "name": "fileName", "description": "Name or part of the name of the file.", "required": true }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Find the file matching {fileName} with list_files, then call list_permissions on it. Report every person and domain that can reach it and at what role. Flag anything shared with a whole domain, anything discoverable by link, and any editor who is not the owner. Do not change anything — this bridge is read only."
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "drive-research",
+      "title": "Researching a topic in Drive",
+      "description": "How to go from a vague question to the right documents without reading half the drive.",
+      "content": "# Researching a topic in Google Drive\n\n## When to use this\nThe user asks a question whose answer is in their Drive, but does not name the file.\n\n## The shape of the problem\nDrive search matches names and full text, but returns nothing useful unless you narrow it. Reading files is the expensive step: every export costs a call and is capped at 1 MB. So spend calls on searching, not on reading.\n\n## Steps\n\n1. **Narrow before you search.** Turn the question into two or three candidate phrases. Search names first, because a name match is a far stronger signal than a body match:\n   `list_files` with `q: \"name contains 'budget' and trashed = false\"`.\n2. **Widen only if that fails.** Full text is `fullText contains 'phrase'`. Combine with a date bound when the question is about something recent:\n   `\"fullText contains 'renewal' and modifiedTime > '2026-01-01T00:00:00' and trashed = false\"`.\n3. **Ask for the fields you will actually use.** `fields: \"files(id,name,mimeType,modifiedTime,owners(emailAddress))\"` is usually enough to rank candidates. Do not fetch everything and sort afterwards.\n4. **Rank, then say what you picked.** Prefer recent, prefer owned by the user, prefer documents over spreadsheets when the question is prose. Tell the user which file you chose and why before you read it.\n5. **Read at most two or three.** Workspace files go through `export_file` with `text/plain`; uploaded text goes through `download_file`. A Sheet exports as `text/csv`, one tab at a time.\n6. **Cite the file name and id** in the answer, so the user can open it.\n\n## Things that will waste the user's time\n\n- Constructing a file id. Ids only ever come from a listing.\n- Calling `download_file` on a Google Doc. It has no bytes; it fails. Use `export_file`.\n- Paging through everything. If a listing returns a `nextPageToken` and you have not found the file, the query is wrong — narrow it rather than paging.\n- Exporting a long document and working from the truncated first megabyte without saying so. If the result ends in a truncation note, tell the user the summary is partial.\n\n## Remember\nThis bridge is read only. There is no tool here that creates, edits, moves, shares, or deletes anything, and there is no way to ask for one. If the user wants a change made, say what you would change and let them make it."
+    },
+    {
+      "name": "drive-query-syntax",
+      "title": "Drive search query syntax",
+      "description": "The 'q' argument's grammar, with the clauses that actually get used.",
+      "content": "# Drive query syntax for the `q` argument\n\n## Form\nClauses are `field operator value`, joined with `and` / `or`, grouped with parentheses. String values are in single quotes. A literal single quote inside one is escaped with a backslash.\n\n## The clauses worth knowing\n\n| Clause | Meaning |\n| --- | --- |\n| `name = 'Q3 budget'` | exact name |\n| `name contains 'budget'` | name substring |\n| `fullText contains 'renewal date'` | body, title, and comments |\n| `mimeType = 'application/pdf'` | one exact type |\n| `mimeType contains 'image/'` | a family of types |\n| `'FOLDER_ID' in parents` | directly inside that folder |\n| `trashed = false` | exclude the bin |\n| `starred = true` | starred only |\n| `modifiedTime > '2026-01-01T00:00:00'` | RFC 3339, quoted |\n| `'someone@example.com' in owners` | owned by |\n| `'someone@example.com' in writers` | can edit |\n| `sharedWithMe` | shared with this account |\n\n## Workspace mime types\n\n| Kind | mimeType |\n| --- | --- |\n| Document | `application/vnd.google-apps.document` |\n| Spreadsheet | `application/vnd.google-apps.spreadsheet` |\n| Presentation | `application/vnd.google-apps.presentation` |\n| Folder | `application/vnd.google-apps.folder` |\n| Shortcut | `application/vnd.google-apps.shortcut` |\n\n## Habits\n\n- Always add `and trashed = false` unless the user asked about deleted files. Drive includes the bin by default and it is a common source of confusing results.\n- `contains` on `name` matches a prefix of a word, not an arbitrary substring. Searching for 'udget' finds nothing.\n- Dates need the quotes and need a time component.\n- When a query returns nothing, drop clauses one at a time rather than rewriting it whole — usually one is wrong and the rest are fine.\n"
+    }
+  ]
+}
