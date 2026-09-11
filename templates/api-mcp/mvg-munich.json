@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "title": "MVG Munich transit",
+  "description": "Live Munich public transport: stops, departures, journeys, disruptions, and lines, over the MVG bgw-pt v3 API. Attach to a route whose upstream is https://www.mvg.de/api/bgw-pt/v3. No credential is needed.",
+  "instructions": "Everything here is keyed on a globalId, which looks like 'de:09162:6' and identifies a stop. You only ever learn one from search_mvg_stop, so start there. Never construct one.\n\nThe usual sequence is search_mvg_stop for each end, then get_mvg_route between the two ids, or get_mvg_departures for a board at one of them.\n\nTransport types are UBAHN, SBAHN, TRAM, BUS, and BAHN. Pass them comma separated in one string, e.g. 'UBAHN,SBAHN'. Omit to get everything.\n\nTimes are ISO 8601 with an offset, e.g. 2026-07-01T09:00:00+02:00. Munich is +01:00 in winter and +02:00 in summer; get it wrong and the journey comes back an hour out.\n\nCoverage is Munich and the MVV area. A stop outside it will not be found, which is a real answer rather than an error to work around.",
+  "tools": [
+    {
+      "name": "search_mvg_stop",
+      "title": "Find a stop",
+      "description": "Searches stops and stations by name and returns their globalId, which every other tool here needs. Always the first call. Returns several candidates for an ambiguous name.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Stop name or part of one, e.g. 'Marienplatz' or 'Hauptbahnhof'."
+          }
+        },
+        "required": ["query"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/locations",
+        "query": { "query": "{query}" }
+      }
+    },
+    {
+      "name": "get_mvg_departures",
+      "title": "Departure board",
+      "description": "Live departures from one stop, with line, destination, platform, and real-time delay. globalId comes from search_mvg_stop.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "globalId": {
+            "type": "string",
+            "description": "Stop id from search_mvg_stop, e.g. 'de:09162:6'."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many departures. Defaults to 10.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "transportTypes": {
+            "type": "string",
+            "description": "Comma separated, e.g. 'UBAHN,SBAHN'. Omit for all."
+          }
+        },
+        "required": ["globalId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/departures",
+        "query": {
+          "globalId": "{globalId}",
+          "limit": "{limit}",
+          "transportTypes": "{transportTypes}"
+        }
+      }
+    },
+    {
+      "name": "get_mvg_route",
+      "title": "Plan a journey",
+      "description": "Journeys between two stops, with legs, changes, and real-time times. Both ids come from search_mvg_stop. Give departureTime to leave at a time, or arrivalTime with arriveBy true to arrive by one.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "originGlobalId": { "type": "string", "description": "Start stop id from search_mvg_stop." },
+          "destinationGlobalId": { "type": "string", "description": "End stop id from search_mvg_stop." },
+          "routingDateTime": {
+            "type": "string",
+            "description": "ISO 8601 with offset. Omit for now."
+          },
+          "arriveBy": {
+            "type": "boolean",
+            "description": "True to treat routingDateTime as 'arrive by' rather than 'depart at'."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many journeys to return. Defaults to 3.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": ["originGlobalId", "destinationGlobalId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/routes",
+        "query": {
+          "originStationGlobalId": "{originGlobalId}",
+          "destinationStationGlobalId": "{destinationGlobalId}",
+          "routingDateTime": "{routingDateTime}",
+          "routingDateTimeIsArrival": "{arriveBy}",
+          "limit": "{limit}"
+        }
+      }
+    },
+    {
+      "name": "get_mvg_messages",
+      "title": "Disruptions and planned works",
+      "description": "Network-wide service messages: incidents happening now, and planned engineering work. Filter by type or transport mode. Use this when a journey looks wrong or the user asks why something is delayed.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "INCIDENT for live disruptions, PLANNED for scheduled works. Omit for both.",
+            "enum": ["INCIDENT", "PLANNED"]
+          },
+          "transportType": {
+            "type": "string",
+            "description": "Narrow to one mode.",
+            "enum": ["UBAHN", "SBAHN", "TRAM", "BUS"]
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/messages",
+        "query": { "type": "{type}", "transportType": "{transportType}" }
+      }
+    },
+    {
+      "name": "get_mvg_lines",
+      "title": "List lines",
+      "description": "Every line on the network, optionally narrowed to one mode. Useful for resolving a line name the user half-remembered, not for journey planning.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "transportType": {
+            "type": "string",
+            "description": "Narrow to one mode. Omit for all.",
+            "enum": ["UBAHN", "SBAHN", "TRAM", "BUS"]
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/lines",
+        "query": { "transportType": "{transportType}" }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "how_do_i_get_there",
+      "title": "Plan a Munich journey",
+      "description": "Resolve both ends, plan it, and check for disruptions.",
+      "arguments": [
+        { "name": "from", "description": "Where the journey starts.", "required": true },
+        { "name": "to", "description": "Where it ends.", "required": true },
+        { "name": "when", "description": "Optional ISO 8601 departure time.", "required": false }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Plan a journey in Munich from {from} to {to}, departing {when} or now if that is empty. Resolve both ends with search_mvg_stop first and say which stops you picked if either name was ambiguous. Then call get_mvg_route. Finally check get_mvg_messages for INCIDENT entries affecting the lines in the result, and mention anything relevant. Give times, lines, and changes, not a wall of JSON."
+        }
+      ]
+    }
+  ]
+}

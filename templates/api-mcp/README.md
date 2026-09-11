@@ -9,6 +9,16 @@ route you already configured, so that route's credential is attached for you.
 | [`AUTHORING.md`](AUTHORING.md) | the format contract — read this before writing one, and give it to an agent you ask to write one |
 | [`sample-task-tracker.json`](sample-task-tracker.json) | a worked example using every feature once, against an invented API. This is what **Load sample** inserts |
 | [`google-drive-readonly.json`](google-drive-readonly.json) | Google Drive v3, read only: search, folders, metadata, export, sharing, revisions |
+| [`google-routes.json`](google-routes.json) | Google Routes v2 — `https://routes.googleapis.com`, key as `X-Goog-Api-Key` |
+| [`google-places.json`](google-places.json) | Google Places v1 — `https://places.googleapis.com`, key as `X-Goog-Api-Key` |
+| [`google-weather.json`](google-weather.json) | Google Weather v1 — `https://weather.googleapis.com`, key as `X-Goog-Api-Key` |
+| [`brightsky-dwd.json`](brightsky-dwd.json) | German weather and severe warnings — `https://api.brightsky.dev`, no credential |
+| [`mvg-munich.json`](mvg-munich.json) | Munich transit — `https://www.mvg.de/api/bgw-pt/v3`, no credential |
+| [`transitous.json`](transitous.json) | Worldwide transit — `https://api.transitous.org/api`, no credential |
+
+One manifest per base URL, because a bridge goes through exactly one route and a route has exactly
+one upstream. The three Google APIs are separate hosts, so they are separate manifests even though
+one key opens all of them.
 
 ## Using one
 
