@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "title": "Transitous",
+  "description": "Worldwide public transport search and journey planning over Transitous, the community-run MOTIS instance. Attach to a route whose upstream is https://api.transitous.org/api. No credential is needed.",
+  "instructions": "Start with transitous_search_place. Everything else takes a place or stop id that only a search returns, and those ids are opaque — never construct one. A 'lat,lng' string also works as an origin or destination where an id is asked for.\n\nCoverage is whatever feeds the community has imported, which is broad in Europe and patchy elsewhere. A place that returns nothing is usually a gap in coverage rather than a bad query, and saying so is more useful than trying five spellings.\n\nTimes are ISO 8601 with an offset. Journey planning is real time, so it is not cached; the same call a minute later can legitimately differ.\n\nThis is a free service run by volunteers. Do not poll it, and do not fan a single question out into a dozen calls.",
+  "tools": [
+    {
+      "name": "transitous_search_place",
+      "title": "Find a place or stop",
+      "description": "Searches stops, stations, and addresses by name and returns their ids, coordinates, and which transport modes serve them. Always the first call: every other tool here needs an id from it.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "What to look for, e.g. 'Zürich HB' or 'Alexanderplatz Berlin'."
+          },
+          "numResults": {
+            "type": "integer",
+            "description": "How many candidates to return.",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": ["text"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v1/geocode",
+        "query": { "text": "{text}", "numResults": "{numResults}" }
+      }
+    },
+    {
+      "name": "transitous_plan_journey",
+      "title": "Plan a journey",
+      "description": "Journeys between two places, with legs, changes, and times. Origin and destination are ids from transitous_search_place, or 'lat,lng' strings. Returns an itineraryId that transitous_refresh can update later.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "Place id from transitous_search_place, or 'lat,lng'."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Place id from transitous_search_place, or 'lat,lng'."
+          },
+          "time": {
+            "type": "string",
+            "description": "ISO 8601 with offset. Omit for now."
+          },
+          "arriveBy": {
+            "type": "boolean",
+            "description": "True to treat time as 'arrive by' rather than 'depart at'."
+          },
+          "maxTransfers": {
+            "type": "integer",
+            "description": "0 for direct connections only.",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "transitModes": {
+            "type": "string",
+            "description": "Comma separated, e.g. 'RAIL,BUS'. Omit for every mode."
+          },
+          "numItineraries": {
+            "type": "integer",
+            "description": "How many alternatives to compute.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": ["origin", "destination"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v6/plan",
+        "query": {
+          "fromPlace": "{origin}",
+          "toPlace": "{destination}",
+          "time": "{time}",
+          "arriveBy": "{arriveBy}",
+          "maxTransfers": "{maxTransfers}",
+          "transitModes": "{transitModes}",
+          "numItineraries": "{numItineraries}"
+        }
+      }
+    },
+    {
+      "name": "transitous_departures",
+      "title": "Departures or arrivals at a stop",
+      "description": "The next services calling at one stop, with real-time times where the feed provides them. stopId comes from transitous_search_place. Set arriveBy true for arrivals instead of departures.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "stopId": {
+            "type": "string",
+            "description": "Stop id from transitous_search_place."
+          },
+          "n": {
+            "type": "integer",
+            "description": "Roughly how many events to return.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "arriveBy": {
+            "type": "boolean",
+            "description": "True for arrivals, false or omitted for departures."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Comma separated modes to filter by, e.g. 'RAIL,BUS'."
+          }
+        },
+        "required": ["stopId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v6/stoptimes",
+        "query": {
+          "stopId": "{stopId}",
+          "n": "{n}",
+          "arriveBy": "{arriveBy}",
+          "mode": "{mode}"
+        }
+      }
+    },
+    {
+      "name": "transitous_refresh",
+      "title": "Re-check a planned journey",
+      "description": "Takes an itineraryId from a previous transitous_plan_journey and returns it with current real-time data. Use this instead of planning the same journey again when the user asks whether it is still on time.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "itineraryId": {
+            "type": "string",
+            "description": "From the itinerary returned by transitous_plan_journey."
+          }
+        },
+        "required": ["itineraryId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v6/refresh-itinerary",
+        "query": { "itineraryId": "{itineraryId}" }
+      }
+    },
+    {
+      "name": "transitous_health",
+      "title": "Service health",
+      "description": "Whether the Transitous instance is up and how current its feed data is. Worth one call when journeys look wrong or empty, to tell a coverage gap from an outage.",
+      "readOnly": true,
+      "inputSchema": { "type": "object", "properties": {} },
+      "request": { "method": "GET", "path": "/v1/health" }
+    }
+  ]
+}

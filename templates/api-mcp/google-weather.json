@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "title": "Google Weather",
+  "description": "Current conditions for a coordinate, over the Google Weather API v1. Attach to a route whose upstream is https://weather.googleapis.com and whose credential is a Google Maps Platform API key sent as the X-Goog-Api-Key header.",
+  "instructions": "This takes a coordinate, not a place name. If the user named a place, resolve it to a latitude and longitude first with whatever geocoding or place search you have, then call this.\n\nMETRIC is the API's default and is what you get unless you ask for IMPERIAL.\n\nThe response is the API's own: temperature, feels-like, humidity, wind, gusts, UV index, cloud cover, precipitation probability, and a condition description. Report the two or three the user actually asked about rather than reading the whole object back.",
+  "tools": [
+    {
+      "name": "get_weather",
+      "title": "Current conditions",
+      "description": "Current weather at a coordinate: temperature, humidity, wind, UV index, cloud cover, and precipitation. Takes a coordinate, so geocode a place name first.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Decimal degrees, e.g. 48.1372." },
+          "longitude": { "type": "number", "description": "Decimal degrees, e.g. 11.5756." },
+          "units": {
+            "type": "string",
+            "description": "METRIC is the default; pass IMPERIAL for Fahrenheit and miles per hour.",
+            "enum": ["METRIC", "IMPERIAL"]
+          }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v1/currentConditions:lookup",
+        "query": {
+          "location.latitude": "{latitude}",
+          "location.longitude": "{longitude}",
+          "unitsSystem": "{units}"
+        }
+      }
+    }
+  ]
+}

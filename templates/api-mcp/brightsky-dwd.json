@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "title": "Bright Sky (DWD)",
+  "description": "German weather service observations and severe weather warnings, over the free Bright Sky API. Attach to a route whose upstream is https://api.brightsky.dev. No credential is needed.",
+  "instructions": "Bright Sky serves Deutscher Wetterdienst data, so coverage is Germany and the area immediately around it. A coordinate well outside that returns the nearest station anyway, which can be hundreds of kilometres away — check the distance field before trusting a reading, and say so if it is far.\n\nBoth tools take a coordinate rather than a place name, so resolve a place first.\n\nThe warnings tool is the one worth reaching for when someone asks whether it is safe to travel. It returns official DWD warnings with severity, headline, and validity window, in German by default with English fields alongside.\n\nThis is an observation network, not a forecast service: current_weather is what was last measured at a real station, not a prediction.",
+  "tools": [
+    {
+      "name": "dwd_lookup",
+      "title": "German weather or warnings",
+      "description": "Either the latest measured conditions at the nearest DWD station, or the official severe weather warnings in force for a point. Set kind to choose. Both take a coordinate.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Which to fetch: measured conditions, or active warnings.",
+            "enum": ["weather", "alerts"]
+          },
+          "latitude": { "type": "number", "description": "Decimal degrees, e.g. 52.52." },
+          "longitude": { "type": "number", "description": "Decimal degrees, e.g. 13.40." }
+        },
+        "required": ["kind", "latitude", "longitude"]
+      },
+      "variantBy": "kind",
+      "variants": {
+        "weather": {
+          "description": "Latest measurement from the nearest station",
+          "method": "GET",
+          "path": "/current_weather",
+          "query": { "lat": "{latitude}", "lon": "{longitude}" }
+        },
+        "alerts": {
+          "description": "Official DWD severe weather warnings in force",
+          "method": "GET",
+          "path": "/alerts",
+          "query": { "lat": "{latitude}", "lon": "{longitude}" }
+        }
+      }
+    }
+  ],
+  "skills": [
+    {
+      "name": "dwd-coverage",
+      "title": "Knowing when a DWD reading is worth quoting",
+      "description": "Station distance, warning severity, and what this data is not.",
+      "content": "# Using Bright Sky honestly\n\n## Check the station distance first\n\nA `weather` response names the source station and how far it is. Bright Sky always answers with the nearest one, so a coordinate in Spain still gets a reading — from Germany. Roughly:\n\n| Distance | What to say |\n| --- | --- |\n| under ~20 km | quote it plainly |\n| 20-60 km | quote it, name the station |\n| over ~60 km | say the nearest station is too far to describe conditions there |\n\n## Warning severity\n\nWarnings carry a DWD severity. In rising order: `minor`, `moderate`, `severe`, `extreme`. Lead with the highest one in force, its headline, and when it expires. Do not summarise several warnings into one sentence — people act on the specific one.\n\n## What this is not\n\n- **Not a forecast.** `current_weather` is the last measurement. If someone asks about tomorrow, say this endpoint cannot answer it.\n- **Not global.** Coverage is DWD's network: Germany and its immediate surroundings.\n- **Not instantaneous.** Stations report on a cycle, so a reading can be up to an hour old. The timestamp is in the response; use it rather than saying 'now'.\n"
+    }
+  ]
+}

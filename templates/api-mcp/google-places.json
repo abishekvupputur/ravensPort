@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "title": "Google Places",
+  "description": "Text and nearby place search over the Google Places API v1. Attach to a route whose upstream is https://places.googleapis.com and whose credential is a Google Maps Platform API key sent as the X-Goog-Api-Key header.",
+  "instructions": "Two ways in. search_places takes a phrase and is what you want when the user named something ('ramen in Shinjuku'). search_nearby takes a coordinate and a radius and is what you want when the user said 'near me' or named a point you have already geocoded.\n\nBoth are billed by the fields requested, so the field mask is fixed to what these tools read: name, address, rating, price level, opening state, coordinates, and the Maps link. Nothing here returns photos or reviews.\n\nPlace types for search_nearby are the Places API's own table values, lowercase with underscores: restaurant, cafe, pharmacy, supermarket, train_station. Pass several to widen the net.\n\nAlways hand the user googleMapsUri as a clickable link rather than describing where a place is.",
+  "tools": [
+    {
+      "name": "search_places",
+      "title": "Search places by phrase",
+      "description": "Finds places matching a text query, ranked by relevance. Returns names, addresses, ratings, opening state, coordinates, and a Maps link. Use this whenever the user described what they want in words.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for, e.g. 'vegetarian restaurant near Marienplatz Munich'."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "How many to return, 1 to 20. Defaults to the API's own limit.",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "openNow": {
+            "type": "boolean",
+            "description": "True to return only places open at the moment of the call."
+          },
+          "languageCode": {
+            "type": "string",
+            "description": "BCP-47 code for the result text, e.g. 'de' or 'en-GB'."
+          }
+        },
+        "required": ["query"]
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v1/places:searchText",
+        "headers": {
+          "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.priceLevel,places.currentOpeningHours.openNow,places.location,places.googleMapsUri,places.primaryType"
+        },
+        "bodyMode": "template",
+        "body": {
+          "textQuery": "{query}",
+          "maxResultCount": "{maxResults}",
+          "openNow": "{openNow}",
+          "languageCode": "{languageCode}"
+        }
+      }
+    },
+    {
+      "name": "search_nearby",
+      "title": "Search places around a point",
+      "description": "Finds places within a radius of a coordinate, optionally filtered by type. Use this for 'near me' once you have a coordinate, or after geocoding an address. Returns the same fields as search_places.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Centre of the search." },
+          "longitude": { "type": "number", "description": "Centre of the search." },
+          "radius": {
+            "type": "number",
+            "description": "Metres, up to 50000. Start small: a 5 km radius in a city returns noise.",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "includedTypes": {
+            "type": "array",
+            "description": "Places API type values, e.g. ['restaurant','cafe']. Omit for all types.",
+            "items": { "type": "string" }
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "How many to return, 1 to 20.",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v1/places:searchNearby",
+        "headers": {
+          "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.priceLevel,places.currentOpeningHours.openNow,places.location,places.googleMapsUri,places.primaryType"
+        },
+        "bodyMode": "template",
+        "body": {
+          "locationRestriction": {
+            "circle": {
+              "center": { "latitude": "{latitude}", "longitude": "{longitude}" },
+              "radius": "{radius}"
+            }
+          },
+          "includedTypes": "{includedTypes}",
+          "maxResultCount": "{maxResults}"
+        }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "somewhere_to_eat",
+      "title": "Find somewhere to eat",
+      "description": "Search, filter by what is open, and propose three.",
+      "arguments": [
+        { "name": "area", "description": "Where to look.", "required": true },
+        { "name": "preference", "description": "Cuisine, price, or dietary need.", "required": false }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Find somewhere to eat in {area}, weighted towards {preference} where that is given. Use search_places with openNow true, then propose three with a sentence each on why, their rating, and their Maps link. Say plainly if nothing is open rather than listing closed places."
+        }
+      ]
+    }
+  ]
+}

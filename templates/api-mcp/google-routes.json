@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "title": "Google Routes",
+  "description": "Directions between two places over the Google Routes API v2. Attach to a route whose upstream is https://routes.googleapis.com and whose credential is a Google Maps Platform API key sent as the X-Goog-Api-Key header.",
+  "instructions": "Origin and destination are free text: an address, a landmark, or a city name. There is no geocoding step to do first, the API resolves them.\n\nThe field mask decides what comes back and what it costs, so it is fixed to the fields these tools actually read: distance, duration, and turn-by-turn instructions. Asking for more is a billing decision, not a convenience.\n\nDefault travel mode is TRANSIT. Pass departureTime or arrivalTime as ISO 8601 with an offset, e.g. 2026-07-01T09:00:00+02:00. arrivalTime only means anything for TRANSIT.\n\nDistances come back in metres and durations as a string of seconds like '1234s'. Convert before showing them to anyone.",
+  "tools": [
+    {
+      "name": "compute_route",
+      "title": "Compute a route",
+      "description": "Routes between two places and returns the distance, the duration, and an ordered list of turn-by-turn steps. Use it for 'how long does it take' and 'how do I get there' alike. Origin and destination are free text.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "Where to start. An address, landmark, or city, e.g. 'Berlin Hauptbahnhof'."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Where to end. Same form as origin."
+          },
+          "travelMode": {
+            "type": "string",
+            "description": "How to travel. Defaults to TRANSIT when omitted.",
+            "enum": ["DRIVE", "WALK", "BICYCLE", "TRANSIT", "TWO_WHEELER"]
+          },
+          "departureTime": {
+            "type": "string",
+            "description": "ISO 8601 with offset. Omit for 'now'. Takes precedence over arrivalTime."
+          },
+          "arrivalTime": {
+            "type": "string",
+            "description": "ISO 8601 with offset, meaning 'arrive by'. TRANSIT only."
+          }
+        },
+        "required": ["origin", "destination"]
+      },
+      "request": {
+        "method": "POST",
+        "path": "/directions/v2:computeRoutes",
+        "headers": {
+          "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.legs.distanceMeters,routes.legs.duration,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters"
+        },
+        "bodyMode": "template",
+        "body": {
+          "origin": { "address": "{origin}" },
+          "destination": { "address": "{destination}" },
+          "travelMode": "{travelMode}",
+          "departureTime": "{departureTime}",
+          "arrivalTime": "{arrivalTime}"
+        }
+      }
+    }
+  ],
+  "skills": [
+    {
+      "name": "reading-a-route",
+      "title": "Turning a route into an answer",
+      "description": "What the response fields mean and how to present them.",
+      "content": "# Reading a Routes response\n\n## The fields that matter\n\n| Field | Means |\n| --- | --- |\n| `routes[0].distanceMeters` | total distance in metres |\n| `routes[0].duration` | total time, as seconds with an 's' suffix, e.g. `4521s` |\n| `routes[0].legs[].steps[].navigationInstruction` | one turn instruction |\n| `routes[0].legs[].steps[].distanceMeters` | how far that step runs |\n\n## Presenting it\n\n- Convert before showing: `4521s` is 1 h 15 min, and `132000` metres is 132 km. Nobody wants either raw.\n- Lead with distance and duration. Give steps only when the user asked how to get there rather than how long it takes.\n- For TRANSIT, the step instructions carry the line names; keep them verbatim rather than paraphrasing a line number.\n\n## Things that go wrong\n\n- **No route found.** Usually the two places are not connected by the mode asked for — TRANSIT across a country with no service, or DRIVE across water. Say which, and suggest another mode.\n- **arrivalTime rejected.** It only applies to TRANSIT. For everything else use departureTime.\n- **A time with no offset.** `2026-07-01T09:00:00` is ambiguous and the API may read it as UTC. Always include the offset.\n"
+    }
+  ]
+}
