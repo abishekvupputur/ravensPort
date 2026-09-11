@@ -1069,7 +1069,7 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
     {
         var wanted = new Dictionary<(VaultItemRole, Guid), string>();
 
-        foreach (var role in VaultItemRoles.SecretBearing)
+        foreach (var role in VaultItemRoles.PerRecord)
         {
             foreach (var (recordId, itemId) in index.For(role)) wanted[(role, recordId)] = itemId;
         }

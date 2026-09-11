@@ -423,44 +423,6 @@ public class McpApiBridgeValidationTests
     }
 
     [Fact]
-    public void RefusesAnImportThatWouldPushTheWholeNotePastItsBudget()
-    {
-        var store = new ConfigStore();
-
-        // Several bridges, each individually fine, and together still inside the budget — one
-        // more is what tips it over.
-        for (var i = 0; i < 4; i++)
-        {
-            var manifest = Manifest(Tool());
-            manifest.Skills.Add(new McpApiBridgeSkill
-            {
-                Name = $"skill-{i}",
-                Content = new string('x', McpApiBridgeValidation.MaxManifestBytes - 2048),
-            });
-
-            store.McpApiBridges.Add(new McpApiBridgeRecord
-            {
-                Name = $"bridge {i}",
-                Slug = $"bridge-{i}",
-                Manifest = manifest,
-            });
-        }
-
-        var incoming = Manifest(Tool());
-        incoming.Skills.Add(new McpApiBridgeSkill
-        {
-            Name = "one-more",
-            Content = new string('x', McpApiBridgeValidation.MaxManifestBytes - 2048),
-        });
-
-        Assert.NotNull(McpApiBridgeValidation.ValidateNoteBudget(store, Guid.NewGuid(), incoming));
-
-        // Re-importing over a bridge's own manifest does not read as doubling it.
-        Assert.Null(McpApiBridgeValidation.ValidateNoteBudget(
-            store, store.McpApiBridges[0].Id, store.McpApiBridges[0].Manifest));
-    }
-
-    [Fact]
     public void ReadsAManifestWithCommentsAndTrailingCommas()
     {
         const string json = """

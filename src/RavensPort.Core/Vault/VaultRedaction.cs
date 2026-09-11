@@ -43,6 +43,14 @@ public static class VaultRedaction
                 nameof(CredentialRecord.ServiceAccountJson),
                 nameof(CredentialRecord.Token));
         }
+        else if (typeInfo.Type == typeof(McpApiBridgeRecord))
+        {
+            // Not secret - and still out of the note. A manifest is the largest thing a user
+            // writes here, and the note is rewritten in full on every save, including every token
+            // refresh. It gets an item of its own, where it can also be read and edited in the
+            // password manager without scrolling through everything else.
+            Remove(typeInfo, nameof(McpApiBridgeRecord.Manifest));
+        }
         else if (typeInfo.Type == typeof(ProxyKey))
         {
             // Only the value. CreatedUtc and ExpiresUtc are policy, not secret, and keeping them

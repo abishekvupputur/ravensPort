@@ -75,11 +75,11 @@
             <TabItem Header="Routes">
                 <views:RoutesView x:Name="RoutesViewControl"/>
             </TabItem>
-            <TabItem Header="MCP Funnel">
-                <views:McpFunnelView x:Name="McpFunnelViewControl"/>
-            </TabItem>
             <TabItem Header="API to MCP">
                 <views:ApiBridgeView x:Name="ApiBridgeViewControl"/>
+            </TabItem>
+            <TabItem Header="MCP Funnel">
+                <views:McpFunnelView x:Name="McpFunnelViewControl"/>
             </TabItem>
             <TabItem Header="Settings">
                 <views:SettingsView x:Name="SettingsViewControl"/>

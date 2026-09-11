@@ -1017,7 +1017,7 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         var byId = items.ToDictionary(i => i.ItemId, i => i.Contents, StringComparer.Ordinal);
         var resolved = new Dictionary<(VaultItemRole, Guid), VaultItemContents>();
 
-        foreach (var role in VaultItemRoles.SecretBearing)
+        foreach (var role in VaultItemRoles.PerRecord)
         {
             foreach (var (recordId, itemId) in index.For(role))
             {
