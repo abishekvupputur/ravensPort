@@ -1,0 +1,42 @@
+# API to MCP manifests
+
+Starting points for the **API to MCP** tab. A manifest describes one API's operations as MCP tools;
+RavensPort serves them at `/api-mcp/{slug}` and turns each call into one HTTP request through a
+route you already configured, so that route's credential is attached for you.
+
+| File | What it is |
+| --- | --- |
+| [`AUTHORING.md`](AUTHORING.md) | the format contract — read this before writing one, and give it to an agent you ask to write one |
+| [`sample-task-tracker.json`](sample-task-tracker.json) | a worked example using every feature once, against an invented API. This is what **Load sample** inserts |
+| [`google-drive-readonly.json`](google-drive-readonly.json) | Google Drive v3, read only: search, folders, metadata, export, sharing, revisions |
+
+## Using one
+
+1. On the **Routes** tab, add a route to the API's base URL with a credential attached. For the
+   Drive template that is `https://www.googleapis.com/drive/v3` with a Google credential holding
+   `drive.readonly`.
+2. On the **API to MCP** tab, press **Import file…**, pick the manifest, choose that route, and
+   save. The editor shows every call the manifest would make before you commit to it.
+3. Copy the bridge's proxy key from its row into your agent's MCP config.
+
+Paths inside a manifest are relative to the route's prefix, so the same file works against any
+route that reaches the same API.
+
+## Checking one
+
+```
+dotnet run --project tools/RavensPort.ManifestCheck -- my-api.json
+dotnet run --project tools/RavensPort.ManifestCheck -- templates/api-mcp
+```
+
+It prints every call each manifest would make and exits non-zero if anything is invalid. It calls
+the same validator the app uses on import, so a file it passes is a file the app accepts.
+
+The one thing it cannot check is whether your paths are right for your route — it has no way to
+know which route you will attach the manifest to. Read the printed list against the API's own
+documentation.
+
+## Adding one here
+
+Templates in this folder are validated by the test suite, so a broken one fails the build. Keep
+them credential-free and, where the API allows it, read-only: these files get copied.

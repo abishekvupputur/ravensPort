@@ -589,6 +589,18 @@ format, or **Save sample…** to edit one outside the app. Importing a file fill
 than saving directly, so a manifest that fails validation can be fixed where it is. The preview
 below the editor lists every call the manifest would make before you save it.
 
+Ready-made manifests and the format contract live in
+[`templates/api-mcp/`](templates/api-mcp/) — including a read-only Google Drive bridge, and
+[`AUTHORING.md`](templates/api-mcp/AUTHORING.md), which is what to hand an agent you ask to write
+one. Check anything you or it produces without opening the app:
+
+```
+dotnet run --project tools/RavensPort.ManifestCheck -- my-api.json
+```
+
+It prints every call the manifest would make and calls the same validator the app does, so a file
+it passes is a file the app accepts.
+
 ```json
 {
   "version": 1,
@@ -1416,6 +1428,8 @@ Every other command on this page builds the full app, unchanged.
 src/RavensPort.Core/            OAuth flows, password-manager storage, YARP proxy config, MCP funnel,
                                 API to MCP bridges, activity log — no WPF dependency, just the engine
 src/RavensPort.App/             WPF tray app: hosts Kestrel + YARP in-process, tray icon, UI
+templates/api-mcp/              manifest starting points, and the format contract for writing one
+tools/RavensPort.ManifestCheck/ command-line manifest validator — the same rules the app applies
 tests/RavensPort.Core.Tests/    xunit tests for Core — InMemoryVault, no side effects
 tests/RavensPort.SystemTests/   the approval suite: one real 1Password vault, end to end
 ```

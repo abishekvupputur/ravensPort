@@ -3,6 +3,9 @@
     <Project Path="src/RavensPort.App/RavensPort.App.csproj" />
     <Project Path="src/RavensPort.Core/RavensPort.Core.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/RavensPort.ManifestCheck/RavensPort.ManifestCheck.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj" />
     <Project Path="tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj" />

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- TargetFramework comes from Directory.Build.props - see the note there on why it is shared. -->
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>RavensPort.ManifestCheck</RootNamespace>
+    <AssemblyName>ravensport-manifest-check</AssemblyName>
+
+    <!--
+      Never published or installed. This is a development tool: it exists so that whoever writes a
+      manifest - increasingly an agent rather than a person - can check it without opening the app,
+      against the same validator the app uses rather than a second copy of the rules.
+    -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/RavensPort.Core/RavensPort.Core.csproj" />
+  </ItemGroup>
+
+</Project>
