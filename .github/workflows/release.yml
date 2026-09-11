@@ -106,6 +106,20 @@ jobs:
       # the Store submission depends on, because it needs a redirect-free raw.githubusercontent.com
       # URL. Handing LZMA2 the raw 243 MB payload instead gives 67.9 MB, and skips the runtime
       # self-extraction step as well.
+      # Every manifest in templates/api-mcp has to be servable. They are starting points people
+      # copy — one of them is what the app's own Load sample button inserts — so a broken template
+      # teaches the wrong shape to everything that reads it, agents included.
+      #
+      # The test suite checks them too, through the same validator. This runs the command-line tool
+      # as well because that tool is what an author is told to use, and a validator nobody has run
+      # since it was written is not a validator. It also prints every call each manifest would
+      # make, which is worth having in the log when one of them starts failing.
+      - name: Validate API to MCP manifests
+        shell: pwsh
+        run: |
+          dotnet run --project tools/RavensPort.ManifestCheck -c Release --no-restore -- templates/api-mcp
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Publish (payload for the installer)
         shell: pwsh
         run: |
