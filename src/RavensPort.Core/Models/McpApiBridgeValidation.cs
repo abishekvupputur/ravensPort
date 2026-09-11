@@ -25,21 +25,14 @@ public static class McpApiBridgeValidation
     public const int MaxInstructionsLength = 16 * 1024;
 
     /// <summary>
-    /// Per-manifest ceiling, measured on the indented form that actually lands in the note.
-    /// Generous enough for a documented API with skills attached, small enough that a paste
-    /// accident does not become the vault's problem.
+    /// Per-manifest ceiling, measured on the indented form that is actually stored.
+    ///
+    /// A manifest gets a vault item of its own, so this is a bound on one item rather than on the
+    /// whole configuration — but neither password manager documents a size limit this app could
+    /// rely on, and a paste accident should not be the thing that finds it. Generous enough for a
+    /// documented API with skills attached.
     /// </summary>
     public const int MaxManifestBytes = 128 * 1024;
-
-    /// <summary>
-    /// Ceiling for the whole topology note.
-    ///
-    /// The note is rewritten in full on every save — including every OAuth token refresh — so
-    /// space used here is not paid once at import but on every rotation, re-encrypted and
-    /// re-synced by the password manager each time. That is the real cost of keeping manifests in
-    /// the note, and this is the guard on it.
-    /// </summary>
-    public const int MaxNoteBytes = 512 * 1024;
 
     /// <summary>
     /// A tool name has to survive being prefixed with a source alias when a funnel pools this
@@ -244,8 +237,8 @@ public static class McpApiBridgeValidation
         var size = MeasureBytes(manifest);
 
         return size > MaxManifestBytes
-            ? $"This manifest is {size / 1024} KB. The limit is {MaxManifestBytes / 1024} KB — it is "
-              + "stored in the vault note, which is rewritten in full every time a token refreshes."
+            ? $"This manifest is {size / 1024} KB. The limit is {MaxManifestBytes / 1024} KB, which is "
+              + "as much as a vault item can be relied on to carry."
             : null;
     }
 
@@ -682,38 +675,9 @@ public static class McpApiBridgeValidation
 
     // ---- size --------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Whether importing this manifest keeps the whole note within budget. Checked against the
-    /// store the bridge is being saved into, with the bridge's current manifest discounted, so
-    /// re-importing a large manifest over itself does not read as doubling.
-    /// </summary>
-    public static string? ValidateNoteBudget(ConfigStore store, Guid editingBridgeId, McpApiBridgeManifest incoming)
-    {
-        var others = store.McpApiBridges
-            .Where(b => b.Id != editingBridgeId)
-            .Sum(b => (long)MeasureBytes(b.Manifest));
-
-        var projected = others + MeasureBytes(incoming) + MeasureBaseBytes(store);
-
-        return projected <= MaxNoteBytes
-            ? null
-            : $"Saving this would take the vault note to about {projected / 1024} KB, past the "
-              + $"{MaxNoteBytes / 1024} KB limit. The note is rewritten on every save, including "
-              + "every token refresh. Trim a manifest, or delete a bridge you no longer use.";
-    }
-
-    /// <summary>The manifest's size in the note, measured on the indented form actually written.</summary>
+    /// <summary>The manifest's stored size, measured on the indented form actually written.</summary>
     public static int MeasureBytes(McpApiBridgeManifest manifest) =>
         Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(manifest, VaultRedaction.NoteOptions));
-
-    /// <summary>Everything in the note that is not a bridge manifest.</summary>
-    private static long MeasureBaseBytes(ConfigStore store)
-    {
-        var manifests = store.McpApiBridges.Sum(b => (long)MeasureBytes(b.Manifest));
-        var whole = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(store, VaultRedaction.NoteOptions));
-
-        return Math.Max(0, whole - manifests);
-    }
 
     // ---- shared ------------------------------------------------------------------------------
 

@@ -11,25 +11,37 @@ public enum VaultItemRole
     RouteKey,
     FunnelKey,
     ApiBridgeKey,
+
+    /// <summary>
+    /// One API bridge's manifest. Its own item rather than a section of the topology note,
+    /// because a manifest is a document the user wrote — often the largest thing in the whole
+    /// configuration — and burying it in a note that is rewritten on every token refresh made it
+    /// both hard to read in the password manager and expensive to store.
+    /// </summary>
+    ApiBridgeManifest,
 }
 
 /// <summary>
-/// The roles that carry a secret of their own, in one place.
+/// The roles that get an item of their own, in one place.
 ///
-/// Every provider resolves secrets by walking this list, and each of them used to spell it out
+/// Every provider resolves these by walking this list, and each of them used to spell it out
 /// itself. The failure mode of a missed copy is the quiet kind: the new role's items are written
 /// to the vault correctly and never read back, so the endpoint works until the first restart and
-/// then answers 403 with nothing logged anywhere. One list means adding a role cannot be done
-/// halfway.
+/// then answers 403 — or serves an empty toolset — with nothing logged anywhere. One list means
+/// adding a role cannot be done halfway.
+///
+/// Most of these hold a secret. <see cref="VaultItemRole.ApiBridgeManifest"/> does not; it is
+/// here because it is stored the same way, per record and outside the note.
 /// </summary>
 public static class VaultItemRoles
 {
-    public static readonly VaultItemRole[] SecretBearing =
+    public static readonly VaultItemRole[] PerRecord =
     [
         VaultItemRole.Credential,
         VaultItemRole.RouteKey,
         VaultItemRole.FunnelKey,
         VaultItemRole.ApiBridgeKey,
+        VaultItemRole.ApiBridgeManifest,
     ];
 }
 
@@ -63,6 +75,9 @@ public static partial class VaultItemNaming
 
     public static string ForApiBridgeKey(Guid id, string slug) =>
         $"{Prefix}api bridge key — /api-mcp/{Clean(slug)} [{id:D}]";
+
+    public static string ForApiBridgeManifest(Guid id, string slug) =>
+        $"{Prefix}api bridge manifest — /api-mcp/{Clean(slug)} [{id:D}]";
 
     public static bool IsOwned(string title) =>
         title.StartsWith(Prefix, StringComparison.Ordinal);
@@ -105,6 +120,7 @@ public static partial class VaultItemNaming
         if (title.Contains("route key —", StringComparison.Ordinal)) return VaultItemRole.RouteKey;
         if (title.Contains("funnel key —", StringComparison.Ordinal)) return VaultItemRole.FunnelKey;
         if (title.Contains("api bridge key —", StringComparison.Ordinal)) return VaultItemRole.ApiBridgeKey;
+        if (title.Contains("api bridge manifest —", StringComparison.Ordinal)) return VaultItemRole.ApiBridgeManifest;
 
         return default;
     }

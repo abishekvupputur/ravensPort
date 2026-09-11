@@ -44,9 +44,10 @@ public sealed record VaultSecretItem(VaultItemRole Role, Guid RecordId, VaultIte
 /// reference upstreams reference credentials) and splitting a graph across items would turn every
 /// save into a consistency problem.
 ///
-/// A bridge's manifest is in the note as well, and deliberately so: it is not secret, and keeping
-/// it there is what lets a user read and hand-edit their tool definitions in the password manager
-/// the same way they can read their routes.
+/// An API bridge's manifest is split out too, though it holds no secret. It is the largest thing
+/// a user writes here, and the note is rewritten in full on every save — including every token
+/// refresh — so leaving it in the note meant re-encrypting and re-syncing every manifest each time
+/// a token aged out. Its own item is also simply where someone would look for it.
 ///
 /// Each field lives on exactly one side. A credential's scopes and endpoints are in the note and
 /// nowhere else; its secret is in its item and nowhere else. There is no field with two homes, so
@@ -104,6 +105,18 @@ public static class VaultMapper
 
         foreach (var bridge in store.McpApiBridges)
         {
+            // The manifest, in an item of its own. Written even when empty, so the item exists
+            // from the moment the bridge does and a later load can tell "nothing written yet"
+            // from "the item the index points at is gone".
+            items.Add(new VaultSecretItem(VaultItemRole.ApiBridgeManifest, bridge.Id, new VaultItemSpec(
+                VaultItemNaming.ForApiBridgeManifest(bridge.Id, bridge.Slug),
+                VaultItemCategory.SecureNote,
+                [new VaultItemField(VaultFields.NoteContent, SerializeManifest(bridge.Manifest))])
+            {
+                ItemId = index.Find(VaultItemRole.ApiBridgeManifest, bridge.Id),
+                Caption = $"Tool definitions for API bridge '{bridge.Name}'",
+            }));
+
             if (!bridge.Key.IsConfigured) continue;
 
             items.Add(new VaultSecretItem(VaultItemRole.ApiBridgeKey, bridge.Id, new VaultItemSpec(
@@ -286,15 +299,94 @@ public static class VaultMapper
             }
         }
 
+        var orphanedBridges = new List<McpApiBridgeRecord>();
+
         foreach (var bridge in store.McpApiBridges)
         {
             if (secrets.TryGetValue((VaultItemRole.ApiBridgeKey, bridge.Id), out var item))
             {
                 bridge.Key.Value = item.Field(VaultFields.Password) ?? "";
             }
+
+            if (secrets.TryGetValue((VaultItemRole.ApiBridgeManifest, bridge.Id), out var manifestItem))
+            {
+                bridge.Manifest = ParseManifest(manifestItem.Field(VaultFields.NoteContent));
+                continue;
+            }
+
+            // Same rule as a credential's: the index is written only after an item has actually
+            // been created, so an entry pointing at nothing means that item was deleted in the
+            // password manager. A bridge whose manifest is gone has no tools to serve, and keeping
+            // it would raise the same ghost on every launch.
+            if (document.Index.Find(VaultItemRole.ApiBridgeManifest, bridge.Id) is not null)
+            {
+                orphanedBridges.Add(bridge);
+            }
+        }
+
+        foreach (var bridge in orphanedBridges)
+        {
+            store.McpApiBridges.Remove(bridge);
+
+            // A funnel source left pointing at it would fail on every connect, with nothing in the
+            // UI able to explain why.
+            var stranded = store.McpSources
+                .Where(source => source.Kind == McpSourceKind.ApiBridge && source.BridgeId == bridge.Id)
+                .Select(source => source.Id)
+                .ToList();
+
+            foreach (var sourceId in stranded)
+            {
+                store.McpSources.RemoveAll(source => source.Id == sourceId);
+
+                foreach (var funnel in store.McpFunnels)
+                {
+                    funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
+                }
+            }
+
+            var affected = stranded.Count == 0
+                ? ""
+                : $" {stranded.Count} funnel source(s) that exposed it were removed as well.";
+
+            report.Removals.Add(
+                $"API bridge '{bridge.Name}' was removed: the vault item holding its manifest is gone.{affected}");
         }
 
         return store;
+    }
+
+    /// <summary>
+    /// The manifest as it is stored. Indented, because the item exists partly so a user can open
+    /// it in their password manager and read — or edit — what their agent is being offered.
+    /// </summary>
+    private static string SerializeManifest(McpApiBridgeManifest manifest) =>
+        JsonSerializer.Serialize(manifest, VaultRedaction.FullOptions);
+
+    /// <summary>
+    /// Reads a manifest item back. Unparseable content yields an empty manifest rather than
+    /// throwing: the item is free text a user can edit by hand, so broken JSON is a real case, and
+    /// a bridge that serves nothing is recoverable where a load that dies is not.
+    /// </summary>
+    private static McpApiBridgeManifest ParseManifest(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new McpApiBridgeManifest();
+
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<McpApiBridgeManifest>(json, VaultRedaction.FullOptions)
+                           ?? new McpApiBridgeManifest();
+
+            // An Undefined schema would throw on the next save instead of here. See
+            // McpApiBridgeSchema for why that is the worst place for it to surface.
+            McpApiBridgeSchema.Normalize(manifest);
+
+            return manifest;
+        }
+        catch (JsonException)
+        {
+            return new McpApiBridgeManifest();
+        }
     }
 
     private static void ApplyCredentialSecrets(CredentialRecord credential, VaultItemContents item)

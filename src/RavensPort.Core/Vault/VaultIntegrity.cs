@@ -173,6 +173,8 @@ public sealed class VaultIntegrityService(
             "the funnel's key exists only in memory — clients keep working until RavensPort exits",
         VaultItemRole.ApiBridgeKey =>
             "the API bridge's key exists only in memory — clients keep working until RavensPort exits",
+        VaultItemRole.ApiBridgeManifest =>
+            "the API bridge's tool definitions exist only in memory — they are lost when RavensPort exits unless they are written back",
         _ => "it is not in the vault",
     };
 
@@ -240,6 +242,7 @@ public sealed class VaultIntegrityService(
         VaultItemRole.RouteKey => store.Routes.RemoveAll(r => r.Id == record.RecordId) > 0,
         VaultItemRole.FunnelKey => store.McpFunnels.RemoveAll(f => f.Id == record.RecordId) > 0,
         VaultItemRole.ApiBridgeKey => DropApiBridge(store, record.RecordId),
+        VaultItemRole.ApiBridgeManifest => DropApiBridge(store, record.RecordId),
         _ => false,
     };
 

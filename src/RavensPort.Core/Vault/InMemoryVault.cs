@@ -141,6 +141,23 @@ public sealed class InMemoryVault : IConfigVault
         };
     }
 
+    /// <summary>
+    /// Rewrites one field of one item, standing in for a user editing it in their password
+    /// manager. Every item this app writes is free text to whoever opens the vault, so "somebody
+    /// changed it by hand" is a case the loader has to survive rather than a corruption.
+    /// </summary>
+    public void ReplaceItemField(string itemId, string field, string value)
+    {
+        if (!_items.TryGetValue(itemId, out var item)) return;
+
+        var fields = new Dictionary<string, string>(item.Fields, StringComparer.Ordinal)
+        {
+            [field] = value,
+        };
+
+        _items[itemId] = item with { Fields = fields };
+    }
+
     public Task<VaultStatus> ProbeAsync(CancellationToken ct = default) =>
         Task.FromResult(new VaultStatus(Kind, _availability, VaultId: "in-memory"));
 
@@ -319,7 +336,7 @@ public sealed class InMemoryVault : IConfigVault
     {
         var resolved = new Dictionary<(VaultItemRole, Guid), VaultItemContents>();
 
-        foreach (var role in VaultItemRoles.SecretBearing)
+        foreach (var role in VaultItemRoles.PerRecord)
         {
             foreach (var (recordId, itemId) in index.For(role))
             {

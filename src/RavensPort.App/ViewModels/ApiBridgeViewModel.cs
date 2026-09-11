@@ -359,12 +359,6 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
             return;
         }
 
-        if (McpApiBridgeValidation.ValidateNoteBudget(store, Guid.Empty, manifest) is { } budgetError)
-        {
-            StatusMessage = budgetError;
-            return;
-        }
-
         // Issued here, with the record, rather than left to the load-time backfill: a key
         // generated and saved in one write can never differ between memory and vault.
         var bridge = new McpApiBridgeRecord
@@ -392,14 +386,6 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
     private async Task ReplaceManifestAsync(ApiBridgeItemViewModel item, McpApiBridgeManifest manifest)
     {
-        var store = _configStoreCache.Current;
-
-        if (McpApiBridgeValidation.ValidateNoteBudget(store, item.Bridge.Id, manifest) is { } budgetError)
-        {
-            StatusMessage = budgetError;
-            return;
-        }
-
         await PersistAsync(s =>
         {
             if (s.McpApiBridges.FirstOrDefault(b => b.Id == item.Bridge.Id) is not { } stored) return;
