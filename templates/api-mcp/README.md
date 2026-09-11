@@ -7,6 +7,7 @@ route you already configured, so that route's credential is attached for you.
 | File | What it is |
 | --- | --- |
 | [`AUTHORING.md`](AUTHORING.md) | the format contract — read this before writing one, and give it to an agent you ask to write one |
+| [`SETUP.md`](SETUP.md) | the route each manifest needs: base URL, credential, and where the credential goes |
 | [`sample-task-tracker.json`](sample-task-tracker.json) | a worked example using every feature once, against an invented API. This is what **Load sample** inserts |
 | [`google-drive-readonly.json`](google-drive-readonly.json) | Google Drive v3, read only: search, folders, metadata, export, sharing, revisions |
 | [`google-routes.json`](google-routes.json) | Google Routes v2 — `https://routes.googleapis.com`, key as `X-Goog-Api-Key` |
@@ -18,7 +19,7 @@ route you already configured, so that route's credential is attached for you.
 
 One manifest per base URL, because a bridge goes through exactly one route and a route has exactly
 one upstream. The three Google APIs are separate hosts, so they are separate manifests even though
-one key opens all of them.
+one key opens all of them. [`SETUP.md`](SETUP.md) lists what to configure for each.
 
 ## Using one
 

@@ -2,7 +2,7 @@
   "version": 1,
   "title": "Transitous",
   "description": "Worldwide public transport search and journey planning over Transitous, the community-run MOTIS instance. Attach to a route whose upstream is https://api.transitous.org/api. No credential is needed.",
-  "instructions": "Start with transitous_search_place. Everything else takes a place or stop id that only a search returns, and those ids are opaque — never construct one. A 'lat,lng' string also works as an origin or destination where an id is asked for.\n\nCoverage is whatever feeds the community has imported, which is broad in Europe and patchy elsewhere. A place that returns nothing is usually a gap in coverage rather than a bad query, and saying so is more useful than trying five spellings.\n\nTimes are ISO 8601 with an offset. Journey planning is real time, so it is not cached; the same call a minute later can legitimately differ.\n\nThis is a free service run by volunteers. Do not poll it, and do not fan a single question out into a dozen calls.",
+  "instructions": "Start with transitous_search_place. Everything else takes a place or stop id that only a search returns, and those ids are opaque, so never construct one. A 'lat,lng' string also works where an id is asked for.\n\nREAL TIME IS PATCHY. Every leg and stop time carries a realTime boolean. True means the times are live-adjusted, so compare against the scheduled fields and report the delay. False means they are timetable only: say so, and never present that as 'on time', because nothing observed it. Always surface cancelled and tripCancelled. Showing a cancelled connection as usable is the worst thing this bridge can do.\n\nCoverage is whatever feeds the community has imported, broad in Europe and patchy elsewhere. A place that returns nothing is usually a coverage gap rather than a bad query, and saying so beats trying five spellings.\n\nTimes are ISO 8601 with an offset. Journey planning is real time and is not cached, so the same call a minute later can legitimately differ.\n\nThis is volunteer-hosted and non-commercial. Do not poll it, do not fan one question into a dozen calls, and credit the data: Transitous (https://transitous.org/sources/) and OpenStreetMap contributors. Put your own contact address in the User-Agent below, replacing the placeholder, so the operators can reach whoever is making the requests.",
   "tools": [
     {
       "name": "transitous_search_place",
@@ -23,12 +23,21 @@
             "maximum": 50
           }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       },
       "request": {
         "method": "GET",
         "path": "/v1/geocode",
-        "query": { "text": "{text}", "numResults": "{numResults}" }
+        "query": {
+          "text": "{text}",
+          "numResults": "{numResults}"
+        },
+        "headers": {
+          "User-Agent": "RavensPort-Bridge/1.0 (+set-your-contact@example.com)",
+          "Accept": "application/json"
+        }
       }
     },
     {
@@ -72,7 +81,10 @@
             "maximum": 10
           }
         },
-        "required": ["origin", "destination"]
+        "required": [
+          "origin",
+          "destination"
+        ]
       },
       "request": {
         "method": "GET",
@@ -85,6 +97,10 @@
           "maxTransfers": "{maxTransfers}",
           "transitModes": "{transitModes}",
           "numItineraries": "{numItineraries}"
+        },
+        "headers": {
+          "User-Agent": "RavensPort-Bridge/1.0 (+set-your-contact@example.com)",
+          "Accept": "application/json"
         }
       }
     },
@@ -115,7 +131,9 @@
             "description": "Comma separated modes to filter by, e.g. 'RAIL,BUS'."
           }
         },
-        "required": ["stopId"]
+        "required": [
+          "stopId"
+        ]
       },
       "request": {
         "method": "GET",
@@ -125,6 +143,10 @@
           "n": "{n}",
           "arriveBy": "{arriveBy}",
           "mode": "{mode}"
+        },
+        "headers": {
+          "User-Agent": "RavensPort-Bridge/1.0 (+set-your-contact@example.com)",
+          "Accept": "application/json"
         }
       }
     },
@@ -141,12 +163,20 @@
             "description": "From the itinerary returned by transitous_plan_journey."
           }
         },
-        "required": ["itineraryId"]
+        "required": [
+          "itineraryId"
+        ]
       },
       "request": {
         "method": "GET",
         "path": "/v6/refresh-itinerary",
-        "query": { "itineraryId": "{itineraryId}" }
+        "query": {
+          "itineraryId": "{itineraryId}"
+        },
+        "headers": {
+          "User-Agent": "RavensPort-Bridge/1.0 (+set-your-contact@example.com)",
+          "Accept": "application/json"
+        }
       }
     },
     {
@@ -154,8 +184,26 @@
       "title": "Service health",
       "description": "Whether the Transitous instance is up and how current its feed data is. Worth one call when journeys look wrong or empty, to tell a coverage gap from an outage.",
       "readOnly": true,
-      "inputSchema": { "type": "object", "properties": {} },
-      "request": { "method": "GET", "path": "/v1/health" }
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "request": {
+        "method": "GET",
+        "path": "/v1/health",
+        "headers": {
+          "User-Agent": "RavensPort-Bridge/1.0 (+set-your-contact@example.com)",
+          "Accept": "application/json"
+        }
+      }
+    }
+  ],
+  "skills": [
+    {
+      "name": "transitous-obligations",
+      "title": "Using a volunteer service properly",
+      "description": "What stands in for an API key here, and how to read real-time flags.",
+      "content": "# Transitous, honestly\n\n## There is no key, and that is the point\n\nThe public endpoint is volunteer-hosted and unauthenticated. What stands in for a key is behaviour: an identifying User-Agent with a contact address, attribution on anything you show, restraint in how often you call, and non-commercial use. If this becomes work, self-host MOTIS rather than leaning on the public instance.\n\n## Reading real-time flags\n\n| `realTime` | What it means | How to label it |\n| --- | --- | --- |\n| `true` | live-adjusted times | compare with the `scheduled*` fields and state the delay |\n| `false` | timetable only | say the times are scheduled, not observed |\n\nNever turn `realTime: false` into 'no delay'. Nothing measured it. Coverage is good on major urban and long-distance services and thin on rural ones.\n\n## Cancellations\n\n`cancelled` on a leg and `tripCancelled` on a trip must always reach the user, even when the rest of the itinerary looks fine. A cancelled connection presented as valid is the failure that strands someone.\n\n## Attribution\n\nData: Transitous (https://transitous.org/sources/) and OpenStreetMap contributors (https://www.openstreetmap.org/copyright).\n"
     }
   ]
 }
