@@ -25,37 +25,46 @@ public static class McpApiBridgePlaceholders
     {
         if (template is null) return null;
 
-        var open = -1;
-
-        for (var index = 0; index < template.Length; index++)
+        // Checked over the whole string rather than only outside placeholders. A control
+        // character inside a name would fail the charset rule below anyway, and hoisting it out
+        // means the scan underneath only has to think about braces.
+        if (template.Any(char.IsControl))
         {
-            var current = template[index];
-
-            if (current == '{')
-            {
-                if (open >= 0) return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
-
-                open = index;
-                continue;
-            }
-
-            if (current == '}')
-            {
-                if (open < 0) return $"{what} has a '}}' with no matching '{{'.";
-
-                if (ValidateName(template[(open + 1)..index], what) is { } error) return error;
-
-                open = -1;
-                continue;
-            }
-
-            if (open < 0 && char.IsControl(current))
-            {
-                return $"{what} may not contain control characters.";
-            }
+            return $"{what} may not contain control characters.";
         }
 
-        return open < 0 ? null : $"{what} has a '{{' with no matching '}}'.";
+        var index = 0;
+
+        while (index < template.Length)
+        {
+            var open = template.IndexOf('{', index);
+            var stray = template.IndexOf('}', index);
+
+            // Nothing left but literal text.
+            if (open < 0 && stray < 0) return null;
+
+            // A closing brace before the next opening one, or with no opening one at all.
+            if (stray >= 0 && (open < 0 || stray < open))
+            {
+                return $"{what} has a '}}' with no matching '{{'.";
+            }
+
+            var close = template.IndexOf('}', open + 1);
+            if (close < 0) return $"{what} has a '{{' with no matching '}}'.";
+
+            var name = template[(open + 1)..close];
+
+            if (name.Contains('{', StringComparison.Ordinal))
+            {
+                return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
+            }
+
+            if (ValidateName(name, what) is { } error) return error;
+
+            index = close + 1;
+        }
+
+        return null;
     }
 
     private static string? ValidateName(string name, string what)

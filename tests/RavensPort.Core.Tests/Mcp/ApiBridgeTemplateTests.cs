@@ -86,8 +86,8 @@ public class ApiBridgeTemplateTests
         }
     }
 
-    private static IReadOnlyCollection<McpApiBridgeRequest> Requests(McpApiBridgeTool tool) =>
-        tool.HasVariants ? tool.Variants.Values : [tool.Request!];
+    private static McpApiBridgeRequest[] Requests(McpApiBridgeTool tool) =>
+        tool.HasVariants ? [.. tool.Variants.Values] : [tool.Request!];
 
     /// <summary>
     /// Found by walking up from the test assembly rather than by a relative path from the working
