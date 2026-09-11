@@ -52,14 +52,7 @@ public static class McpApiBridgePlaceholders
             var close = template.IndexOf('}', open + 1);
             if (close < 0) return $"{what} has a '{{' with no matching '}}'.";
 
-            var name = template[(open + 1)..close];
-
-            if (name.Contains('{', StringComparison.Ordinal))
-            {
-                return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
-            }
-
-            if (ValidateName(name, what) is { } error) return error;
+            if (ValidateName(template[(open + 1)..close], what) is { } error) return error;
 
             index = close + 1;
         }
@@ -72,6 +65,14 @@ public static class McpApiBridgePlaceholders
         if (name.Length == 0)
         {
             return $"{what} has an empty placeholder '{{}}'. Name the argument it stands for.";
+        }
+
+        // Named separately from the charset rule below, which would also reject it: "you cannot
+        // nest these" is a different mistake from "that character is not allowed in a name", and
+        // the author needs to know which one they made.
+        if (name.Contains('{', StringComparison.Ordinal))
+        {
+            return $"{what} has a '{{' inside a placeholder. Placeholders may not nest.";
         }
 
         return IsValidName(name)
