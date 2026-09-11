@@ -208,7 +208,7 @@ public class McpApiBridgeEndToEndTests : IAsyncLifetime
         await client.CallToolAsync("list_by_state", new Dictionary<string, object?> { ["state"] = "archived" });
         Assert.Equal("/archive/tasks", _upstream.Single().Path);
 
-        _upstream.Received.Clear();
+        _upstream.Clear();
 
         await client.CallToolAsync("list_by_state", new Dictionary<string, object?> { ["state"] = "open" });
         var request = _upstream.Single();
