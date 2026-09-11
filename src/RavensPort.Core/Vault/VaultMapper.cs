@@ -246,6 +246,22 @@ public static class VaultMapper
             JsonSerializer.Serialize(document.Store, VaultRedaction.FullOptions),
             VaultRedaction.FullOptions) ?? new ConfigStore();
 
+        RestoreCredentials(store, document, secrets, report);
+        RestoreKeys(store, secrets);
+        RestoreApiBridges(store, document, secrets, report);
+
+        return store;
+    }
+
+    /// <summary>
+    /// Merges each credential's secret back, and drops the ones whose item has been deleted.
+    /// </summary>
+    private static void RestoreCredentials(
+        ConfigStore store,
+        VaultDocument document,
+        IReadOnlyDictionary<(VaultItemRole Role, Guid Id), VaultItemContents> secrets,
+        VaultLoadReport report)
+    {
         var abandoned = new List<CredentialRecord>();
 
         foreach (var credential in store.Credentials)
@@ -266,94 +282,126 @@ public static class VaultMapper
 
         foreach (var credential in abandoned)
         {
-            store.Credentials.Remove(credential);
-
-            // A route left pointing at it would look configured and forward nothing, which is the
-            // same silent failure one layer down.
-            var strandedRoutes = store.Routes
-                .Where(route => route.Credentials.RemoveAll(c => c.CredentialId == credential.Id) > 0)
-                .Select(route => route.PathPrefix)
-                .ToList();
-
-            var affected = strandedRoutes.Count == 0
-                ? ""
-                : $" {strandedRoutes.Count} route(s) now forward unauthenticated: {string.Join(", ", strandedRoutes)}.";
-
-            report.Removals.Add(
-                $"Credential '{credential.Name}' was removed: the vault item holding its secret is gone.{affected}");
+            DropCredential(store, credential, report);
         }
+    }
 
+    private static void DropCredential(ConfigStore store, CredentialRecord credential, VaultLoadReport report)
+    {
+        store.Credentials.Remove(credential);
+
+        // A route left pointing at it would look configured and forward nothing, which is the
+        // same silent failure one layer down.
+        var strandedRoutes = store.Routes
+            .Where(route => route.Credentials.RemoveAll(c => c.CredentialId == credential.Id) > 0)
+            .Select(route => route.PathPrefix)
+            .ToList();
+
+        var affected = strandedRoutes.Count == 0
+            ? ""
+            : $" {strandedRoutes.Count} route(s) now forward unauthenticated: {string.Join(", ", strandedRoutes)}.";
+
+        report.Removals.Add(
+            $"Credential '{credential.Name}' was removed: the vault item holding its secret is gone.{affected}");
+    }
+
+    /// <summary>
+    /// Puts every per-endpoint key back. A key whose item is missing is left empty rather than
+    /// treated as a ghost: ConfigStoreCache issues a fresh one on load, which is a working
+    /// endpoint with a new secret rather than a deleted one.
+    /// </summary>
+    private static void RestoreKeys(
+        ConfigStore store,
+        IReadOnlyDictionary<(VaultItemRole Role, Guid Id), VaultItemContents> secrets)
+    {
         foreach (var route in store.Routes)
         {
-            if (secrets.TryGetValue((VaultItemRole.RouteKey, route.Id), out var item))
-            {
-                route.Key.Value = item.Field(VaultFields.Password) ?? "";
-            }
+            ApplyKey(route.Key, VaultItemRole.RouteKey, route.Id, secrets);
         }
 
         foreach (var funnel in store.McpFunnels)
         {
-            if (secrets.TryGetValue((VaultItemRole.FunnelKey, funnel.Id), out var item))
-            {
-                funnel.Key.Value = item.Field(VaultFields.Password) ?? "";
-            }
+            ApplyKey(funnel.Key, VaultItemRole.FunnelKey, funnel.Id, secrets);
         }
-
-        var orphanedBridges = new List<McpApiBridgeRecord>();
 
         foreach (var bridge in store.McpApiBridges)
         {
-            if (secrets.TryGetValue((VaultItemRole.ApiBridgeKey, bridge.Id), out var item))
-            {
-                bridge.Key.Value = item.Field(VaultFields.Password) ?? "";
-            }
+            ApplyKey(bridge.Key, VaultItemRole.ApiBridgeKey, bridge.Id, secrets);
+        }
+    }
 
-            if (secrets.TryGetValue((VaultItemRole.ApiBridgeManifest, bridge.Id), out var manifestItem))
+    private static void ApplyKey(
+        ProxyKey key,
+        VaultItemRole role,
+        Guid recordId,
+        IReadOnlyDictionary<(VaultItemRole Role, Guid Id), VaultItemContents> secrets)
+    {
+        if (secrets.TryGetValue((role, recordId), out var item))
+        {
+            key.Value = item.Field(VaultFields.Password) ?? "";
+        }
+    }
+
+    /// <summary>
+    /// Merges each bridge's manifest back, and drops the bridges whose manifest item has been
+    /// deleted — the same rule a credential follows, for the same reason: the vault is the only
+    /// copy, and a bridge with no tools left to serve would raise the same ghost on every launch.
+    /// </summary>
+    private static void RestoreApiBridges(
+        ConfigStore store,
+        VaultDocument document,
+        IReadOnlyDictionary<(VaultItemRole Role, Guid Id), VaultItemContents> secrets,
+        VaultLoadReport report)
+    {
+        var orphaned = new List<McpApiBridgeRecord>();
+
+        foreach (var bridge in store.McpApiBridges)
+        {
+            if (secrets.TryGetValue((VaultItemRole.ApiBridgeManifest, bridge.Id), out var item))
             {
-                bridge.Manifest = ParseManifest(manifestItem.Field(VaultFields.NoteContent));
+                bridge.Manifest = ParseManifest(item.Field(VaultFields.NoteContent));
                 continue;
             }
 
-            // Same rule as a credential's: the index is written only after an item has actually
-            // been created, so an entry pointing at nothing means that item was deleted in the
-            // password manager. A bridge whose manifest is gone has no tools to serve, and keeping
-            // it would raise the same ghost on every launch.
             if (document.Index.Find(VaultItemRole.ApiBridgeManifest, bridge.Id) is not null)
             {
-                orphanedBridges.Add(bridge);
+                orphaned.Add(bridge);
             }
         }
 
-        foreach (var bridge in orphanedBridges)
+        foreach (var bridge in orphaned)
         {
-            store.McpApiBridges.Remove(bridge);
+            DropApiBridge(store, bridge, report);
+        }
+    }
 
-            // A funnel source left pointing at it would fail on every connect, with nothing in the
-            // UI able to explain why.
-            var stranded = store.McpSources
-                .Where(source => source.Kind == McpSourceKind.ApiBridge && source.BridgeId == bridge.Id)
-                .Select(source => source.Id)
-                .ToList();
+    private static void DropApiBridge(ConfigStore store, McpApiBridgeRecord bridge, VaultLoadReport report)
+    {
+        store.McpApiBridges.Remove(bridge);
 
-            foreach (var sourceId in stranded)
+        // A funnel source left pointing at it would fail on every connect, with nothing in the UI
+        // able to explain why.
+        var stranded = store.McpSources
+            .Where(source => source.Kind == McpSourceKind.ApiBridge && source.BridgeId == bridge.Id)
+            .Select(source => source.Id)
+            .ToList();
+
+        foreach (var sourceId in stranded)
+        {
+            store.McpSources.RemoveAll(source => source.Id == sourceId);
+
+            foreach (var funnel in store.McpFunnels)
             {
-                store.McpSources.RemoveAll(source => source.Id == sourceId);
-
-                foreach (var funnel in store.McpFunnels)
-                {
-                    funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
-                }
+                funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
             }
-
-            var affected = stranded.Count == 0
-                ? ""
-                : $" {stranded.Count} funnel source(s) that exposed it were removed as well.";
-
-            report.Removals.Add(
-                $"API bridge '{bridge.Name}' was removed: the vault item holding its manifest is gone.{affected}");
         }
 
-        return store;
+        var affected = stranded.Count == 0
+            ? ""
+            : $" {stranded.Count} funnel source(s) that exposed it were removed as well.";
+
+        report.Removals.Add(
+            $"API bridge '{bridge.Name}' was removed: the vault item holding its manifest is gone.{affected}");
     }
 
     /// <summary>

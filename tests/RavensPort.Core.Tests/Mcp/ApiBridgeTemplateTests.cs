@@ -86,7 +86,7 @@ public class ApiBridgeTemplateTests
         }
     }
 
-    private static IEnumerable<McpApiBridgeRequest> Requests(McpApiBridgeTool tool) =>
+    private static IReadOnlyCollection<McpApiBridgeRequest> Requests(McpApiBridgeTool tool) =>
         tool.HasVariants ? tool.Variants.Values : [tool.Request!];
 
     /// <summary>

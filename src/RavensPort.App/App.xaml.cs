@@ -201,6 +201,9 @@ public partial class App : Application
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
         builder.Services.AddSingleton<ApiBridgeViewModel>();
+
+        // The tabs as one dependency: everything that rebuilds them rebuilds all of them.
+        builder.Services.AddSingleton<AppTabs>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<TrayIconManager>();
@@ -252,10 +255,7 @@ public partial class App : Application
         // be rebuilt — their rows hold references to records that are no longer in the store.
         settingsViewModel.RecordsDropped += () =>
         {
-            _webApp.Services.GetRequiredService<CredentialsViewModel>().Reload();
-            _webApp.Services.GetRequiredService<RoutesViewModel>().Reload();
-            _webApp.Services.GetRequiredService<McpFunnelViewModel>().Reload();
-            _webApp.Services.GetRequiredService<ApiBridgeViewModel>().Reload();
+            _webApp.Services.GetRequiredService<AppTabs>().ReloadAll();
         };
 
         // Every tab rebuilt from the emptied store, so a disconnect leaves no row belonging to the

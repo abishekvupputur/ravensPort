@@ -45,15 +45,17 @@ public static class McpApiBridgeRequestBuilder
             ? new Dictionary<string, JsonElement>()
             : arguments.AsReadOnly();
 
+        // Branching on the request rather than on the error, so the compiler can see it is not
+        // null below: SelectRequest never returns both empty.
         var (request, selectorError) = SelectRequest(tool, supplied);
-        if (selectorError is not null) return (null, selectorError);
+        if (request is null) return (null, selectorError ?? "This tool has no request to make.");
 
         // The selector named a variant; it is a routing decision, not a parameter, so it does not
         // travel on to the upstream.
         var consumed = new HashSet<string>(StringComparer.Ordinal);
         if (tool.HasVariants && tool.VariantBy is { } selector) consumed.Add(selector);
 
-        var (path, pathError) = ExpandPath(request!.Path, supplied, consumed);
+        var (path, pathError) = ExpandPath(request.Path, supplied, consumed);
         if (pathError is not null) return (null, pathError);
 
         var (query, queryError) = ExpandQuery(request.Query, supplied, consumed);
@@ -278,38 +280,10 @@ public static class McpApiBridgeRequestBuilder
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                writer.WriteStartObject();
-
-                foreach (var property in element.EnumerateObject())
-                {
-                    if (IsOmitted(property.Value, arguments)) continue;
-
-                    writer.WritePropertyName(property.Name);
-
-                    if (WriteTemplate(property.Value, arguments, consumed, writer) is { } error) return error;
-                }
-
-                writer.WriteEndObject();
-                return null;
+                return WriteObject(element, arguments, consumed, writer);
 
             case JsonValueKind.Array:
-                writer.WriteStartArray();
-
-                foreach (var item in element.EnumerateArray())
-                {
-                    // An omitted element would shift every index after it, so inside an array a
-                    // missing argument is written as null rather than dropped.
-                    if (IsOmitted(item, arguments))
-                    {
-                        writer.WriteNullValue();
-                        continue;
-                    }
-
-                    if (WriteTemplate(item, arguments, consumed, writer) is { } error) return error;
-                }
-
-                writer.WriteEndArray();
-                return null;
+                return WriteArray(element, arguments, consumed, writer);
 
             case JsonValueKind.String:
                 return WriteString(element.GetString() ?? "", arguments, consumed, writer);
@@ -318,6 +292,52 @@ public static class McpApiBridgeRequestBuilder
                 element.WriteTo(writer);
                 return null;
         }
+    }
+
+    private static string? WriteObject(
+        JsonElement element,
+        IReadOnlyDictionary<string, JsonElement> arguments,
+        HashSet<string> consumed,
+        Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (IsOmitted(property.Value, arguments)) continue;
+
+            writer.WritePropertyName(property.Name);
+
+            if (WriteTemplate(property.Value, arguments, consumed, writer) is { } error) return error;
+        }
+
+        writer.WriteEndObject();
+        return null;
+    }
+
+    private static string? WriteArray(
+        JsonElement element,
+        IReadOnlyDictionary<string, JsonElement> arguments,
+        HashSet<string> consumed,
+        Utf8JsonWriter writer)
+    {
+        writer.WriteStartArray();
+
+        foreach (var item in element.EnumerateArray())
+        {
+            // An omitted element would shift every index after it, so inside an array a missing
+            // argument is written as null rather than dropped.
+            if (IsOmitted(item, arguments))
+            {
+                writer.WriteNullValue();
+                continue;
+            }
+
+            if (WriteTemplate(item, arguments, consumed, writer) is { } error) return error;
+        }
+
+        writer.WriteEndArray();
+        return null;
     }
 
     private static string? WriteString(

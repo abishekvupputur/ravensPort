@@ -89,6 +89,9 @@ public class McpApiBridgeEndToEndTests : IAsyncLifetime
         }
         """;
 
+    /// <summary>A list-valued argument, so the body template has a whole JSON value to carry.</summary>
+    private static readonly string[] Tags = ["a", "b"];
+
     private FakeRestApi _upstream = null!;
     private FunnelTestHost _host = null!;
     private McpApiBridgeRecord _bridge = null!;
@@ -228,7 +231,7 @@ public class McpApiBridgeEndToEndTests : IAsyncLifetime
         await client.CallToolAsync("create_task", new Dictionary<string, object?>
         {
             ["title"] = "write it down",
-            ["tags"] = new[] { "a", "b" },
+            ["tags"] = Tags,
         });
 
         var request = _upstream.Single();
