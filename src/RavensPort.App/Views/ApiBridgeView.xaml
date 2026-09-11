@@ -254,15 +254,29 @@ An agent choosing between one tool's three values does better than the same agen
                     </StackPanel>
                 </Border>
 
-                <!-- Details for a new bridge. Hidden while an existing manifest is being replaced,
-                     where none of them apply. -->
+                <!-- One card, two jobs: adding a bridge, and replacing an existing one's manifest.
+                     The details below only apply to a new bridge, so pressing Edit on a row hides
+                     them — and the heading has to say so. It used to read "Add bridge" either way,
+                     which made Edit look like it had taken the ability to add one away. -->
                 <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="Add bridge" Style="{StaticResource SectionHeaderStyle}"/>
+                        <TextBlock Text="{Binding SaveSectionTitle}" Style="{StaticResource SectionHeaderStyle}"/>
 
                         <TextBlock Style="{StaticResource EmptyStateStyle}"
                                    Text="No routes yet — add one on the Routes tab first. A bridge calls through a route, and that route's credential is what its tools spend."
                                    Visibility="{Binding HasNoRoutes, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                        <!-- The way back to adding, offered where the fields used to be. Whoever
+                             came here looking for "add" and found an edit in progress should be
+                             able to leave from where they are standing. -->
+                        <StackPanel Visibility="{Binding IsEditingExisting, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                                       Text="Saving replaces this bridge's tool definitions. Its name, endpoint, route, and proxy key stay exactly as they are, and agents see the new tools on their next call."/>
+                            <Button Content="Add a different bridge instead" HorizontalAlignment="Left" MinWidth="200"
+                                    Margin="0,0,0,10" Style="{StaticResource GhostButtonStyle}"
+                                    Command="{Binding CancelEditCommand}"
+                                    ToolTip="Stops editing and empties the editor, without changing this bridge"/>
+                        </StackPanel>
 
                         <StackPanel Visibility="{Binding IsEditingExisting, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                             <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">

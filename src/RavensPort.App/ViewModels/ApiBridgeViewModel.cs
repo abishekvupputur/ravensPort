@@ -67,7 +67,16 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
     public bool IsEditingExisting => EditingBridge is not null;
 
-    public string SaveButtonLabel => EditingBridge is null ? "Add bridge" : $"Replace '{EditingBridge.Name}' manifest";
+    public string SaveButtonLabel => EditingBridge is null ? "Add bridge" : "Replace the manifest";
+
+    /// <summary>
+    /// Heading of the card at the bottom of the tab, which does two jobs. It said "Add bridge"
+    /// even while editing an existing one, with its fields hidden — so pressing Edit looked like
+    /// the way to add a bridge had simply disappeared.
+    /// </summary>
+    public string SaveSectionTitle => EditingBridge is null
+        ? "Add bridge"
+        : $"Replace the manifest of '{EditingBridge.Name}'";
 
     public ApiBridgeViewModel(
         ConfigStoreCache configStoreCache,
@@ -131,6 +140,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsEditingExisting));
         OnPropertyChanged(nameof(SaveButtonLabel));
+        OnPropertyChanged(nameof(SaveSectionTitle));
     }
 
     partial void OnManifestJsonChanged(string value) => ValidateManifest();
@@ -302,13 +312,24 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         StatusMessage = $"Editing the manifest of '{item.Name}'. Saving replaces it.";
     }
 
+    /// <summary>
+    /// Leaves edit mode and clears the editor, which is also how someone gets back to adding a
+    /// bridge after pressing Edit on one. Offered from both cards for that reason: whoever went
+    /// looking for "add" and found an edit in progress should be able to leave from where they
+    /// are standing.
+    /// </summary>
     [RelayCommand]
     private void CancelEdit()
     {
+        var wasEditing = EditingBridge?.Name;
+
         EditingBridge = null;
         ManifestJson = "";
         NewBridgeManifestOrigin = "pasted";
-        StatusMessage = "Edit cancelled.";
+
+        StatusMessage = wasEditing is null
+            ? "Editor cleared."
+            : $"Stopped editing '{wasEditing}' — the manifest is unchanged. You can add a new bridge now.";
     }
 
     // ---- bridges --------------------------------------------------------------------------------
