@@ -62,6 +62,13 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     /// <summary>Set while an existing bridge's manifest is being replaced rather than a new one added.</summary>
     [ObservableProperty] private ApiBridgeItemViewModel? _editingBridge;
 
+    /// <summary>
+    /// The row whose key is on screen. One at a time, like the funnel tab: a card per bridge meant
+    /// every proxy key in the configuration was sitting in the window at once, which is a poor
+    /// thing to have open on a shared screen and a long scroll besides.
+    /// </summary>
+    [ObservableProperty] private ApiBridgeItemViewModel? _selectedBridge;
+
     [ObservableProperty] private string _manifestStatus = "Paste a manifest, import one, or load the sample.";
     [ObservableProperty] private bool _manifestIsValid;
 
@@ -78,6 +85,12 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     public bool HasNoRoutes => Routes.Count == 0;
 
     public bool IsEditingExisting => EditingBridge is not null;
+
+    public bool HasSelectedBridge => SelectedBridge is not null;
+
+    public string SelectedBridgeTitle => SelectedBridge is null
+        ? ""
+        : $"Proxy key for '{SelectedBridge.Name}'";
 
     public string SaveButtonLabel => EditingBridge is null ? "Add bridge" : "Replace the manifest";
 
@@ -123,6 +136,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     {
         var store = _configStoreCache.Current;
         var selectedRouteId = NewBridgeRoute?.Id;
+        var selectedBridgeId = SelectedBridge?.Bridge.Id;
 
         IsEnabled = store.Settings.McpApiBridgeEnabled;
 
@@ -146,6 +160,16 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         }
 
         NewBridgeRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);
+
+        // Reload rebuilds every row, so the selection has to be re-found by id or opening the tab
+        // would silently collapse the card the user was reading.
+        SelectedBridge = Bridges.FirstOrDefault(b => b.Bridge.Id == selectedBridgeId);
+    }
+
+    partial void OnSelectedBridgeChanged(ApiBridgeItemViewModel? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedBridge));
+        OnPropertyChanged(nameof(SelectedBridgeTitle));
     }
 
     partial void OnEditingBridgeChanged(ApiBridgeItemViewModel? value)
@@ -468,6 +492,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         await InvalidateSourcesForAsync(item.Bridge.Id);
 
         if (EditingBridge?.Bridge.Id == item.Bridge.Id) EditingBridge = null;
+        if (SelectedBridge?.Bridge.Id == item.Bridge.Id) SelectedBridge = null;
 
         Reload();
     }
