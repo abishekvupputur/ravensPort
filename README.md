@@ -487,6 +487,8 @@ worth offering to an agent and what to call them.
 Point an agent straight at a bridge, or add it as a source on the **MCP Funnel** tab and pool it
 with everything else.
 
+[![API to MCP tab](media/apiMcpBridgeScreen.png)](media/apiMcpBridgeScreen.png)
+
 ### 1. Pick a route and write a manifest
 
 On the **API to MCP** tab, press **Load sample** for a worked example using every part of the
