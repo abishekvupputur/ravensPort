@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
+using RavensPort.UI.Services;
 
 namespace RavensPort.UI.ViewModels;
 
@@ -19,7 +20,8 @@ public sealed partial class ApiBridgeItemViewModel : ObservableObject
         int listenPort,
         Action<ApiBridgeItemViewModel, string> onChanged,
         Action<string> onStatus,
-        bool isMtls)
+        bool isMtls,
+        IClipboardService clipboard)
     {
         Bridge = bridge;
         Route = route;
@@ -37,7 +39,8 @@ public sealed partial class ApiBridgeItemViewModel : ObservableObject
             bridge.Key,
             $"API bridge '{bridge.Name}'",
             message => _onChanged(this, message),
-            onStatus);
+            onStatus,
+            clipboard);
 
         Key.PropertyChanged += (_, args) =>
         {
