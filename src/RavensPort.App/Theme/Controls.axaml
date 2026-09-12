@@ -351,6 +351,14 @@
         <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
     </Style>
 
+    <!-- The inverse of .expired, for a line that is red by default and turns quiet when whatever
+         it is reporting comes good — the manifest editor's status, which is an error message far
+         more often than it is a confirmation. Same reason the class carries the binding: a selector
+         matches classes, never an arbitrary condition. -->
+    <Style Selector="TextBlock.ok">
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+    </Style>
+
     <!-- The same idea for a hint that has become the only warning there is: the mTLS certificate
          close to, or past, its expiry. Weighted as well as coloured, because it sits in a paragraph
          of muted text that the eye otherwise skips. -->
