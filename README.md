@@ -70,18 +70,20 @@ into filtered, per-agent MCP endpoints.
 
 MCP servers are increasingly behind OAuth2, but most MCP clients expect a bare HTTP endpoint with
 no auth story. And once you have three servers connected, your agent sees *all* of their tools —
-ninety of them — with no way to say "this agent gets these six."
+ninety of them — with no way to say "this agent gets these six." Meanwhile the system you actually
+wanted the agent to reach has no MCP server at all, just the REST API it has always had.
 
-RavensPort solves both halves:
+RavensPort covers all three:
 
 | | |
 |---|---|
 | **Routes** | Attach a live OAuth token to every request forwarded to an upstream. Your client never handles auth. |
 | **Funnels** | Pool several MCP servers behind one local endpoint and expose only the tools, resources, and prompts you pick. |
+| **API bridges** | Turn an API you already proxy into an MCP endpoint of your own, from a JSON manifest naming the operations worth offering. Calls go out through the route, so the credential is attached exactly as for any other request. |
 
 The result: point each agent at `http://127.0.0.1:5559/mcp/<name>` and it sees exactly the
-toolset you granted it, drawn from as many upstreams as you like — including ones it could never
-reach on its own.
+toolset you granted it, drawn from as many upstreams as you like — MCP servers, APIs that never
+spoke MCP, and plenty it could never reach on its own.
 
 ## Features
 
