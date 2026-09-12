@@ -7,6 +7,7 @@ using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
+using RavensPort.UI.Services;
 
 namespace RavensPort.UI.ViewModels;
 
@@ -37,6 +38,9 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     private readonly McpSourceConnectionPool _connectionPool;
     private readonly ActivityLog _activityLog;
     private readonly KestrelMtlsState _mtlsState;
+    private readonly IClipboardService _clipboard;
+    private readonly IFileOpenPicker _fileOpenPicker;
+    private readonly IFileSavePicker _fileSavePicker;
 
     public ObservableCollection<ApiBridgeItemViewModel> Bridges { get; } = [];
     public ObservableCollection<RouteMapping> Routes { get; } = [];
@@ -107,12 +111,18 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         ConfigStoreCache configStoreCache,
         McpSourceConnectionPool connectionPool,
         ActivityLog activityLog,
-        KestrelMtlsState mtlsState)
+        KestrelMtlsState mtlsState,
+        IClipboardService clipboard,
+        IFileOpenPicker fileOpenPicker,
+        IFileSavePicker fileSavePicker)
     {
         _configStoreCache = configStoreCache;
         _connectionPool = connectionPool;
         _activityLog = activityLog;
         _mtlsState = mtlsState;
+        _clipboard = clipboard;
+        _fileOpenPicker = fileOpenPicker;
+        _fileSavePicker = fileSavePicker;
 
         Bridges.CollectionChanged += (_, _) =>
         {
@@ -156,7 +166,8 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
                 store.Settings.ListenPort,
                 OnBridgeEdited,
                 message => StatusMessage = message,
-                isMtls));
+                isMtls,
+                _clipboard));
         }
 
         NewBridgeRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);
@@ -267,25 +278,19 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     /// store.
     /// </summary>
     [RelayCommand]
-    private void ImportManifest()
+    private async Task ImportManifestAsync()
     {
-        // Qualified: WinForms is enabled in this project and ships an OpenFileDialog of its own,
-        // so the bare name does not compile. This is the WPF one.
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Import an API to MCP manifest",
-            DefaultExt = ".json",
-            Filter = "Manifest (*.json)|*.json|All files (*.*)|*.*",
-            CheckFileExists = true,
-        };
-
-        if (dialog.ShowDialog() != true) return;
-
         try
         {
-            ManifestJson = File.ReadAllText(dialog.FileName);
-            NewBridgeManifestOrigin = Path.GetFileName(dialog.FileName);
-            StatusMessage = $"Loaded {NewBridgeManifestOrigin} into the editor.";
+            if (await _fileOpenPicker.PickFileAsync("Import an API to MCP manifest", "json", "Manifest")
+                is not { } picked)
+            {
+                return;
+            }
+
+            ManifestJson = picked.Text;
+            NewBridgeManifestOrigin = picked.Name;
+            StatusMessage = $"Loaded {picked.Name} into the editor.";
         }
         catch (Exception ex)
         {
@@ -309,24 +314,20 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     /// loads, so what is documented and what validates cannot come apart.
     /// </summary>
     [RelayCommand]
-    private void SaveSample()
+    private async Task SaveSampleAsync()
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "Save the sample manifest",
-            FileName = McpApiBridgeSample.FileName,
-            DefaultExt = ".json",
-            AddExtension = true,
-            Filter = "Manifest (*.json)|*.json|All files (*.*)|*.*",
-            OverwritePrompt = true,
-        };
+        var path = await _fileSavePicker.PickSavePathAsync(
+            "Save the sample manifest",
+            McpApiBridgeSample.FileName,
+            "json",
+            "Manifest");
 
-        if (dialog.ShowDialog() != true) return;
+        if (path is null) return;
 
         try
         {
-            File.WriteAllText(dialog.FileName, McpApiBridgeSample.Read());
-            StatusMessage = $"Sample manifest saved to {dialog.FileName}.";
+            await File.WriteAllTextAsync(path, McpApiBridgeSample.Read());
+            StatusMessage = $"Sample manifest saved to {path}.";
         }
         catch (Exception ex)
         {

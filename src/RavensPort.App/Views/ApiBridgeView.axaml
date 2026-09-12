@@ -1,11 +1,11 @@
-﻿<UserControl x:Class="RavensPort.App.Views.ApiBridgeView"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:helpers="clr-namespace:RavensPort.App.Helpers"
-             xmlns:sys="clr-namespace:System;assembly=mscorlib"
-             mc:Ignorable="d" d:DesignWidth="720"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             xmlns:behaviors="using:RavensPort.Behaviors"
+             xmlns:sys="using:System"
+             x:Class="RavensPort.Views.ApiBridgeView"
+             x:DataType="vm:ApiBridgeViewModel"
              Background="{StaticResource BgBrush}">
     <UserControl.Resources>
         <sys:String x:Key="BridgeHelpText">A bridge turns one API you already proxy into an MCP endpoint an agent can drive.
@@ -32,50 +32,48 @@ The tool declares "variantBy" naming an argument, and "variants" keyed by the va
 An agent choosing between one tool's three values does better than the same agent choosing between three tools whose descriptions differ by a word.</sys:String>
     </UserControl.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
+    <Grid RowDefinitions="*,Auto">
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                      helpers:SmoothScroll.Enable="True" Padding="0,0,4,0">
+                      Padding="0,0,4,0">
             <StackPanel Margin="16">
 
                 <Grid Margin="0,0,0,6">
-                    <TextBlock Text="API to MCP" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center"/>
+                    <TextBlock Text="API to MCP" Classes="section" VerticalAlignment="Center"/>
                     <Button Content="Refresh" HorizontalAlignment="Right" Width="90"
-                            Style="{StaticResource GhostButtonStyle}" Command="{Binding RefreshCommand}"
-                            ToolTip="Re-read bridges and routes from storage"/>
+                            Classes="ghost" Command="{Binding RefreshCommand}"
+                            AutomationProperties.AutomationId="bridges.refresh"
+                            ToolTip.Tip="Re-read bridges and routes from storage"/>
                 </Grid>
 
                 <CheckBox Content="Enable API bridges" IsChecked="{Binding IsEnabled}"
-                          ToolTip="{StaticResource BridgeHelpText}" Margin="0,0,0,4"/>
-                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,16"
+                          AutomationProperties.AutomationId="bridges.enabled"
+                          ToolTip.Tip="{StaticResource BridgeHelpText}" Margin="0,0,0,4"/>
+                <TextBlock Classes="hint" Margin="0,0,0,16"
                            Text="Off by default, and separate from the MCP funnel switch. A bridge turns one of your routes into a tool surface an agent can drive, which is a different grant from pooling MCP servers."/>
 
                 <!-- Bridges first: the endpoints are the point, the manifest is the ingredient. -->
-                <TextBlock Text="Bridges" Style="{StaticResource SectionHeaderStyle}"/>
+                <TextBlock Text="Bridges" Classes="section"/>
 
-                <TextBlock Style="{StaticResource EmptyStateStyle}"
+                <TextBlock Classes="empty"
                            Text="No bridges yet — pick a route below, load the sample manifest, and edit it for that API."
-                           Visibility="{Binding HasNoBridges, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                           IsVisible="{Binding HasNoBridges}"/>
 
-                <StackPanel Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Style="{StaticResource HintTextStyle}"
+                <StackPanel IsVisible="{Binding HasBridges}">
+                    <TextBlock Classes="hint"
                                Text="Each bridge has its own proxy key — only that key opens it, and the key of the route it calls does not. Send it as the X-Proxy-Key header. An agent handed this key reaches the operations in the manifest and nothing else that route serves."/>
-                    <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,6"
+                    <TextBlock Classes="hint" Margin="0,0,0,6"
                                Text="Select a bridge to show its key and the entry to paste into a client. Click it again to hide them."/>
                 </StackPanel>
 
                 <DataGrid ItemsSource="{Binding Bridges}" SelectedItem="{Binding SelectedBridge}"
+                          AutomationProperties.AutomationId="bridges.grid"
                           AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
-                          helpers:RowSelectionToggle.Enable="True"
-                          Visibility="{Binding HasBridges, Converter={StaticResource BoolToVisibilityConverter}}">
+                          behaviors:RowSelectionToggle.Enable="True"
+                          IsVisible="{Binding HasBridges}">
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="240">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <!-- Read-only TextBox rather than a TextBlock so it can be
                                              selected and pasted into an agent's config. -->
@@ -92,12 +90,12 @@ An agent choosing between one tool's three values does better than the same agen
 
                         <DataGridTemplateColumn Header="ROUTE" Width="130">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="{Binding RouteLabel}" FontSize="11" TextWrapping="Wrap"/>
                                         <TextBlock Text="⚠ tool calls will fail until a route is set" FontSize="10"
                                                    Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
-                                                   Visibility="{Binding IsBroken, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                   IsVisible="{Binding IsBroken}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -105,7 +103,7 @@ An agent choosing between one tool's three values does better than the same agen
 
                         <DataGridTemplateColumn Header="MANIFEST" Width="170">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="{Binding ManifestSummary}" FontSize="11" TextWrapping="Wrap"/>
                                         <TextBlock Text="{Binding Origin}" FontSize="10"
@@ -118,50 +116,38 @@ An agent choosing between one tool's three values does better than the same agen
 
                         <DataGridTemplateColumn Header="PROXY KEY" Width="140">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <StackPanel VerticalAlignment="Center" ToolTip="{StaticResource ProxyKeyHelpText}">
-                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Key.IsExpired}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
+                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
+                                                   Classes.expired="{Binding Key.IsExpired}"/>
                                         <TextBlock Text="⚠ expired — this bridge answers 403" FontSize="10" TextWrapping="Wrap"
                                                    Foreground="{StaticResource ErrorBrush}"
-                                                   Visibility="{Binding Key.IsExpired, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                   IsVisible="{Binding Key.IsExpired}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Width="70">
-                            <DataGridTemplateColumn.Header>
-                                <TextBlock Text="ENABLED" ToolTip="Uncheck to stop serving this endpoint without deleting it."/>
-                            </DataGridTemplateColumn.Header>
+                        <DataGridTemplateColumn Header="ENABLED" Width="70">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              ToolTip.Tip="Uncheck to stop serving this endpoint without deleting it."/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="" Width="150">
                             <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
                                     <StackPanel Orientation="Horizontal">
-                                        <Button Content="Edit" Margin="2" Style="{StaticResource GhostButtonStyle}"
-                                                Command="{Binding DataContext.EditManifestCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        <Button Content="Edit" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:ApiBridgeViewModel)DataContext).EditManifestCommand}"
                                                 CommandParameter="{Binding}"
-                                                ToolTip="Load this manifest into the editor below"/>
-                                        <Button Content="Delete" Margin="2" Style="{StaticResource GhostButtonStyle}"
-                                                Command="{Binding DataContext.DeleteBridgeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                ToolTip.Tip="Load this manifest into the editor below"/>
+                                        <Button Content="Delete" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:ApiBridgeViewModel)DataContext).DeleteBridgeCommand}"
                                                 CommandParameter="{Binding}"/>
                                     </StackPanel>
                                 </DataTemplate>
@@ -173,81 +159,75 @@ An agent choosing between one tool's three values does better than the same agen
                 <!-- The key of the selected row only. A card per bridge meant every proxy key in
                      the configuration sat on screen at once, which is poor on a shared screen and a
                      long scroll besides. Same arrangement as the MCP Funnel tab. -->
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14"
-                        Visibility="{Binding HasSelectedBridge, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasSelectedBridge}">
                     <StackPanel>
-                        <TextBlock Text="{Binding SelectedBridgeTitle}" Style="{StaticResource SectionHeaderStyle}"/>
+                        <TextBlock Text="{Binding SelectedBridgeTitle}" Classes="section"/>
 
                         <ContentControl Content="{Binding SelectedBridge.Key}"
                                         ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
 
-                        <TextBlock Text="MCP client entry" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,0"
-                                   ToolTip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
+                        <TextBlock Text="MCP client entry" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
                         <TextBox Text="{Binding SelectedBridge.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
                                  AcceptsReturn="True" TextWrapping="NoWrap"
-                                 HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                  Background="Transparent" BorderThickness="0" Padding="0"
                                  Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Style="{StaticResource HintTextStyle}"
+                        <TextBlock Classes="hint"
                                    Text="Press Show above to reveal the key inside this snippet before copying it."/>
                     </StackPanel>
                 </Border>
 
                 <!-- The manifest editor. Importing a file fills this box rather than going straight
                      into the store, so a manifest that fails validation can be fixed where it is. -->
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="Manifest" Style="{StaticResource SectionHeaderStyle}"
-                                   ToolTip="{StaticResource ManifestHelpText}"/>
+                        <TextBlock Text="Manifest" Classes="section"
+                                   ToolTip.Tip="{StaticResource ManifestHelpText}"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button Content="Load sample" Width="110" Margin="0,0,6,0"
-                                    Style="{StaticResource GhostButtonStyle}" Command="{Binding LoadSampleCommand}"
-                                    ToolTip="Fill the editor with a worked example using every part of the format"/>
+                                    Classes="ghost" Command="{Binding LoadSampleCommand}"
+                                    AutomationProperties.AutomationId="bridges.loadSample"
+                                    ToolTip.Tip="Fill the editor with a worked example using every part of the format"/>
                             <Button Content="Import file…" Width="110" Margin="0,0,6,0"
-                                    Style="{StaticResource GhostButtonStyle}" Command="{Binding ImportManifestCommand}"
-                                    ToolTip="Read a .json manifest into the editor"/>
+                                    Classes="ghost" Command="{Binding ImportManifestCommand}"
+                                    ToolTip.Tip="Read a .json manifest into the editor"/>
                             <Button Content="Save sample…" Width="110" Margin="0,0,6,0"
-                                    Style="{StaticResource GhostButtonStyle}" Command="{Binding SaveSampleCommand}"
-                                    ToolTip="Write the sample manifest to disk to edit it elsewhere"/>
+                                    Classes="ghost" Command="{Binding SaveSampleCommand}"
+                                    ToolTip.Tip="Write the sample manifest to disk to edit it elsewhere"/>
                             <Button Content="Cancel edit" Width="100"
-                                    Style="{StaticResource GhostButtonStyle}" Command="{Binding CancelEditCommand}"
-                                    Visibility="{Binding IsEditingExisting, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    Classes="ghost" Command="{Binding CancelEditCommand}"
+                                    IsVisible="{Binding IsEditingExisting}"/>
                         </StackPanel>
 
-                        <TextBox Text="{Binding ManifestJson, UpdateSourceTrigger=PropertyChanged}"
+                        <TextBox Text="{Binding ManifestJson}"
                                  AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 AutomationProperties.AutomationId="bridges.manifest"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                  MinHeight="180" MaxHeight="320"
                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                 ToolTip="{StaticResource ManifestHelpText}"/>
+                                 ToolTip.Tip="{StaticResource ManifestHelpText}"/>
 
-                        <TextBlock Text="{Binding ManifestStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ManifestIsValid}" Value="True">
-                                            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <TextBlock Text="{Binding ManifestStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"
+                                   Classes.ok="{Binding ManifestIsValid}"
+                                   Foreground="{StaticResource ErrorBrush}"/>
 
                         <!-- What this manifest would serve, before it is served. Variant tools are
                              expanded one line per variant: a single line naming the tool would
                              hide which calls it can actually make. -->
-                        <TextBlock Text="What this would serve" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,0"
-                                   ToolTip="{StaticResource VariantHelpText}"
-                                   Visibility="{Binding ManifestIsValid, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <TextBlock Text="What this would serve" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="{StaticResource VariantHelpText}"
+                                   IsVisible="{Binding ManifestIsValid}"/>
                         <ItemsControl ItemsSource="{Binding ManifestPreview}" Margin="0,2,0,0"
-                                      Visibility="{Binding ManifestIsValid, Converter={StaticResource BoolToVisibilityConverter}}">
+                                      IsVisible="{Binding ManifestIsValid}">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate>
+                                <DataTemplate x:DataType="sys:String">
                                     <TextBlock Text="{Binding}" FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                               Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -256,66 +236,66 @@ An agent choosing between one tool's three values does better than the same agen
 
                 <!-- One card, two jobs: adding a bridge, and replacing an existing one's manifest.
                      The details below only apply to a new bridge, so pressing Edit on a row hides
-                     them — and the heading has to say so. It used to read "Add bridge" either way,
-                     which made Edit look like it had taken the ability to add one away. -->
-                <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                     them — and the heading has to say so. -->
+                <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="{Binding SaveSectionTitle}" Style="{StaticResource SectionHeaderStyle}"/>
+                        <TextBlock Text="{Binding SaveSectionTitle}" Classes="section"/>
 
-                        <TextBlock Style="{StaticResource EmptyStateStyle}"
+                        <TextBlock Classes="empty"
                                    Text="No routes yet — add one on the Routes tab first. A bridge calls through a route, and that route's credential is what its tools spend."
-                                   Visibility="{Binding HasNoRoutes, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                   IsVisible="{Binding HasNoRoutes}"/>
 
-                        <!-- The way back to adding, offered where the fields used to be. Whoever
-                             came here looking for "add" and found an edit in progress should be
-                             able to leave from where they are standing. -->
-                        <StackPanel Visibility="{Binding IsEditingExisting, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                        <!-- The way back to adding, offered where the fields used to be. -->
+                        <StackPanel IsVisible="{Binding IsEditingExisting}">
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
                                        Text="Saving replaces this bridge's tool definitions. Its name, endpoint, route, and proxy key stay exactly as they are, and agents see the new tools on their next call."/>
                             <Button Content="Add a different bridge instead" HorizontalAlignment="Left" MinWidth="200"
-                                    Margin="0,0,0,10" Style="{StaticResource GhostButtonStyle}"
+                                    Margin="0,0,0,10" Classes="ghost"
                                     Command="{Binding CancelEditCommand}"
-                                    ToolTip="Stops editing and empties the editor, without changing this bridge"/>
+                                    ToolTip.Tip="Stops editing and empties the editor, without changing this bridge"/>
                         </StackPanel>
 
-                        <StackPanel Visibility="{Binding IsEditingExisting, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                            <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
-                                <StackPanel Margin="0,0,6,0">
-                                    <TextBlock Text="Name" Style="{StaticResource FieldLabelStyle}"/>
-                                    <TextBox Text="{Binding NewBridgeName, UpdateSourceTrigger=PropertyChanged}"/>
+                        <StackPanel IsVisible="{Binding !IsEditingExisting}">
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,8">
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="Name" Classes="label"/>
+                                    <TextBox Text="{Binding NewBridgeName}"
+                                             AutomationProperties.AutomationId="bridges.name"/>
                                 </StackPanel>
-                                <StackPanel Margin="6,0,0,0">
-                                    <TextBlock Text="Endpoint slug (optional)" Style="{StaticResource FieldLabelStyle}"
-                                               ToolTip="The last path segment of /api-mcp/… — derived from the name when left blank."/>
-                                    <TextBox Text="{Binding NewBridgeSlug, UpdateSourceTrigger=PropertyChanged}"/>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Endpoint slug (optional)" Classes="label"
+                                               ToolTip.Tip="The last path segment of /api-mcp/… — derived from the name when left blank."/>
+                                    <TextBox Text="{Binding NewBridgeSlug}"/>
                                 </StackPanel>
-                            </UniformGrid>
+                            </Grid>
 
-                            <UniformGrid Columns="2" Rows="1" Margin="0,0,0,8">
-                                <StackPanel Margin="0,0,6,0">
-                                    <TextBlock Text="Route" Style="{StaticResource FieldLabelStyle}"
-                                               ToolTip="{StaticResource BridgeRouteHelpText}"/>
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,8">
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="Route" Classes="label"
+                                               ToolTip.Tip="{StaticResource BridgeRouteHelpText}"/>
                                     <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewBridgeRoute}"
-                                              ToolTip="{StaticResource BridgeRouteHelpText}">
+                                              AutomationProperties.AutomationId="bridges.route"
+                                              ToolTip.Tip="{StaticResource BridgeRouteHelpText}">
                                         <ComboBox.ItemTemplate>
-                                            <DataTemplate>
+                                            <DataTemplate x:DataType="models:RouteMapping">
                                                 <TextBlock Text="{Binding PathPrefix}"/>
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
                                 </StackPanel>
-                                <StackPanel Margin="6,0,0,0">
-                                    <TextBlock Text="Key expiry" Style="{StaticResource FieldLabelStyle}"
-                                               ToolTip="{StaticResource ProxyKeyHelpText}"/>
-                                    <ComboBox ItemsSource="{Binding KeyLifetimes}" SelectedItem="{Binding NewBridgeKeyLifetime, Mode=TwoWay}"/>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Key expiry" Classes="label"
+                                               ToolTip.Tip="{StaticResource ProxyKeyHelpText}"/>
+                                    <ComboBox ItemsSource="{Binding KeyLifetimes}" SelectedItem="{Binding NewBridgeKeyLifetime}"/>
                                 </StackPanel>
-                            </UniformGrid>
+                            </Grid>
 
-                            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
                                        Text="Tool paths are relative to the route's prefix, and the route's credential is attached automatically. Never put a token in a manifest."/>
                         </StackPanel>
 
                         <Button Content="{Binding SaveButtonLabel}" HorizontalAlignment="Left" MinWidth="150"
+                                AutomationProperties.AutomationId="bridges.save"
                                 Command="{Binding SaveBridgeCommand}"/>
                     </StackPanel>
                 </Border>
@@ -324,8 +304,8 @@ An agent choosing between one tool's three values does better than the same agen
         </ScrollViewer>
 
         <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
-        <Border Grid.Row="1" Style="{StaticResource FooterBarStyle}">
-            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource FooterTextStyle}"/>
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
         </Border>
     </Grid>
 </UserControl>

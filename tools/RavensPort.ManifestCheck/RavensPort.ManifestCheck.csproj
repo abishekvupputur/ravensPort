@@ -1,7 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- TargetFramework comes from Directory.Build.props - see the note there on why it is shared. -->
+    <!--
+      The portable framework, not the Windows one: nothing here touches a Windows API, and a
+      manifest is just as likely to be written on the machine that cannot run the tray app. Each
+      project picks its own since the cross-platform work — see Directory.Build.props.
+    -->
+    <TargetFramework>$(PortableTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
