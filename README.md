@@ -477,101 +477,6 @@ route can carry any combination:
 
 ---
 
-## MCP Funnel
-
-A funnel is a local MCP endpoint at `http://127.0.0.1:5559/mcp/<slug>` that pools several MCP
-servers and exposes a subset of what they offer. Point one funnel at each agent.
-
-Off by default — enable it with **Enable MCP funnel** on the MCP Funnel tab. While off, every path
-under `/mcp` returns `404`.
-
-### 1. Add sources
-
-A **source** is one MCP server the funnel can draw from:
-
-| Kind | What it is |
-|---|---|
-| **Route (credentialed)** | An MCP server reached through one of your routes. The OAuth token is attached automatically. |
-| **URL (no auth)** | Any MCP server needing no credential. |
-
-Press **Refresh** on a source to connect and read what it offers. The status column reports the
-result, or the reason it could not be reached.
-
-### 2. Create a funnel
-
-Give it a name and an endpoint slug. The full URL appears in the grid, selectable and ready to
-paste.
-
-### 3. Choose what it exposes
-
-Select the funnel, tick the sources it pools, then per source and per kind (tools, resources,
-prompts):
-
-| Mode | Behaviour |
-|---|---|
-| **All** | Everything, including whatever the server gains later. |
-| **Include** | Only what is ticked. A tool added upstream later stays hidden until you pick it. |
-| **Exclude** | Everything except what is ticked. A tool added later is exposed immediately. |
-
-Use **Include** to grant a known set, **Exclude** to revoke a few from an otherwise trusted
-server.
-
-Edits apply on the agent's **next call** — no reconnect, no restart.
-
-### Tool naming
-
-Every name is prefixed with its source's alias: `create_issue` from a source aliased `gh` reaches
-the agent as `gh__create_issue`. Resources are rewritten to `funnel://gh/<original-uri>` and
-mapped back on read.
-
-Prefixing is unconditional by design. Prefixing only on collision would rename a tool the day you
-add an unrelated source, breaking every agent prompt that referenced it.
-
-### Pointing an agent at a funnel
-
-```jsonc
-{
-  "servers": {
-    "my-agent": {
-      "url": "http://127.0.0.1:5559/mcp/my-agent",
-      "headers": { "X-Proxy-Key": "<this-funnel's-key>" }
-    }
-  }
-}
-```
-
-Each funnel has **its own** proxy key — no route's key opens it, and no other funnel's does.
-Select the funnel to copy its key.
-
-The key must go in the `X-Proxy-Key` header. An MCP client that cannot set request headers cannot
-reach a funnel — see [The proxy key](#the-proxy-key).
-
-### Behaviour
-
-- **Endpoints are independent.** Two funnels drawing on the same upstream hold separate MCP
-  sessions, so one agent cannot perturb another and one expired session cannot take both down.
-- **Calls run in parallel**, across endpoints and within one.
-- **A dead source degrades only itself** — the healthy sources still list, and the failure is
-  shown on that source's row and in the log.
-- **Filtering is enforced on the call path**, not just the listing. A tool an agent learned before
-  you unticked it is refused, and the call never reaches the upstream.
-- **Arguments are never logged.** Tool names and outcomes are; the values an agent passes are not.
-- `/mcp` is reserved, and a request that already passed through a funnel is refused rather than
-  allowed to loop.
-
-### Limits
-
-- Sources must be HTTP MCP servers. Local **stdio** servers (`npx …`) are not supported.
-- Sampling, elicitation, and resource subscriptions are not offered on a funnel endpoint — it runs
-  stateless, which is what makes edits take effect on the next call.
-- Two agents on the *same* funnel share its upstream sessions. Give each agent its own funnel if
-  they must be isolated.
-- A route-backed source that keys sessions on a **cookie** rather than the standard
-  `Mcp-Session-Id` header cannot hold a session: `Cookie` is stripped on the way upstream,
-  deliberately, so a caller cannot launder its own credentials through the proxy.
-
----
-
 ## API to MCP <sub><sup>new in 4.6.0</sup></sub>
 
 A **bridge** turns one API you already proxy into an MCP endpoint at `/api-mcp/{slug}`, described
@@ -589,10 +494,28 @@ format, or **Save sample…** to edit one outside the app. Importing a file fill
 than saving directly, so a manifest that fails validation can be fixed where it is. The preview
 below the editor lists every call the manifest would make before you save it.
 
-Ready-made manifests and the format contract live in
-[`templates/api-mcp/`](templates/api-mcp/) — including a read-only Google Drive bridge, and
-[`AUTHORING.md`](templates/api-mcp/AUTHORING.md), which is what to hand an agent you ask to write
-one. Check anything you or it produces without opening the app:
+Ready-made manifests live in [`templates/api-mcp/`](templates/api-mcp/):
+
+| Manifest | API | Credential |
+|---|---|---|
+| `google-drive-readonly.json` | Google Drive v3, read only | OAuth, `drive.readonly` |
+| `google-routes.json` | Google Routes v2 | Maps Platform API key |
+| `google-places.json` | Google Places v1 | Maps Platform API key |
+| `google-weather.json` | Google Weather v1 | Maps Platform API key |
+| `brightsky-dwd.json` | German weather and severe warnings | none |
+| `mvg-munich.json` | Munich public transport | none |
+| `transitous.json` | Worldwide public transport | none |
+| `sample-task-tracker.json` | an invented API, every feature once | — |
+
+[`SETUP.md`](templates/api-mcp/SETUP.md) lists the route each one needs: base URL, credential, and
+where the credential goes. [`AUTHORING.md`](templates/api-mcp/AUTHORING.md) is the format contract,
+and the thing to hand an agent you ask to write a manifest.
+
+One manifest per base URL, because a bridge goes through exactly one route and a route has exactly
+one upstream — three Google APIs on three hosts are three bridges, even though one key opens all of
+them. Pool them behind a single endpoint with a funnel if an agent should see them as one server.
+
+Check anything you or an agent produces without opening the app:
 
 ```
 dotnet run --project tools/RavensPort.ManifestCheck -- my-api.json
@@ -734,6 +657,105 @@ in the load notice. The vault is the only copy.
 - No OpenAPI import. The manifest is written by hand, or generated by something else.
 - No structured output: results come back as text, since there is no schema validator here to
   honour an `outputSchema`.
+
+---
+
+## MCP Funnel
+
+A funnel is a local MCP endpoint at `http://127.0.0.1:5559/mcp/<slug>` that pools several MCP
+servers and exposes a subset of what they offer. Point one funnel at each agent.
+
+Off by default — enable it with **Enable MCP funnel** on the MCP Funnel tab. While off, every path
+under `/mcp` returns `404`.
+
+### 1. Add sources
+
+A **source** is one MCP server the funnel can draw from:
+
+| Kind | What it is |
+|---|---|
+| **Route (credentialed)** | An MCP server reached through one of your routes. The OAuth token is attached automatically. |
+| **API bridge** | One of your own [API to MCP](#api-to-mcp-new-in-460) bridges. Its tools join the funnel like any other source's, and the credential is attached one hop further along, by the route the bridge calls. |
+| **URL (no auth)** | Any MCP server needing no credential. |
+
+An API bridge source needs both switches on: the funnel's, and **Enable API bridges** on the API to
+MCP tab.
+
+Press **Refresh** on a source to connect and read what it offers. The status column reports the
+result, or the reason it could not be reached.
+
+### 2. Create a funnel
+
+Give it a name and an endpoint slug. The full URL appears in the grid, selectable and ready to
+paste.
+
+### 3. Choose what it exposes
+
+Select the funnel, tick the sources it pools, then per source and per kind (tools, resources,
+prompts):
+
+| Mode | Behaviour |
+|---|---|
+| **All** | Everything, including whatever the server gains later. |
+| **Include** | Only what is ticked. A tool added upstream later stays hidden until you pick it. |
+| **Exclude** | Everything except what is ticked. A tool added later is exposed immediately. |
+
+Use **Include** to grant a known set, **Exclude** to revoke a few from an otherwise trusted
+server.
+
+Edits apply on the agent's **next call** — no reconnect, no restart.
+
+### Tool naming
+
+Every name is prefixed with its source's alias: `create_issue` from a source aliased `gh` reaches
+the agent as `gh__create_issue`. Resources are rewritten to `funnel://gh/<original-uri>` and
+mapped back on read.
+
+Prefixing is unconditional by design. Prefixing only on collision would rename a tool the day you
+add an unrelated source, breaking every agent prompt that referenced it.
+
+### Pointing an agent at a funnel
+
+```jsonc
+{
+  "servers": {
+    "my-agent": {
+      "url": "http://127.0.0.1:5559/mcp/my-agent",
+      "headers": { "X-Proxy-Key": "<this-funnel's-key>" }
+    }
+  }
+}
+```
+
+Each funnel has **its own** proxy key — no route's key opens it, and no other funnel's does.
+Select the funnel to copy its key.
+
+The key must go in the `X-Proxy-Key` header. An MCP client that cannot set request headers cannot
+reach a funnel — see [Calling the proxy](#calling-the-proxy).
+
+### Behaviour
+
+- **Endpoints are independent.** Two funnels drawing on the same upstream hold separate MCP
+  sessions, so one agent cannot perturb another and one expired session cannot take both down.
+- **Calls run in parallel**, across endpoints and within one.
+- **A dead source degrades only itself** — the healthy sources still list, and the failure is
+  shown on that source's row and in the log.
+- **Filtering is enforced on the call path**, not just the listing. A tool an agent learned before
+  you unticked it is refused, and the call never reaches the upstream.
+- **Arguments are never logged.** Tool names and outcomes are; the values an agent passes are not.
+- `/mcp` is reserved, and a request that already passed through a funnel is refused rather than
+  allowed to loop.
+
+### Limits
+
+- Sources must be HTTP MCP servers. Local **stdio** servers (`npx …`) are not supported.
+- Sampling, elicitation, and resource subscriptions are not offered on a funnel endpoint — it runs
+  stateless, which is what makes edits take effect on the next call.
+- Two agents on the *same* funnel share its upstream sessions. Give each agent its own funnel if
+  they must be isolated.
+- A route-backed source that keys sessions on a **cookie** rather than the standard
+  `Mcp-Session-Id` header cannot hold a session: `Cookie` is stripped on the way upstream,
+  deliberately, so a caller cannot launder its own credentials through the proxy.
 
 ---
 
@@ -1232,12 +1254,21 @@ which is what keeps your own entries out of reach of its housekeeping.
 
 | Item | Holds |
 |---|---|
-| `RavensPort Config` | Routes, upstreams, MCP sources and funnels, settings — the topology, with **no secrets in it** |
+| `RavensPort Config` | Routes, upstreams, MCP sources, funnels, API bridges, settings — the topology, with **no secrets in it** |
 | `RavensPort credential — <name> [<id>]` | One per credential: client id and secret, API key, service account key file, access and refresh tokens |
 | `RavensPort route key — <prefix> [<id>]` | One per route: its proxy key |
 | `RavensPort funnel key — /mcp/<slug> [<id>]` | One per funnel: its proxy key |
+| `RavensPort api bridge key — /api-mcp/<slug> [<id>]` | One per API bridge: its proxy key |
+| `RavensPort api bridge manifest — /api-mcp/<slug> [<id>]` | One per API bridge: its tool definitions |
 
-Secrets get their own items so your password manager can conceal them, show them, and let you copy
+A bridge's manifest is the one item here holding no secret, and it is still kept out of the config
+item. It is the largest thing most people write into RavensPort, and the config item is rewritten in
+full on every save — including every token refresh — so a manifest living there would be
+re-encrypted and re-synced each time a token aged out. Its own item is also simply where you would
+look for it: open `RavensPort api bridge manifest — /api-mcp/tracker` to read exactly what an agent
+is being offered.
+
+The rest get their own items so your password manager can conceal them, show them, and let you copy
 one out without reading JSON. Each field lives on exactly one side — a credential's scopes are in
 the config item and nowhere else, its secret is in its own item and nowhere else — so there is
 never a question of which copy is right.
@@ -1250,7 +1281,9 @@ the next load it removes it from the configuration, tells you in a banner (namin
 now forward unauthenticated), and writes the corrected config item back. Without that it kept a
 credential the vault no longer had, and every launch raised the same ghost. A credential that never
 had an item — a public OAuth client with no secret — is left alone; the removal only happens when
-the config item points at an item that has been deleted. **Sync now** on the Settings tab does the
+the config item points at an item that has been deleted. **Deleting a bridge's manifest item** works
+the same way and takes the bridge with it, along with any funnel source that exposed it: a bridge
+with no tools left to serve is not a bridge. **Sync now** on the Settings tab does the
 same check on demand when there is nothing waiting to be saved.
 
 ### While the vault is locked
