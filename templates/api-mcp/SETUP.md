@@ -13,6 +13,7 @@ create on the **Routes** tab before importing one.
 | `brightsky-dwd.json` | `https://api.brightsky.dev` | none | — |
 | `mvg-munich.json` | `https://www.mvg.de/api/bgw-pt/v3` | none | — |
 | `transitous.json` | `https://api.transitous.org/api` | none | — |
+| `tailscale-readonly.json` | `https://api.tailscale.com/api/v2` | Tailscale API access token | header `Authorization`, prefix `Bearer ` |
 | `sample-task-tracker.json` | an invented API | — | — |
 
 ## The Google key
@@ -27,6 +28,31 @@ switch them on.
 
 Drive is different: it is OAuth rather than a key, because it reads your own files. That credential
 attaches as `Authorization` with the `Bearer ` prefix, which is RavensPort's default.
+
+## Tailscale
+
+Create the credential on the **Credentials** tab as an **API key**, and attach it to the route as
+`Authorization` with the `Bearer ` prefix — RavensPort's default placement. Two kinds of secret work:
+
+- An **API access token** from the [Keys page](https://login.tailscale.com/admin/settings/keys) of
+  the admin console. It carries the permissions of the user who made it and expires in 1 to 90 days,
+  so the bridge stops working on that date until you issue another.
+- An **OAuth client**, as an app login with the client credentials grant against
+  `https://api.tailscale.com/api/v2/oauth/token`. The client itself does not expire and RavensPort
+  re-mints the short-lived token it issues, so nothing has to be replaced on a schedule. Grant only
+  read scopes: `devices:core:read`, `devices:routes:read`, `devices:posture_attributes:read`,
+  `users:read`, `dns:read`, `policy_file:read`, `services:read`, `feature_settings:read`,
+  `webhooks:read`, `account_settings:read`, `logs:configuration:read`, `logs:network:read`, and the
+  key-reading scopes `auth_keys:read` and `api_access_tokens:read`.
+
+The manifest is read-only, but the credential is what actually enforces that: an access token made
+by an admin can still write through any other route it is attached to. Scope the OAuth client to
+reads if you want the limit to be real rather than a property of this one file.
+
+Every path in the manifest uses `-` as the tailnet, which means "the tailnet this credential belongs
+to". There is no tailnet argument for a model to get wrong, and a bridge reaches exactly one tailnet:
+the one its credential came from. To read a second tailnet, add a second credential, route, and
+bridge.
 
 ## The keyless three
 

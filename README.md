@@ -507,6 +507,7 @@ Ready-made manifests live in [`templates/api-mcp/`](templates/api-mcp/):
 | `brightsky-dwd.json` | German weather and severe warnings | none |
 | `mvg-munich.json` | Munich public transport | none |
 | `transitous.json` | Worldwide public transport | none |
+| `tailscale-readonly.json` | Tailscale API v2, read only | Tailscale API access token |
 | `sample-task-tracker.json` | an invented API, every feature once | — |
 
 [`SETUP.md`](templates/api-mcp/SETUP.md) lists the route each one needs: base URL, credential, and
