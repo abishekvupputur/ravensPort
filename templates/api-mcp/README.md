@@ -16,6 +16,7 @@ route you already configured, so that route's credential is attached for you.
 | [`brightsky-dwd.json`](brightsky-dwd.json) | German weather and severe warnings — `https://api.brightsky.dev`, no credential |
 | [`mvg-munich.json`](mvg-munich.json) | Munich transit — `https://www.mvg.de/api/bgw-pt/v3`, no credential |
 | [`transitous.json`](transitous.json) | Worldwide transit — `https://api.transitous.org/api`, no credential |
+| [`tailscale-readonly.json`](tailscale-readonly.json) | Tailscale API v2, read only: devices, users, routes, DNS, policy file, keys, audit logs — `https://api.tailscale.com/api/v2`, access token as `Authorization: Bearer` |
 
 One manifest per base URL, because a bridge goes through exactly one route and a route has exactly
 one upstream. The three Google APIs are separate hosts, so they are separate manifests even though

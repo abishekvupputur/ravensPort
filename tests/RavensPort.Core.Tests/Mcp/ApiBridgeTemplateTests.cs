@@ -53,21 +53,39 @@ public class ApiBridgeTemplateTests
 
         Assert.Contains("sample-task-tracker.json", names);
         Assert.Contains("google-drive-readonly.json", names);
+        Assert.Contains("tailscale-readonly.json", names);
 
         Assert.True(File.Exists(Path.Combine(TemplateFolder(), "AUTHORING.md")),
             "The authoring instructions are what an agent reads before writing a manifest.");
     }
 
-    /// <summary>
-    /// The Drive template is the one that would do real damage if it grew a write. It is offered
-    /// as read-only, and a credential scoped to drive.readonly would fail on anything else anyway
-    /// — but by then the user has already handed an agent a tool that says it can delete their
-    /// files.
-    /// </summary>
-    [Fact]
-    public void TheGoogleDriveTemplateOnlyEverReads()
+    public static TheoryData<string> ReadOnlyTemplates
     {
-        var json = File.ReadAllText(Path.Combine(TemplateFolder(), "google-drive-readonly.json"));
+        get
+        {
+            var data = new TheoryData<string>();
+
+            foreach (var path in Directory.EnumerateFiles(TemplateFolder(), "*-readonly.json").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                data.Add(Path.GetFileName(path));
+            }
+
+            return data;
+        }
+    }
+
+    /// <summary>
+    /// A template whose name says read-only is the one that would do real damage if it grew a
+    /// write. A correctly scoped credential would fail on anything else anyway — but by then the
+    /// user has already handed an agent a tool that says it can delete their files.
+    ///
+    /// Matched on the filename so a new read-only template is covered the day it lands.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ReadOnlyTemplates))]
+    public void AReadOnlyTemplateOnlyEverReads(string fileName)
+    {
+        var json = File.ReadAllText(Path.Combine(TemplateFolder(), fileName));
 
         Assert.Null(McpApiBridgeValidation.TryReadManifest(json, out var manifest));
 
