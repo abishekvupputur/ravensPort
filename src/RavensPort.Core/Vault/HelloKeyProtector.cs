@@ -44,7 +44,7 @@ namespace RavensPort.Core.Vault;
 /// why <see cref="ProtonPassAuthenticator.DiscardLocalSessionAsync"/> exists and is offered on the
 /// setup page. Losing the key costs the session and never the data.
 /// </summary>
-public sealed class HelloKeyProtector
+public sealed class HelloKeyProtector : ISessionKeyProtector, IServiceTokenProtector
 {
     private readonly ActivityLog _activityLog;
     private readonly IHelloSigner _signer;
@@ -185,6 +185,13 @@ public sealed class HelloKeyProtector
     /// the ciphertext — the setup page binds this to decide which buttons to offer.
     /// </summary>
     public bool HasProtectedOnePasswordToken() => _store.Exists(OnePasswordTokenName);
+
+    /// <summary>
+    /// True on Windows, where the token can be sealed to a Hello gesture. Whether Hello is
+    /// enrolled on this machine is a separate question the setup page asks
+    /// <see cref="IsAvailableAsync"/>; this one is about the store existing at all.
+    /// </summary>
+    public bool CanKeepToken => true;
 
     /// <summary>
     /// Keeps the service-account token so the user need not paste it again after a restart.

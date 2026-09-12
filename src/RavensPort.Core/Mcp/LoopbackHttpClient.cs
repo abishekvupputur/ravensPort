@@ -1,6 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
+using RavensPort.Core.Net;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 
@@ -69,10 +70,10 @@ public sealed class LoopbackHttpClient : IDisposable
     /// </summary>
     public SocketsHttpHandler CreateHandler(bool followRedirects = true)
     {
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = followRedirects,
-        };
+        // Built through HappyEyeballs rather than directly: the default connects in DNS order,
+        // which on a host advertising an IPv6 route it cannot carry means every call waits out the
+        // full timeout before IPv4 is ever tried. See HappyEyeballs.
+        var handler = HappyEyeballs.CreateHandler(h => h.AllowAutoRedirect = followRedirects);
 
         if (!_kestrelMtls.IsEnabled) return handler;
 

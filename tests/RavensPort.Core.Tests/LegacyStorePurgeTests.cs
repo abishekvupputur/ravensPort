@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using RavensPort.Core.Vault;
 
@@ -74,9 +75,9 @@ public partial class LegacyStorePurgeTests : IDisposable
         var length = new FileInfo(path).Length;
 
         var witness = Path.Combine(_directory, "witness.dat");
-        if (!CreateHardLinkW(witness, path, IntPtr.Zero))
+        if (!TryCreateHardLink(witness, path))
         {
-            // Hard links need the same volume and an NTFS-like filesystem. Where the temp
+            // Hard links need the same volume and a filesystem that supports them. Where the temp
             // directory cannot provide one there is nothing to observe, so skip rather than
             // assert something weaker and call it the same test.
             return;
@@ -103,10 +104,38 @@ public partial class LegacyStorePurgeTests : IDisposable
         Assert.True(File.Exists(path));
     }
 
-    [System.Runtime.InteropServices.LibraryImport(
-        "kernel32.dll",
-        StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16,
-        SetLastError = true)]
-    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    /// <summary>
+    /// A second name for the same file data, or false when this platform will not give one.
+    ///
+    /// Two calls because .NET has no portable one: kernel32 on Windows, link(2) on everything
+    /// else. Worth the second p/invoke rather than skipping the test off Windows -- what it pins
+    /// is that credentials are overwritten before the file is unlinked, which matters as much on
+    /// the Linux build as on the Windows one.
+    ///
+    /// A refusal is not a failure. Hard links want the same volume and a filesystem that supports
+    /// them, and the caller reads false as "nothing to observe here" and skips.
+    /// </summary>
+    private static bool TryCreateHardLink(string linkPath, string existingPath)
+    {
+        try
+        {
+            return OperatingSystem.IsWindows()
+                ? CreateHardLinkW(linkPath, existingPath, IntPtr.Zero)
+                : link(existingPath, linkPath) == 0;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            // A platform with neither. Nothing to observe, same as a filesystem that refuses.
+            return false;
+        }
+    }
+
+    // Both generated rather than hand-marshalled (SYSLIB1054), which is also what settles the
+    // string encoding each side wants: UTF-16 for the W entry point, UTF-8 for libc.
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+    [LibraryImport("libc", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int link(string oldpath, string newpath);
 }

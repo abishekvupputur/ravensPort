@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="RavensPort.Dialogs.MessageWindow"
+        Title="RavensPort"
+        SizeToContent="Height" Width="460" MinHeight="150"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <!--
+        No bindings: the code-behind sets the four things that vary. A view model for a message box
+        would be more machinery than the message.
+    -->
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+
+        <TextBlock Grid.Row="0" x:Name="HeadingText"
+                   FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <TextBlock Grid.Row="1" x:Name="BodyText"
+                   Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="19"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <!-- Cancel first in the tree so it takes initial focus: every confirm here is
+                 destructive, so Enter on an unread dialog must not be the one that agrees. -->
+            <Button x:Name="CancelButton" Classes="ghost" MinWidth="90" Margin="0,0,8,0"
+                    IsCancel="True" Click="CancelButton_Click"/>
+            <Button x:Name="ConfirmButton" MinWidth="90" IsDefault="False"
+                    Click="ConfirmButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

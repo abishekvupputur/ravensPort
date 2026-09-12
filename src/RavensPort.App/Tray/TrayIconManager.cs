@@ -1,45 +1,38 @@
 using System.Drawing;
 using System.Reflection;
-using System.Windows;
 using System.Windows.Forms;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 
-using Application = System.Windows.Application;
-
-namespace RavensPort.App.Tray;
-
-/// <summary>
-/// What the app is currently doing, as far as the tray is concerned. The proxy no longer starts
-/// unconditionally — it waits for a password manager — so "there is an icon" stopped meaning
-/// "requests are being served", and the tooltip has to say which.
-/// </summary>
-public enum TrayState
-{
-    Starting,
-    SetupRequired,
-    Running,
-    VaultLocked,
-}
+namespace RavensPort.Tray;
 
 /// <summary>
-/// Uses plain WinForms NotifyIcon rather than a third-party WPF tray-icon library —
-/// WPF-specific tray libraries (Hardcodet.NotifyIcon.Wpf, H.NotifyIcon.Wpf) have proven
-/// flaky across .NET versions; System.Windows.Forms.NotifyIcon is the reliable baseline.
+/// <see cref="ITrayIcon"/> on WinForms NotifyIcon, for Windows.
+///
+/// Avalonia has a TrayIcon of its own, and every other platform now uses it — see
+/// <c>AvaloniaTrayIconManager</c>. Windows keeps this one because it does two things Avalonia's
+/// cannot: the menu below is drawn by the app, so the dark palette reaches it, and
+/// <see cref="NotifyIdleWhileGated"/> has a balloon tip to tell someone who closed the setup window
+/// that nothing is being served. Losing both on Linux is a real cost; paying it on Windows too, for
+/// symmetry, would be a worse answer than keeping this file.
 /// </summary>
-public sealed class TrayIconManager() : IDisposable
+public sealed class TrayIconManager : ITrayIcon
 {
     private NotifyIcon? _notifyIcon;
-    private MainWindow? _mainWindow;
+    private Window? _mainWindow;
     private ToolStripItem? _openItem;
     private TrayState _state = TrayState.Starting;
 
     /// <param name="confirmExit">
     /// Asked before shutting down, and may refuse. Exit is the moment an unsaved change stops
     /// existing, so it is the one thing here that needs a way to say no — and it has to happen
-    /// before Shutdown(), since OnExit runs when there is no longer any way back.
+    /// before shutdown, which is a point of no return.
+    ///
+    /// A Task now rather than a bool: the question is asked by a dialog, and Avalonia has no
+    /// synchronous modal to ask it with.
     /// </param>
-    public void Initialize(
-        MainWindow mainWindow,
-        Func<bool>? confirmExit = null)
+    public void Initialize(Window mainWindow, Func<Task<bool>>? confirmExit = null)
     {
         _mainWindow = mainWindow;
 
@@ -52,10 +45,7 @@ public sealed class TrayIconManager() : IDisposable
         _openItem = contextMenu.Items.Add("Open Settings", null, (_, _) => ShowMainWindow());
 
         contextMenu.Items.Add(new ToolStripSeparator());
-        contextMenu.Items.Add("Exit", null, (_, _) =>
-        {
-            if (confirmExit is null || confirmExit()) Application.Current.Shutdown();
-        });
+        contextMenu.Items.Add("Exit", null, (_, _) => BeginExit(confirmExit));
 
         _notifyIcon = new NotifyIcon
         {
@@ -71,6 +61,35 @@ public sealed class TrayIconManager() : IDisposable
 
         SetState(_state);
     }
+
+    /// <summary>
+    /// Asks, then quits — on the UI thread, and without blocking the WinForms click handler that
+    /// started it.
+    ///
+    /// The menu click arrives on the UI thread already, but the answer does not come back until the
+    /// user has given it, and the handler cannot be held open that long: the context menu stays on
+    /// screen over the dialog until its handler returns. So this hands the whole sequence to the
+    /// dispatcher and lets the click complete.
+    /// </summary>
+    private static void BeginExit(Func<Task<bool>>? confirmExit) =>
+        Dispatcher.UIThread.Post(async void () =>
+        {
+            try
+            {
+                if (confirmExit is not null && !await confirmExit()) return;
+
+                (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
+                    ?.Shutdown();
+            }
+            catch
+            {
+                // Nothing above this to catch it — this is a top-level async void. A failure to ask
+                // must not become a failure to quit, so fall through to shutting down: the
+                // alternative is an Exit menu item that silently does nothing.
+                (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
+                    ?.Shutdown();
+            }
+        });
 
     /// <summary>
     /// Updates the tooltip and the first menu item. Tooltip-only rather than a second icon: a
@@ -129,13 +148,19 @@ public sealed class TrayIconManager() : IDisposable
         return SystemIcons.Application;
     }
 
-    private void ShowMainWindow()
+    /// <summary>
+    /// Brings the window up. Posted to the dispatcher because the tray's click handlers run on the
+    /// WinForms message loop, which is not Avalonia's UI thread — touching a Window from there
+    /// throws.
+    /// </summary>
+    private void ShowMainWindow() => Dispatcher.UIThread.Post(() =>
     {
         if (_mainWindow is null) return;
+
         _mainWindow.Show();
         _mainWindow.WindowState = WindowState.Normal;
         _mainWindow.Activate();
-    }
+    });
 
     public void Dispose() => _notifyIcon?.Dispose();
 }

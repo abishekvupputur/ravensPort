@@ -149,8 +149,16 @@ jobs:
         # Coverage settings come from coverlet.runsettings, the same file pr.yml points its run at.
         # The two suites cover one assembly from opposite ends and coverage.yml merges them, which
         # only produces a meaningful union if both halves were instrumented under identical rules.
+        #
+        # -f, and it is load-bearing rather than tidiness. The project names both frameworks so that
+        # a locked restore succeeds on the Linux job too, and `dotnet test` without a framework runs
+        # every one of them — which for this suite means opening the same real 1Password vault twice
+        # in one job. The two runs raced, the first wiped what the second had seeded, and the whole
+        # thing failed on stage 1 before passing on the retry. It is serialised repository-wide for
+        # exactly this reason; the serialisation cannot see two runs inside one invocation.
         run: >
           dotnet test tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj
+          -f net10.0-windows10.0.19041.0
           -c Release --no-restore --verbosity normal
           --settings coverlet.runsettings
           --collect:"XPlat Code Coverage"

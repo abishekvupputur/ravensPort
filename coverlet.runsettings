@@ -12,11 +12,20 @@
 
   Instrumenting RavensPort.Core and nothing else is deliberate, not an oversight:
 
-    - RavensPort.App is WPF. 239 files of windows, view models and tray plumbing that no test
-      references — neither test project has a ProjectReference to it, so it cannot be reached from
-      a test at all. Including it would not report a gap anybody could close; it would add a fixed
-      block of zeroes that halves the headline percentage and makes a real regression in Core
-      invisible inside the noise.
+    - RavensPort.UI is the view models, and it is measured because something now drives them:
+      RavensPort.UI.Tests presses the buttons on real Avalonia views in a single-use session. It was
+      not measured while the only suites were Core.Tests and the approval run, because neither could
+      reach it — and an assembly nothing exercises contributes a fixed block of zeroes rather than a
+      gap anybody could close.
+
+    - RavensPort.App — assembly name RavensPort — is the views themselves, and it is measured for
+      the same reason: RavensPort.UI.Tests constructs those views for real, applies their templates
+      and presses their buttons, so the converters, the code-behind and the bindings are executed
+      rather than merely compiled. It was excluded while the only suites were Core.Tests and the
+      approval run, when nothing could reach it; that reason expired.
+
+      What stays uncounted inside it is what the compiler generates from axaml, which
+      GeneratedCodeAttribute already takes out below.
 
     - The test assemblies themselves are excluded for the obvious reason, and the 1Password native
       client is Go, so it is outside this tool's reach entirely (it has its own `go test`).
@@ -42,8 +51,8 @@
             not, and "a new assembly is not counted until someone says so" is the safer default for
             a number people read as a quality gate.
           -->
-          <Include>[RavensPort.Core]*</Include>
-          <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[xunit.*]*</Exclude>
+          <Include>[RavensPort.Core]*,[RavensPort.UI]*,[RavensPort]*</Include>
+          <Exclude>[RavensPort.Core.Tests]*,[RavensPort.SystemTests]*,[RavensPort.UI.Tests]*,[xunit.*]*</Exclude>
 
           <!--
             Generated code is not code anybody wrote or can test: GeneratedCodeAttribute covers the
@@ -63,7 +72,22 @@
             exercise.
           -->
           <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
-          <ExcludeByFile>**/obj/**/*.cs,**/*.g.cs,**/*.g.i.cs</ExcludeByFile>
+          <!--
+            Generated output, and then the parts of the app no automated test can reach — the same
+            "nothing can execute this" rule the assembly list above applies, at the only granularity
+            that can express it now that the app’s views are measured.
+
+            App.axaml.cs is the startup itself: a single-instance mutex, Kestrel, the tray, the
+            desktop lifetime. A headless session replaces all of it by design, which is the point of
+            HeadlessTestApp — running the real one would have two test runs on a machine fighting
+            over the mutex. Tray/ draws a Win32 notify icon. HelloConsentWindow and Dialogs/ are
+            modal windows that wait for a person: a fingerprint, or a button in a dialog nothing can
+            press. MainWindow is the shell those tabs are hosted in.
+
+            Everything these leave in is what the suite does drive: the views, their converters and
+            behaviours, and the platform adapters the view models reach the desktop through.
+          -->
+          <ExcludeByFile>**/obj/**/*.cs,**/*.g.cs,**/*.g.i.cs,**/App.axaml.cs,**/MainWindow.axaml.cs,**/Tray/**,**/Dialogs/**,**/Views/HelloConsentWindow.axaml.cs</ExcludeByFile>
 
           <!-- Trivial get/set bodies are noise in both directions: they inflate a passing number and
                they never contain the bug. -->

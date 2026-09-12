@@ -1,0 +1,311 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             xmlns:behaviors="using:RavensPort.Behaviors"
+             xmlns:sys="using:System"
+             x:Class="RavensPort.Views.ApiBridgeView"
+             x:DataType="vm:ApiBridgeViewModel"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <sys:String x:Key="BridgeHelpText">A bridge turns one API you already proxy into an MCP endpoint an agent can drive.
+
+You describe the API's operations as tools in a manifest. Each tool call becomes one HTTP request through the route you pick, so that route's credential is attached exactly as it is for any other call — you never put a token in the manifest.</sys:String>
+
+        <sys:String x:Key="BridgeRouteHelpText">The route every tool of this bridge calls through.
+
+Tool paths are written relative to that route's prefix, and the route's credential is what they spend. One route per bridge keeps "which token did this call use" answerable by looking at the bridge rather than at each tool.</sys:String>
+
+        <sys:String x:Key="ManifestHelpText">The manifest: JSON describing what this API offers.
+
+tools     — each with a name, a JSON Schema for its arguments, and the HTTP request to make. A tool may declare several variants instead of one request, and the model picks between them.
+prompts   — reusable instructions, served as MCP prompts.
+skills    — markdown documents served as MCP resources, for how to get something done with these tools.
+instructions — a note shown to the agent when it connects.
+
+Load the sample to see all of it working, then edit it for your own API.</sys:String>
+
+        <sys:String x:Key="VariantHelpText">Several near-identical endpoints presented as one tool.
+
+The tool declares "variantBy" naming an argument, and "variants" keyed by the values that argument can take. The argument's enum in the schema is how the model learns its choices, so it must list exactly the variants that exist.
+
+An agent choosing between one tool's three values does better than the same agent choosing between three tools whose descriptions differ by a word.</sys:String>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="*,Auto">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="API to MCP" Classes="section" VerticalAlignment="Center"/>
+                    <Button Content="Refresh" HorizontalAlignment="Right" Width="90"
+                            Classes="ghost" Command="{Binding RefreshCommand}"
+                            AutomationProperties.AutomationId="bridges.refresh"
+                            ToolTip.Tip="Re-read bridges and routes from storage"/>
+                </Grid>
+
+                <CheckBox Content="Enable API bridges" IsChecked="{Binding IsEnabled}"
+                          AutomationProperties.AutomationId="bridges.enabled"
+                          ToolTip.Tip="{StaticResource BridgeHelpText}" Margin="0,0,0,4"/>
+                <TextBlock Classes="hint" Margin="0,0,0,16"
+                           Text="Off by default, and separate from the MCP funnel switch. A bridge turns one of your routes into a tool surface an agent can drive, which is a different grant from pooling MCP servers."/>
+
+                <!-- Bridges first: the endpoints are the point, the manifest is the ingredient. -->
+                <TextBlock Text="Bridges" Classes="section"/>
+
+                <TextBlock Classes="empty"
+                           Text="No bridges yet — pick a route below, load the sample manifest, and edit it for that API."
+                           IsVisible="{Binding HasNoBridges}"/>
+
+                <StackPanel IsVisible="{Binding HasBridges}">
+                    <TextBlock Classes="hint"
+                               Text="Each bridge has its own proxy key — only that key opens it, and the key of the route it calls does not. Send it as the X-Proxy-Key header. An agent handed this key reaches the operations in the manifest and nothing else that route serves."/>
+                    <TextBlock Classes="hint" Margin="0,0,0,6"
+                               Text="Select a bridge to show its key and the entry to paste into a client. Click it again to hide them."/>
+                </StackPanel>
+
+                <DataGrid ItemsSource="{Binding Bridges}" SelectedItem="{Binding SelectedBridge}"
+                          AutomationProperties.AutomationId="bridges.grid"
+                          AutoGenerateColumns="False" IsReadOnly="True" Margin="0,0,0,18"
+                          behaviors:RowSelectionToggle.Enable="True"
+                          IsVisible="{Binding HasBridges}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="240">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <!-- Read-only TextBox rather than a TextBlock so it can be
+                                             selected and pasted into an agent's config. -->
+                                        <TextBox Text="{Binding LocalUrl, Mode=OneWay}" IsReadOnly="True"
+                                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                                 Foreground="{StaticResource AccentBrush}"/>
+                                        <TextBlock Text="{Binding Name}" FontSize="10"
+                                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="ROUTE" Width="130">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding RouteLabel}" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="⚠ tool calls will fail until a route is set" FontSize="10"
+                                                   Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
+                                                   IsVisible="{Binding IsBroken}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="MANIFEST" Width="170">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ManifestSummary}" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Origin}" FontSize="10"
+                                                   Foreground="{StaticResource DisabledTextBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="PROXY KEY" Width="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
+                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
+                                                   Classes.expired="{Binding Key.IsExpired}"/>
+                                        <TextBlock Text="⚠ expired — this bridge answers 403" FontSize="10" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource ErrorBrush}"
+                                                   IsVisible="{Binding Key.IsExpired}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="ENABLED" Width="70">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              ToolTip.Tip="Uncheck to stop serving this endpoint without deleting it."/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:ApiBridgeItemViewModel">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Edit" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:ApiBridgeViewModel)DataContext).EditManifestCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Load this manifest into the editor below"/>
+                                        <Button Content="Delete" Margin="2" Classes="ghost"
+                                                Command="{Binding $parent[UserControl].((vm:ApiBridgeViewModel)DataContext).DeleteBridgeCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- The key of the selected row only. A card per bridge meant every proxy key in
+                     the configuration sat on screen at once, which is poor on a shared screen and a
+                     long scroll besides. Same arrangement as the MCP Funnel tab. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasSelectedBridge}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectedBridgeTitle}" Classes="section"/>
+
+                        <ContentControl Content="{Binding SelectedBridge.Key}"
+                                        ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
+
+                        <TextBlock Text="MCP client entry" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
+                        <TextBox Text="{Binding SelectedBridge.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                 AcceptsReturn="True" TextWrapping="NoWrap"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Classes="hint"
+                                   Text="Press Show above to reveal the key inside this snippet before copying it."/>
+                    </StackPanel>
+                </Border>
+
+                <!-- The manifest editor. Importing a file fills this box rather than going straight
+                     into the store, so a manifest that fails validation can be fixed where it is. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Manifest" Classes="section"
+                                   ToolTip.Tip="{StaticResource ManifestHelpText}"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="Load sample" Width="110" Margin="0,0,6,0"
+                                    Classes="ghost" Command="{Binding LoadSampleCommand}"
+                                    AutomationProperties.AutomationId="bridges.loadSample"
+                                    ToolTip.Tip="Fill the editor with a worked example using every part of the format"/>
+                            <Button Content="Import file…" Width="110" Margin="0,0,6,0"
+                                    Classes="ghost" Command="{Binding ImportManifestCommand}"
+                                    ToolTip.Tip="Read a .json manifest into the editor"/>
+                            <Button Content="Save sample…" Width="110" Margin="0,0,6,0"
+                                    Classes="ghost" Command="{Binding SaveSampleCommand}"
+                                    ToolTip.Tip="Write the sample manifest to disk to edit it elsewhere"/>
+                            <Button Content="Cancel edit" Width="100"
+                                    Classes="ghost" Command="{Binding CancelEditCommand}"
+                                    IsVisible="{Binding IsEditingExisting}"/>
+                        </StackPanel>
+
+                        <TextBox Text="{Binding ManifestJson}"
+                                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                                 AutomationProperties.AutomationId="bridges.manifest"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 MinHeight="180" MaxHeight="320"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                 ToolTip.Tip="{StaticResource ManifestHelpText}"/>
+
+                        <TextBlock Text="{Binding ManifestStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"
+                                   Classes.ok="{Binding ManifestIsValid}"
+                                   Foreground="{StaticResource ErrorBrush}"/>
+
+                        <!-- What this manifest would serve, before it is served. Variant tools are
+                             expanded one line per variant: a single line naming the tool would
+                             hide which calls it can actually make. -->
+                        <TextBlock Text="What this would serve" Classes="label" Margin="0,10,0,0"
+                                   ToolTip.Tip="{StaticResource VariantHelpText}"
+                                   IsVisible="{Binding ManifestIsValid}"/>
+                        <ItemsControl ItemsSource="{Binding ManifestPreview}" Margin="0,2,0,0"
+                                      IsVisible="{Binding ManifestIsValid}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="sys:String">
+                                    <TextBlock Text="{Binding}" FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- One card, two jobs: adding a bridge, and replacing an existing one's manifest.
+                     The details below only apply to a new bridge, so pressing Edit on a row hides
+                     them — and the heading has to say so. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SaveSectionTitle}" Classes="section"/>
+
+                        <TextBlock Classes="empty"
+                                   Text="No routes yet — add one on the Routes tab first. A bridge calls through a route, and that route's credential is what its tools spend."
+                                   IsVisible="{Binding HasNoRoutes}"/>
+
+                        <!-- The way back to adding, offered where the fields used to be. -->
+                        <StackPanel IsVisible="{Binding IsEditingExisting}">
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
+                                       Text="Saving replaces this bridge's tool definitions. Its name, endpoint, route, and proxy key stay exactly as they are, and agents see the new tools on their next call."/>
+                            <Button Content="Add a different bridge instead" HorizontalAlignment="Left" MinWidth="200"
+                                    Margin="0,0,0,10" Classes="ghost"
+                                    Command="{Binding CancelEditCommand}"
+                                    ToolTip.Tip="Stops editing and empties the editor, without changing this bridge"/>
+                        </StackPanel>
+
+                        <StackPanel IsVisible="{Binding !IsEditingExisting}">
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,8">
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="Name" Classes="label"/>
+                                    <TextBox Text="{Binding NewBridgeName}"
+                                             AutomationProperties.AutomationId="bridges.name"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Endpoint slug (optional)" Classes="label"
+                                               ToolTip.Tip="The last path segment of /api-mcp/… — derived from the name when left blank."/>
+                                    <TextBox Text="{Binding NewBridgeSlug}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,8">
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="Route" Classes="label"
+                                               ToolTip.Tip="{StaticResource BridgeRouteHelpText}"/>
+                                    <ComboBox ItemsSource="{Binding Routes}" SelectedItem="{Binding NewBridgeRoute}"
+                                              AutomationProperties.AutomationId="bridges.route"
+                                              ToolTip.Tip="{StaticResource BridgeRouteHelpText}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="models:RouteMapping">
+                                                <TextBlock Text="{Binding PathPrefix}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Key expiry" Classes="label"
+                                               ToolTip.Tip="{StaticResource ProxyKeyHelpText}"/>
+                                    <ComboBox ItemsSource="{Binding KeyLifetimes}" SelectedItem="{Binding NewBridgeKeyLifetime}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Classes="hint" Margin="0,0,0,8"
+                                       Text="Tool paths are relative to the route's prefix, and the route's credential is attached automatically. Never put a token in a manifest."/>
+                        </StackPanel>
+
+                        <Button Content="{Binding SaveButtonLabel}" HorizontalAlignment="Left" MinWidth="150"
+                                AutomationProperties.AutomationId="bridges.save"
+                                Command="{Binding SaveBridgeCommand}"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Pinned footer: status stays visible instead of scrolling out of view. -->
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+        </Border>
+    </Grid>
+</UserControl>
