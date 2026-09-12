@@ -1,0 +1,426 @@
+{
+  "version": 1,
+  "title": "Tailscale (read only)",
+  "description": "Read-only view of one Tailscale tailnet over the Tailscale API v2: devices, users, subnet routes, DNS, the policy file, services, keys, and audit logs. Attach to a route whose upstream is https://api.tailscale.com/api/v2 and whose credential is a Tailscale API access token sent as Authorization with the Bearer prefix. Every tool here is a GET; nothing in this manifest can change the tailnet.",
+  "instructions": "Every path here targets the tailnet the credential belongs to, so there is no tailnet argument to fill in and no way to reach another tailnet.\n\nStart with list_devices. It returns the ids every device tool needs, and a device's nodeId is the id to pass on. Ids are opaque: only ever use one a listing returned, never a hostname and never one you assembled.\n\nlist_devices defaults to a trimmed set of fields. Ask for all fields only when you need what the trimmed set leaves out, such as client version, OS, or update status, because the full response is large and is truncated at 1 MB.\n\nThe two log tools need an explicit RFC 3339 time window and return a great deal for a wide one. Ask for hours, not weeks, and narrow again rather than widening.\n\nNothing here returns a secret. list_keys and get_key describe keys by id, capability, and expiry; key material is shown once at creation and the API never gives it back.",
+  "tools": [
+    {
+      "name": "list_devices",
+      "title": "List devices",
+      "description": "Every device in the tailnet. Returns each device's nodeId and numeric id, addresses, hostname, owner, tags, and last seen time, which is where the deviceId for every other device tool comes from. The default field set is trimmed; ask for all fields only when you need client version, OS, or update status.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "default returns the trimmed set and is what you want. all returns every field and can be very large.",
+            "enum": ["default", "all"]
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/devices",
+        "query": { "fields": "{fields}" }
+      }
+    },
+    {
+      "name": "get_device",
+      "title": "Get one device",
+      "description": "Everything the tailnet knows about one device: addresses, owner, tags, OS and client version, key expiry, and whether it is authorized. deviceId comes from list_devices, where the nodeId is the preferred form.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "description": "The device's nodeId, or its numeric id. Both come from list_devices."
+          },
+          "fields": {
+            "type": "string",
+            "description": "default returns the trimmed set; all returns every field.",
+            "enum": ["default", "all"]
+          }
+        },
+        "required": ["deviceId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/device/{deviceId}",
+        "query": { "fields": "{fields}" }
+      }
+    },
+    {
+      "name": "get_device_detail",
+      "title": "Device routes or posture",
+      "description": "One extra detail about a device that the device record itself does not carry. deviceId comes from list_devices.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "description": "The device's nodeId, or its numeric id. Both come from list_devices."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Which detail to fetch.",
+            "enum": ["routes", "posture_attributes"]
+          }
+        },
+        "required": ["deviceId", "detail"]
+      },
+      "variantBy": "detail",
+      "variants": {
+        "routes": {
+          "description": "Subnet routes the device advertises, and which of them are enabled. A route must be both advertised and enabled before the device carries traffic for it, so compare the two lists rather than reading either alone. This is how you tell whether something is acting as a subnet router or an exit node.",
+          "method": "GET",
+          "path": "/device/{deviceId}/routes"
+        },
+        "posture_attributes": {
+          "description": "Posture attributes for the device as key-value pairs: the OS, client, and custom attributes that device posture rules in the policy file match against.",
+          "method": "GET",
+          "path": "/device/{deviceId}/attributes"
+        }
+      }
+    },
+    {
+      "name": "list_users",
+      "title": "List users",
+      "description": "Users of the tailnet, with the userId each is known by, their role, status, and last seen time. The userId is what get_user takes. Filter rather than listing everyone when the question is about one role.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Restrict to members of this tailnet, or to users it is shared with.",
+            "enum": ["member", "shared", "all"]
+          },
+          "role": {
+            "type": "string",
+            "description": "Restrict to one role.",
+            "enum": ["owner", "member", "admin", "it-admin", "network-admin", "billing-admin", "auditor", "all"]
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/users",
+        "query": { "type": "{type}", "role": "{role}" }
+      }
+    },
+    {
+      "name": "get_user",
+      "title": "Get one user",
+      "description": "One user's profile: login name, display name, role, status, and when they were last seen. userId comes from list_users.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "From list_users." }
+        },
+        "required": ["userId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/users/{userId}"
+      }
+    },
+    {
+      "name": "get_policy_file",
+      "title": "Get the policy file",
+      "description": "The tailnet policy file: access control rules, the groups and tag owners they are written in terms of, SSH rules, node attributes, and the tests defined against them. Returned as JSON. Read this before answering any question about who can reach what, because a device listing shows what exists and only this shows what is permitted.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "boolean",
+            "description": "true also returns the file's comments and a description of each rule. Leave it out for the rules alone."
+          }
+        }
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/acl",
+        "query": { "details": "{details}" },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "get_dns",
+      "title": "DNS settings",
+      "description": "One part of the tailnet's DNS configuration. Ask for the full configuration when you want the whole picture in one call, or a single section when the question is narrow.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Which part of the DNS configuration to read.",
+            "enum": ["configuration", "nameservers", "preferences", "search_paths", "split_dns"]
+          }
+        },
+        "required": ["section"]
+      },
+      "variantBy": "section",
+      "variants": {
+        "configuration": {
+          "description": "The whole DNS configuration at once: global nameservers, split DNS routes, search paths, and MagicDNS.",
+          "method": "GET",
+          "path": "/tailnet/-/dns/configuration"
+        },
+        "nameservers": {
+          "description": "The global nameservers every device in the tailnet resolves through.",
+          "method": "GET",
+          "path": "/tailnet/-/dns/nameservers"
+        },
+        "preferences": {
+          "description": "DNS preferences, which is where you find out whether MagicDNS is on.",
+          "method": "GET",
+          "path": "/tailnet/-/dns/preferences"
+        },
+        "search_paths": {
+          "description": "Search domains appended to unqualified names.",
+          "method": "GET",
+          "path": "/tailnet/-/dns/searchpaths"
+        },
+        "split_dns": {
+          "description": "Split DNS: a map of domain to the nameservers that resolve it, overriding the global ones for those domains.",
+          "method": "GET",
+          "path": "/tailnet/-/dns/split-dns"
+        }
+      }
+    },
+    {
+      "name": "list_services",
+      "title": "List services",
+      "description": "Services advertised in the tailnet, with the service name each is addressed by. That name is what get_service takes.",
+      "readOnly": true,
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/services"
+      }
+    },
+    {
+      "name": "get_service",
+      "title": "Get a service",
+      "description": "One service's configuration, or the devices hosting it. serviceName comes from list_services.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "serviceName": { "type": "string", "description": "From list_services." },
+          "what": {
+            "type": "string",
+            "description": "Which view of the service to fetch.",
+            "enum": ["configuration", "hosts"]
+          }
+        },
+        "required": ["serviceName", "what"]
+      },
+      "variantBy": "what",
+      "variants": {
+        "configuration": {
+          "description": "The service's own definition: its addresses, ports, and tags.",
+          "method": "GET",
+          "path": "/tailnet/-/services/{serviceName}"
+        },
+        "hosts": {
+          "description": "The devices advertising this service, and whether each is approved to serve it.",
+          "method": "GET",
+          "path": "/tailnet/-/services/{serviceName}/devices"
+        }
+      }
+    },
+    {
+      "name": "list_keys",
+      "title": "List keys",
+      "description": "Auth keys, API access tokens, and trust credentials that exist in the tailnet, by id, capability, and expiry. No key material is returned here or anywhere else in the API: a key's secret is shown once when it is created and never again. Useful for finding what is about to expire, or what was never revoked.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "description": "true returns every key in the tailnet, which needs a credential holding the read scope for each kind. false returns only those belonging to the credential making the call."
+          }
+        },
+        "required": ["all"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/keys",
+        "query": { "all": "{all}" }
+      }
+    },
+    {
+      "name": "get_key",
+      "title": "Get one key",
+      "description": "One key's capabilities, creation and expiry times, and the tags it can assign. Still no key material. keyId comes from list_keys.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyId": { "type": "string", "description": "From list_keys." }
+        },
+        "required": ["keyId"]
+      },
+      "request": {
+        "method": "GET",
+        "path": "/tailnet/-/keys/{keyId}"
+      }
+    },
+    {
+      "name": "get_logs",
+      "title": "Audit and flow logs",
+      "description": "Logs for an explicit time window. Both kinds are verbose and the response is truncated at 1 MB, so ask for hours rather than days, and narrow further if the answer looks cut off.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "log": {
+            "type": "string",
+            "description": "Which log to read.",
+            "enum": ["configuration", "network"]
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the window, RFC 3339, e.g. 2026-09-12T00:00:00Z."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the window, RFC 3339. Required, so pass the current time if the user meant up to now."
+          }
+        },
+        "required": ["log", "start", "end"]
+      },
+      "variantBy": "log",
+      "variants": {
+        "configuration": {
+          "description": "The configuration audit log: who changed what in the tailnet, when, and from where. This is the one that answers who removed a device or edited the policy file.",
+          "method": "GET",
+          "path": "/tailnet/-/logging/configuration",
+          "query": { "start": "{start}", "end": "{end}" }
+        },
+        "network": {
+          "description": "Network flow logs: which device talked to which, and how much. Traffic rather than administration, and empty unless network flow logging is switched on for the tailnet.",
+          "method": "GET",
+          "path": "/tailnet/-/logging/network",
+          "query": { "start": "{start}", "end": "{end}" }
+        }
+      }
+    },
+    {
+      "name": "get_tailnet_configuration",
+      "title": "Tailnet configuration",
+      "description": "One part of the tailnet's own configuration, as opposed to anything about a particular device or user.",
+      "readOnly": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Which part of the tailnet configuration to read.",
+            "enum": ["settings", "contacts", "webhooks", "posture_integrations"]
+          }
+        },
+        "required": ["section"]
+      },
+      "variantBy": "section",
+      "variants": {
+        "settings": {
+          "description": "Tailnet-wide settings: device approval, key expiry, user approval, network flow logging, and the rest of the switches an admin sets once.",
+          "method": "GET",
+          "path": "/tailnet/-/settings"
+        },
+        "contacts": {
+          "description": "The account, support, and security contact addresses, and whether each has been verified.",
+          "method": "GET",
+          "path": "/tailnet/-/contacts"
+        },
+        "webhooks": {
+          "description": "Webhook endpoints configured for the tailnet, and the events each subscribes to.",
+          "method": "GET",
+          "path": "/tailnet/-/webhooks"
+        },
+        "posture_integrations": {
+          "description": "Device posture integrations with external providers such as an MDM or EDR.",
+          "method": "GET",
+          "path": "/tailnet/-/posture/integrations"
+        }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "tailnet_overview",
+      "title": "Tailnet overview",
+      "description": "A short written picture of the tailnet: what is on it, who owns it, and what stands out.",
+      "arguments": [
+        {
+          "name": "focus",
+          "description": "An area to weight the summary towards, such as exit nodes or stale devices. Optional.",
+          "required": false
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "List the devices and the users, then describe this tailnet: how many devices there are, which are tagged, which have not been seen recently, and which advertise routes. Weight the summary towards {focus} where that applies. Finish with anything that looks like it needs attention, and say plainly if nothing does."
+        }
+      ]
+    },
+    {
+      "name": "expiry_check",
+      "title": "What is about to expire",
+      "description": "Finds device keys and auth keys running out within a window.",
+      "arguments": [
+        {
+          "name": "days",
+          "description": "How many days ahead to look. Treat 30 as the default if not given.",
+          "required": false
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Check what expires in this tailnet within the next {days} days. List the devices whose key expiry falls in that window, excluding any with key expiry disabled, and list the auth keys and access tokens expiring in it. Give each as a single line with the name, the date, and the days remaining, soonest first."
+        }
+      ]
+    },
+    {
+      "name": "access_question",
+      "title": "Can this device reach that one",
+      "description": "Answers a reachability question from the policy file rather than by guessing.",
+      "arguments": [
+        {
+          "name": "source",
+          "description": "The device, user, or tag the traffic would come from.",
+          "required": true
+        },
+        {
+          "name": "destination",
+          "description": "The device, port, or tag the traffic would go to.",
+          "required": true
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Work out whether {source} can reach {destination} on this tailnet. Read the policy file, and find the device records for both ends so you know their tags and addresses. Quote the specific rule that allows or denies it. If the answer depends on something the API does not show, say which part is unresolved rather than guessing."
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "tailnet-audit",
+      "title": "Auditing a tailnet",
+      "description": "How to answer access and hygiene questions about a tailnet with these tools.",
+      "content": "# Auditing a Tailscale tailnet\n\n## When to use this\nThe user asks who can reach what, what is stale, what is about to expire, or what changed.\n\n## Start here\n1. `list_devices` for what exists. Keep the `nodeId` of anything you will ask about again.\n2. `get_policy_file` for what is permitted. A device listing never answers an access question on its own.\n3. `list_users` when the question is about people rather than machines.\n\n## Answering an access question\nAccess is decided by the policy file, matched against device tags and user logins, so both halves are needed:\n\n- Get the tags and addresses of each end from `get_device`.\n- Read the rules in `get_policy_file` that mention those tags, users, or groups.\n- Quote the rule you relied on. An unquoted yes is a guess.\n- Device posture rules match attributes from `get_device_detail` with `detail: \"posture_attributes\"`, not anything in the device record.\n\n## Routing and exit nodes\n`get_device_detail` with `detail: \"routes\"` returns advertised routes and enabled routes separately. A device only carries traffic for a route in both lists. A route advertised but not enabled is the usual reason a subnet router looks configured and does nothing.\n\n## Hygiene\n- Stale devices: the last seen time in `list_devices`.\n- Expiring access: key expiry per device in `list_devices`, plus `list_keys` for auth keys and tokens. An auth key long past its use is worth raising even when it has not expired.\n- `fields: \"all\"` also carries client version and update availability.\n\n## What changed\n`get_logs` with `log: \"configuration\"` is the audit trail: who changed what, when. Ask for the narrowest window that could contain the change. `log: \"network\"` is traffic between devices, not administration, and is empty unless flow logging was switched on.\n\n## Limits worth knowing\n- Everything here is read-only. Nothing in this bridge can change the tailnet, so propose changes rather than attempting them.\n- Ids are opaque. Only ever pass one a listing returned.\n- Responses are truncated at 1 MB. `fields: \"all\"` across a large tailnet, and wide log windows, are the two ways to hit that.\n- No key material is ever returned, not by `list_keys` and not by `get_key`."
+    }
+  ]
+}
