@@ -117,6 +117,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<IPlatformLauncher, RecordingLauncher>();
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
         builder.Services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
+        builder.Services.AddSingleton<IFileOpenPicker, RecordingOpenPicker>();
 
         // The device flow opens the verification page itself rather than going through
         // IPlatformLauncher, so recording that launcher is not enough — without this the suite opens
@@ -131,7 +132,9 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<CredentialsViewModel>();
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
+        builder.Services.AddSingleton<ApiBridgeViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
+        builder.Services.AddSingleton<AppTabs>();
 
         // The shell itself, as App registers it. Worth having in the container rather than newed up
         // in a test: MainWindow takes all five tab view models plus the shell’s own, so resolving it
@@ -335,6 +338,25 @@ internal sealed class SingleUseHarness : IAsyncDisposable
 /// until the run timed out. What is under test is what gets written and where the app was told to
 /// write it — both of which this keeps.
 /// </summary>
+/// <summary>
+/// <see cref="IFileOpenPicker"/> that hands back whatever a test put in it, so an import can be
+/// driven without a dialog. Cancels by default: a suite that opened a real picker would hang.
+/// </summary>
+internal sealed class RecordingOpenPicker : IFileOpenPicker
+{
+    /// <summary>What the next pick returns. Null means the user cancelled.</summary>
+    public PickedFile? Next { get; set; }
+
+    /// <summary>Every title it was asked with, in order.</summary>
+    public List<string> Asked { get; } = [];
+
+    public Task<PickedFile?> PickFileAsync(string title, string extension, string filterName)
+    {
+        Asked.Add(title);
+        return Task.FromResult(Next);
+    }
+}
+
 internal sealed class RecordingSavePicker : IFileSavePicker
 {
     private readonly string _directory =

@@ -39,6 +39,7 @@ internal sealed class ViewModelFixture : IDisposable
         services.AddSingleton<IPlatformLauncher, RecordingLauncher>();
         services.AddSingleton<IHelloConsentPrompt, ConsentingPrompt>();
         services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
+        services.AddSingleton<IFileOpenPicker, RecordingOpenPicker>();
 
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<VaultStatusViewModel>();
@@ -46,7 +47,9 @@ internal sealed class ViewModelFixture : IDisposable
         services.AddSingleton<CredentialsViewModel>();
         services.AddSingleton<RoutesViewModel>();
         services.AddSingleton<McpFunnelViewModel>();
+        services.AddSingleton<ApiBridgeViewModel>();
         services.AddSingleton<SettingsViewModel>();
+        services.AddSingleton<AppTabs>();
 
         _services = services.BuildServiceProvider();
     }
