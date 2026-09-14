@@ -12,9 +12,9 @@ public sealed record AuthorizationOutcome(bool Success, string? Error, string? E
 /// <summary>
 /// Single entry point ViewModels/TokenRefreshService call regardless of provider or kind.
 ///
-/// Four paths meet here. The two app logins — client credentials and Google service accounts —
-/// need no browser and no user, so both "authorize" and "refresh" mean the same thing for them:
-/// mint a fresh token from the stored secret. Of the interactive ones, Google credentials
+/// Several paths meet here. The app logins — client credentials, Google service accounts, and a
+/// generic token exchange — need no browser and no user, so both "authorize" and "refresh" mean
+/// the same thing for them: mint a fresh token from the stored secret. Of the interactive ones, Google credentials
 /// delegate to GoogleOAuthService (Google's own official client library) and every other provider
 /// (GitHub, Nextcloud, Custom) goes through the generic OidcClient path here, branching only on
 /// whether the credential has an Authority (OIDC discovery) or manual
@@ -26,6 +26,7 @@ public sealed class OAuth2Service(
     GoogleServiceAccountService googleServiceAccountService,
     ClientCredentialsService clientCredentialsService,
     DeviceCodeService deviceCodeService,
+    TokenExchangeService tokenExchangeService,
     ActivityLog activityLog)
 {
     // Guards against the background refresh loop and a manual "Refresh Now" UI action
@@ -43,6 +44,7 @@ public sealed class OAuth2Service(
         {
             CredentialKind.GoogleServiceAccount => googleServiceAccountService.AcquireAsync(credential, ct),
             CredentialKind.ClientCredentials => clientCredentialsService.AcquireAsync(credential, ct),
+            CredentialKind.TokenExchange => tokenExchangeService.AcquireAsync(credential, ct),
             _ => null,
         };
 

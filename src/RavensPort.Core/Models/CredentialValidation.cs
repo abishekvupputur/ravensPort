@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace RavensPort.Core.Models;
 
 /// <summary>
@@ -128,6 +130,70 @@ public static class CredentialValidation
     }
 
     /// <summary>
+    /// Validates the fields a token exchange needs. Returns null when acceptable, or a message
+    /// suitable for the UI footer.
+    ///
+    /// <paramref name="hasSecret"/> rather than the secret itself — either the API key or the
+    /// request body, whichever <paramref name="mode"/> is — for the same reason
+    /// <see cref="ValidateClientCredentials"/> takes a bool: on an edit, a blank box means "keep
+    /// the stored one".
+    /// </summary>
+    public static string? ValidateTokenExchange(
+        string? endpoint, TokenExchangeMode mode, bool hasSecret,
+        string? apiKeyHeaderName, string? customBody, string? tokenPath)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            return "Exchange endpoint is required — it is where the secret is traded for a token.";
+        }
+
+        if (UrlValidation.ValidateEndpoint(endpoint, "Exchange endpoint") is { } endpointError)
+        {
+            return endpointError;
+        }
+
+        if (mode == TokenExchangeMode.ApiKey)
+        {
+            if (!hasSecret)
+            {
+                return "API key is required — it is what gets traded for a token.";
+            }
+
+            if (string.IsNullOrWhiteSpace(apiKeyHeaderName) || apiKeyHeaderName.Any(char.IsControl))
+            {
+                return "Header name is required and may not contain control characters.";
+            }
+        }
+        else
+        {
+            if (!hasSecret)
+            {
+                return "Request body is required — it is what gets posted to the exchange endpoint.";
+            }
+
+            // Checked here rather than left for the request to fail on: a body that cannot be
+            // parsed is a typo the user can fix right now, not something worth a round trip to
+            // discover.
+            if (customBody is not null)
+            {
+                try
+                {
+                    using var _ = JsonDocument.Parse(customBody);
+                }
+                catch (JsonException)
+                {
+                    return "Request body must be valid JSON.";
+                }
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(tokenPath)
+            ? "Token path is required — it says where in the response the token is, "
+              + "e.g. 'access_token' or 'data.token'."
+            : null;
+    }
+
+    /// <summary>
     /// Validates everything about a credential that does not depend on which provider it is:
     /// its name, the secret it holds, where that secret goes, and the optional test endpoint.
     /// </summary>
@@ -147,6 +213,12 @@ public static class CredentialValidation
                 credential.ClientId, !string.IsNullOrEmpty(credential.ClientSecret), credential.TokenEndpoint),
             CredentialKind.DeviceCode => ValidateDeviceCode(
                 credential.ClientId, credential.DeviceAuthorizationEndpoint, credential.TokenEndpoint),
+            CredentialKind.TokenExchange => ValidateTokenExchange(
+                credential.ExchangeEndpoint, credential.ExchangeMode,
+                credential.ExchangeMode == TokenExchangeMode.ApiKey
+                    ? !string.IsNullOrEmpty(credential.ExchangeApiKey)
+                    : !string.IsNullOrWhiteSpace(credential.ExchangeRequestBody),
+                credential.ExchangeApiKeyHeaderName, credential.ExchangeRequestBody, credential.ExchangeTokenPath),
             _ => null,
         };
 

@@ -368,6 +368,7 @@ public class DeferredSyncTests : IDisposable
         new ClientCredentialsService(NewLog()),
         // DoNotOpen for the reason DeviceCodeTests gives.
         new DeviceCodeService(NewLog(), DeviceCodeService.DoNotOpen),
+        new TokenExchangeService(NewLog()),
         NewLog());
 
     // ---- Disconnecting --------------------------------------------------------------------------
