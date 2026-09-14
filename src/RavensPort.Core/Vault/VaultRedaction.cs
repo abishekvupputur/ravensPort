@@ -41,6 +41,9 @@ public static class VaultRedaction
                 // The key file holds a private key. ServiceAccountSubject is deliberately not
                 // here: it is an email address, and the note is where non-secret config lives.
                 nameof(CredentialRecord.ServiceAccountJson),
+                // Whichever half of a token exchange's secret applies — the other is always empty.
+                nameof(CredentialRecord.ExchangeApiKey),
+                nameof(CredentialRecord.ExchangeRequestBody),
                 nameof(CredentialRecord.Token));
         }
         else if (typeInfo.Type == typeof(McpApiBridgeRecord))

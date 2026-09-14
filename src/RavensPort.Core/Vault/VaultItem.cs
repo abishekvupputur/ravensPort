@@ -47,9 +47,18 @@ public static class VaultFields
     /// </summary>
     public const string ServiceAccountJson = "service_account_json";
 
+    /// <summary>
+    /// The two secrets a <see cref="Models.CredentialKind.TokenExchange"/> credential may hold,
+    /// depending on its <see cref="Models.TokenExchangeMode"/> — never both at once, but each gets
+    /// its own field since which one applies is a property of the credential, not of the vault.
+    /// </summary>
+    public const string ExchangeApiKey = "exchange_api_key";
+    public const string ExchangeRequestBody = "exchange_request_body";
+
     /// <summary>Fields that must never be readable at a glance in the manager's UI.</summary>
     public static bool IsConcealed(string name) =>
-        name is Password or ApiKey or AccessToken or RefreshToken or ServiceAccountJson;
+        name is Password or ApiKey or AccessToken or RefreshToken or ServiceAccountJson
+            or ExchangeApiKey or ExchangeRequestBody;
 
     /// <summary>Fields that map to a built-in slot rather than a custom field.</summary>
     public static bool IsBuiltIn(string name) => name is Username or Password or Website or NoteContent;

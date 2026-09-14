@@ -92,6 +92,7 @@ public class CredentialTestServiceTests : IAsyncLifetime
             new ClientCredentialsService(activityLog),
             // DoNotOpen for the reason DeviceCodeTests gives.
             new DeviceCodeService(activityLog, DeviceCodeService.DoNotOpen),
+            new TokenExchangeService(activityLog),
             activityLog);
         _service = new CredentialTestService(new AccessTokenProvider(_cache, oAuth2Service, activityLog), activityLog);
     }

@@ -167,5 +167,108 @@ public class CredentialValidationTests
             Name = "a",
             Token = new TokenSet("t", null, DateTimeOffset.UtcNow.AddHours(1), "Bearer", DateTimeOffset.UtcNow),
         }.HasSecret);
+
+        // A token exchange credential is configured or not by whichever half of it applies —
+        // the stored secret, like the other two self-issuing kinds, not a token that has not been
+        // minted yet.
+        Assert.False(new CredentialRecord
+        {
+            Name = "a", Kind = CredentialKind.TokenExchange, ExchangeMode = TokenExchangeMode.ApiKey,
+        }.HasSecret);
+        Assert.True(new CredentialRecord
+        {
+            Name = "a", Kind = CredentialKind.TokenExchange, ExchangeMode = TokenExchangeMode.ApiKey,
+            ExchangeApiKey = "k",
+        }.HasSecret);
+        Assert.False(new CredentialRecord
+        {
+            Name = "a", Kind = CredentialKind.TokenExchange, ExchangeMode = TokenExchangeMode.CustomBody,
+            ExchangeApiKey = "k", // Wrong mode's secret — must not count.
+        }.HasSecret);
+        Assert.True(new CredentialRecord
+        {
+            Name = "a", Kind = CredentialKind.TokenExchange, ExchangeMode = TokenExchangeMode.CustomBody,
+            ExchangeRequestBody = "{}",
+        }.HasSecret);
+    }
+
+    // ---- token exchange -----------------------------------------------------------------------
+
+    [Fact]
+    public void ValidateTokenExchange_AcceptsAWellFormedApiKeyExchange() =>
+        Assert.Null(CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.ApiKey,
+            hasSecret: true, apiKeyHeaderName: "Authorization", customBody: null, tokenPath: "access_token"));
+
+    [Fact]
+    public void ValidateTokenExchange_AcceptsAWellFormedCustomBodyExchange() =>
+        Assert.Null(CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.CustomBody,
+            hasSecret: true, apiKeyHeaderName: null,
+            customBody: """{"username":"bob","password":"hunter2"}""", tokenPath: "token"));
+
+    [Fact]
+    public void ValidateTokenExchange_RequiresAnEndpoint()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            null, TokenExchangeMode.ApiKey, hasSecret: true, "Authorization", null, "access_token");
+
+        Assert.NotNull(error);
+        Assert.Contains("Exchange endpoint", error);
+    }
+
+    [Fact]
+    public void ValidateTokenExchange_RejectsPlainHttpOffLocalhost()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            "http://api.example.com/login", TokenExchangeMode.ApiKey, // DevSkim: ignore DS137138
+            hasSecret: true, apiKeyHeaderName: "Authorization", customBody: null, tokenPath: "access_token");
+
+        Assert.NotNull(error);
+        Assert.Contains("cleartext", error);
+    }
+
+    [Fact]
+    public void ValidateTokenExchange_RequiresTheApiKeyInApiKeyMode()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.ApiKey,
+            hasSecret: false, apiKeyHeaderName: "Authorization", customBody: null, tokenPath: "access_token");
+
+        Assert.NotNull(error);
+        Assert.Contains("API key is required", error);
+    }
+
+    [Fact]
+    public void ValidateTokenExchange_RequiresTheBodyInCustomBodyMode()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.CustomBody,
+            hasSecret: false, apiKeyHeaderName: null, customBody: null, tokenPath: "access_token");
+
+        Assert.NotNull(error);
+        Assert.Contains("Request body is required", error);
+    }
+
+    [Fact]
+    public void ValidateTokenExchange_RejectsABodyThatIsNotValidJson()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.CustomBody,
+            hasSecret: true, apiKeyHeaderName: null, customBody: "{ not json", tokenPath: "access_token");
+
+        Assert.NotNull(error);
+        Assert.Contains("valid JSON", error);
+    }
+
+    [Fact]
+    public void ValidateTokenExchange_RequiresATokenPath()
+    {
+        var error = CredentialValidation.ValidateTokenExchange(
+            "https://api.example.com/login", TokenExchangeMode.ApiKey,
+            hasSecret: true, apiKeyHeaderName: "Authorization", customBody: null, tokenPath: "  ");
+
+        Assert.NotNull(error);
+        Assert.Contains("Token path is required", error);
     }
 }

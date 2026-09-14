@@ -52,6 +52,14 @@ public sealed partial class CredentialsViewModel : ObservableObject
     [ObservableProperty] private string _newServiceAccountSubject = "";
     [ObservableProperty] private string _newExtraParams = "";
     [ObservableProperty] private bool _newSendClientCredentialsInBody;
+    [ObservableProperty] private string _newExchangeEndpoint = "";
+    [ObservableProperty] private TokenExchangeMode _newExchangeMode = TokenExchangeMode.ApiKey;
+    [ObservableProperty] private string _newExchangeApiKey = "";
+    [ObservableProperty] private string _newExchangeApiKeyHeaderName = "Authorization";
+    [ObservableProperty] private string _newExchangeApiKeyValuePrefix = "Bearer ";
+    [ObservableProperty] private string _newExchangeRequestBody = "";
+    [ObservableProperty] private string _newExchangeTokenPath = "access_token";
+    [ObservableProperty] private string _newExchangeExpiresInPath = "expires_in";
     [ObservableProperty] private string _redirectUriInfo = "";
     [ObservableProperty] private string _redirectUri = "";
     [ObservableProperty] private bool _isEditing;
@@ -83,12 +91,24 @@ public sealed partial class CredentialsViewModel : ObservableObject
     public bool IsClientCredentialsKind => SelectedKind == CredentialKind.ClientCredentials;
     public bool IsServiceAccountKind => SelectedKind == CredentialKind.GoogleServiceAccount;
     public bool IsDeviceCodeKind => SelectedKind == CredentialKind.DeviceCode;
+    public bool IsTokenExchangeKind => SelectedKind == CredentialKind.TokenExchange;
+
+    /// <summary>Which half of the token exchange form is shown.</summary>
+    public bool IsExchangeApiKeyMode => NewExchangeMode == TokenExchangeMode.ApiKey;
+    public bool IsExchangeCustomBodyMode => NewExchangeMode == TokenExchangeMode.CustomBody;
+
+    public IReadOnlyList<TokenExchangeMode> ExchangeModes { get; } =
+        [TokenExchangeMode.ApiKey, TokenExchangeMode.CustomBody];
 
     /// <summary>The kinds that identify themselves with a client id and secret.</summary>
     public bool UsesClientPair => IsOAuthKind || IsClientCredentialsKind || IsDeviceCodeKind;
 
-    /// <summary>Everything except a static API key asks a provider for scopes.</summary>
-    public bool UsesScopes => SelectedKind != CredentialKind.ApiKey;
+    /// <summary>
+    /// Everything except a static API key or a token exchange asks a provider for scopes — a
+    /// token exchange has no OAuth-shaped request to carry them on, so the endpoint decides what
+    /// the token can do.
+    /// </summary>
+    public bool UsesScopes => SelectedKind is not (CredentialKind.ApiKey or CredentialKind.TokenExchange);
 
     /// <summary>Every flow that exchanges anything has a token endpoint; only the browser flow has two.</summary>
     public bool UsesTokenEndpoint => UsesClientPair;
@@ -171,6 +191,7 @@ public sealed partial class CredentialsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsClientCredentialsKind));
         OnPropertyChanged(nameof(IsServiceAccountKind));
         OnPropertyChanged(nameof(IsDeviceCodeKind));
+        OnPropertyChanged(nameof(IsTokenExchangeKind));
         OnPropertyChanged(nameof(UsesClientPair));
         OnPropertyChanged(nameof(UsesScopes));
         OnPropertyChanged(nameof(UsesTokenEndpoint));
@@ -200,6 +221,12 @@ public sealed partial class CredentialsViewModel : ObservableObject
         OnPropertyChanged(nameof(DefaultParameterNameLabel));
         OnPropertyChanged(nameof(DefaultInjectionSummary));
         OnPropertyChanged(nameof(IsUntestablePlacement));
+    }
+
+    partial void OnNewExchangeModeChanged(TokenExchangeMode value)
+    {
+        OnPropertyChanged(nameof(IsExchangeApiKeyMode));
+        OnPropertyChanged(nameof(IsExchangeCustomBodyMode));
     }
 
     partial void OnNewDefaultParameterNameChanged(string value) =>
@@ -313,6 +340,9 @@ public sealed partial class CredentialsViewModel : ObservableObject
                 return;
             case CredentialKind.DeviceCode:
                 await SaveDeviceCodeCredentialAsync();
+                return;
+            case CredentialKind.TokenExchange:
+                await SaveTokenExchangeCredentialAsync();
                 return;
         }
 
@@ -723,6 +753,102 @@ public sealed partial class CredentialsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The token exchange branch of Save.
+    ///
+    /// No client id, no browser, no OAuth response shape — the endpoint, what gets traded, and
+    /// where the token lives in the answer are all named by the user, which is what a generic
+    /// exchange has to ask for that a real OAuth2 grant gets for free from the spec.
+    /// </summary>
+    private async Task SaveTokenExchangeCredentialAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewName))
+        {
+            StatusMessage = NameRequired;
+            return;
+        }
+
+        var endpoint = string.IsNullOrWhiteSpace(NewExchangeEndpoint) ? null : NewExchangeEndpoint.Trim();
+
+        // On an edit, a blank box means "keep the current secret" — same rule as a client secret
+        // or an API key, and for the same reason: neither is ever redisplayed once saved.
+        var keepExistingApiKey = IsEditing && string.IsNullOrWhiteSpace(NewExchangeApiKey);
+        var keepExistingBody = IsEditing && string.IsNullOrWhiteSpace(NewExchangeRequestBody);
+
+        var hasSecret = NewExchangeMode == TokenExchangeMode.ApiKey
+            ? (keepExistingApiKey
+                ? !string.IsNullOrEmpty(_editingItem?.Record.ExchangeApiKey)
+                : !string.IsNullOrWhiteSpace(NewExchangeApiKey))
+            : (keepExistingBody
+                ? !string.IsNullOrWhiteSpace(_editingItem?.Record.ExchangeRequestBody)
+                : !string.IsNullOrWhiteSpace(NewExchangeRequestBody));
+
+        var bodyToValidate = keepExistingBody ? null : NewExchangeRequestBody;
+
+        var validationError = CredentialValidation.ValidateTokenExchange(
+                endpoint, NewExchangeMode, hasSecret,
+                NewExchangeApiKeyHeaderName, bodyToValidate, NewExchangeTokenPath)
+            ?? ValidatePlacementAndTestEndpoint();
+        if (validationError is not null)
+        {
+            StatusMessage = validationError;
+            return;
+        }
+
+        var tokenPath = NewExchangeTokenPath.Trim();
+        var expiresInPath = string.IsNullOrWhiteSpace(NewExchangeExpiresInPath) ? null : NewExchangeExpiresInPath.Trim();
+
+        if (_editingItem is { } editing)
+        {
+            var record = editing.Record;
+
+            await _configStoreCache.MutateAsync(_ =>
+            {
+                record.Name = NewName.Trim();
+                record.Kind = CredentialKind.TokenExchange;
+                record.ExchangeEndpoint = endpoint;
+                record.ExchangeMode = NewExchangeMode;
+                if (!keepExistingApiKey) record.ExchangeApiKey = NewExchangeApiKey.Trim();
+                record.ExchangeApiKeyHeaderName = NewExchangeApiKeyHeaderName.Trim();
+                record.ExchangeApiKeyValuePrefix = NewExchangeApiKeyValuePrefix;
+                if (!keepExistingBody) record.ExchangeRequestBody = NewExchangeRequestBody;
+                record.ExchangeTokenPath = tokenPath;
+                record.ExchangeExpiresInPath = expiresInPath;
+
+                ClearPreviousFailure(record);
+                ApplyPlacementAndTestEndpoint(record);
+            });
+
+            editing.Refresh();
+            StatusMessage = $"Saved changes to '{record.Name}'.";
+            CancelEdit();
+            return;
+        }
+
+        var created = new CredentialRecord
+        {
+            Name = NewName.Trim(),
+            Kind = CredentialKind.TokenExchange,
+            ExchangeEndpoint = endpoint,
+            ExchangeMode = NewExchangeMode,
+            ExchangeApiKey = NewExchangeApiKey.Trim(),
+            ExchangeApiKeyHeaderName = NewExchangeApiKeyHeaderName.Trim(),
+            ExchangeApiKeyValuePrefix = NewExchangeApiKeyValuePrefix,
+            ExchangeRequestBody = NewExchangeRequestBody,
+            ExchangeTokenPath = tokenPath,
+            ExchangeExpiresInPath = expiresInPath,
+        };
+        ApplyPlacementAndTestEndpoint(created);
+
+        await _configStoreCache.MutateAsync(store => store.Credentials.Add(created));
+        Credentials.Add(new CredentialItemViewModel(created).Refresh());
+
+        NewName = "";
+        NewExchangeApiKey = "";
+        NewExchangeRequestBody = "";
+        StatusMessage = $"Added '{created.Name}'. It mints its own tokens — click Get token to check the settings now.";
+    }
+
+    /// <summary>
     /// Forgets that a previous token request was refused.
     ///
     /// Editing an app login is the user saying "this is what was wrong" — and a refused mint is
@@ -821,10 +947,22 @@ public sealed partial class CredentialsViewModel : ObservableObject
         NewDefaultValuePrefix = item.Record.DefaultValuePrefix;
         NewTestEndpoint = item.Record.TestEndpoint ?? "";
 
+        NewExchangeEndpoint = item.Record.ExchangeEndpoint ?? "";
+        NewExchangeMode = item.Record.ExchangeMode;
+        NewExchangeApiKey = "";
+        NewExchangeApiKeyHeaderName = item.Record.ExchangeApiKeyHeaderName;
+        NewExchangeApiKeyValuePrefix = item.Record.ExchangeApiKeyValuePrefix;
+        NewExchangeRequestBody = "";
+        NewExchangeTokenPath = item.Record.ExchangeTokenPath;
+        NewExchangeExpiresInPath = item.Record.ExchangeExpiresInPath ?? "";
+
         StatusMessage = item.Record.Kind switch
         {
             CredentialKind.ApiKey => "Leave API key blank to keep the current one.",
             CredentialKind.GoogleServiceAccount => "Leave the key file blank to keep the current one.",
+            CredentialKind.TokenExchange => item.Record.ExchangeMode == TokenExchangeMode.ApiKey
+                ? "Leave API key blank to keep the current one."
+                : "Leave the request body blank to keep the current one.",
             _ => "Leave Client secret blank to keep the current one.",
         };
     }
@@ -871,6 +1009,14 @@ public sealed partial class CredentialsViewModel : ObservableObject
         NewExtraParams = "";
         NewSendClientCredentialsInBody = false;
         NewTestEndpoint = "";
+        NewExchangeEndpoint = "";
+        NewExchangeMode = TokenExchangeMode.ApiKey;
+        NewExchangeApiKey = "";
+        NewExchangeApiKeyHeaderName = "Authorization";
+        NewExchangeApiKeyValuePrefix = "Bearer ";
+        NewExchangeRequestBody = "";
+        NewExchangeTokenPath = "access_token";
+        NewExchangeExpiresInPath = "expires_in";
 
         var defaults = CredentialRecord.DefaultInjectionFor(SelectedKind);
         NewDefaultPlacement = defaults.Placement;

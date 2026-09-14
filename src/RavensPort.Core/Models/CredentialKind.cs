@@ -45,6 +45,15 @@ public enum CredentialKind
     /// register a loopback callback.
     /// </summary>
     DeviceCode,
+
+    /// <summary>
+    /// A secret traded for a token at an endpoint of the user's own choosing — not an OAuth2
+    /// grant, so no fixed request or response shape is assumed. Plenty of APIs predate OAuth or
+    /// simply never adopted it and invented their own login call instead; this is what lets one of
+    /// those be treated the same way everything else here is, rather than living outside the
+    /// credential model as a manually-maintained API key.
+    /// </summary>
+    TokenExchange,
 }
 
 /// <summary>
@@ -66,6 +75,9 @@ public sealed record CredentialKindInfo(CredentialKind Kind, string Label, strin
             "The app signs in as itself with its client id and secret. No browser, no user consent."),
         new(CredentialKind.GoogleServiceAccount, "Google service account",
             "A Google service account key file signs for its own access tokens. No browser, no user consent."),
+        new(CredentialKind.TokenExchange, "Token exchange",
+            "Trade an API key or a custom request body for a token at an endpoint you choose. For "
+            + "APIs with their own login call instead of OAuth."),
     ];
 
     public static CredentialKindInfo For(CredentialKind kind) =>
@@ -78,6 +90,7 @@ public sealed record CredentialKindInfo(CredentialKind Kind, string Label, strin
         CredentialKind.ClientCredentials => "Client creds",
         CredentialKind.GoogleServiceAccount => "Service acct",
         CredentialKind.DeviceCode => "Device code",
+        CredentialKind.TokenExchange => "Token exchange",
         _ => "OAuth2",
     };
 }

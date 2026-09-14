@@ -306,6 +306,7 @@ public class ClientCredentialsTests : IAsyncLifetime
         // DoNotOpen for the reason DeviceCodeTests gives. Nothing here reaches the device flow,
         // but the dependency is constructed all the same and a later test might.
         new DeviceCodeService(_activityLog, DeviceCodeService.DoNotOpen),
+        new TokenExchangeService(_activityLog),
         _activityLog);
 
     [Fact]

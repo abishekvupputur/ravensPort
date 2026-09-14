@@ -88,6 +88,50 @@ public sealed class CredentialRecord
     /// </summary>
     public string? ServiceAccountSubject { get; set; }
 
+    // ---- Token exchange -----------------------------------------------------------------------
+    //
+    // For CredentialKind.TokenExchange: a secret traded for a token at an endpoint the user
+    // names, since not every API speaks OAuth2. What goes out is either a static key on a header
+    // of its own, or a JSON body the user wrote by hand and this app never inspects.
+
+    /// <summary>Where <see cref="ExchangeMode"/>'s secret is posted to be traded for a token.</summary>
+    public string? ExchangeEndpoint { get; set; }
+
+    public TokenExchangeMode ExchangeMode { get; set; } = TokenExchangeMode.ApiKey;
+
+    /// <summary>
+    /// The static key sent to <see cref="ExchangeEndpoint"/> when <see cref="ExchangeMode"/> is
+    /// <see cref="TokenExchangeMode.ApiKey"/>. Never redisplayed once saved, like <see cref="ApiKey"/>.
+    /// </summary>
+    public string? ExchangeApiKey { get; set; }
+
+    /// <summary>Header <see cref="ExchangeApiKey"/> rides on. Defaults to the OAuth convention.</summary>
+    public string ExchangeApiKeyHeaderName { get; set; } = "Authorization";
+
+    public string ExchangeApiKeyValuePrefix { get; set; } = "Bearer ";
+
+    /// <summary>
+    /// The literal JSON body posted to <see cref="ExchangeEndpoint"/> when <see cref="ExchangeMode"/>
+    /// is <see cref="TokenExchangeMode.CustomBody"/> — a username/password pair is the common case.
+    /// Authored by the user and posted verbatim; it may itself carry a secret, so it is held back
+    /// from the topology note exactly like every other secret here.
+    /// </summary>
+    public string? ExchangeRequestBody { get; set; }
+
+    /// <summary>
+    /// Dot path to the token in the exchange endpoint's JSON response — "access_token" for a flat
+    /// response, "data.token" for a nested one. Not every API calls it that, so unlike everything
+    /// else here this has to be told rather than assumed.
+    /// </summary>
+    public string ExchangeTokenPath { get; set; } = "access_token";
+
+    /// <summary>
+    /// Optional dot path to the token's lifetime in seconds. Absent, or pointing at nothing the
+    /// response actually has, means the token is treated as never expiring — the same reading an
+    /// OAuth response with no <c>expires_in</c> gets.
+    /// </summary>
+    public string? ExchangeExpiresInPath { get; set; } = "expires_in";
+
     // ---- Default placement ------------------------------------------------------------------
     //
     // Where this credential's secret normally goes. Two uses: it is what the "Test" button below
@@ -133,6 +177,9 @@ public sealed class CredentialRecord
         // no token yet is configured, not empty.
         CredentialKind.GoogleServiceAccount => !string.IsNullOrWhiteSpace(ServiceAccountJson),
         CredentialKind.ClientCredentials => !string.IsNullOrEmpty(ClientSecret),
+        CredentialKind.TokenExchange => ExchangeMode == TokenExchangeMode.ApiKey
+            ? !string.IsNullOrEmpty(ExchangeApiKey)
+            : !string.IsNullOrWhiteSpace(ExchangeRequestBody),
         _ => Token is not null,
     };
 
@@ -145,7 +192,8 @@ public sealed class CredentialRecord
     /// </summary>
     [JsonIgnore]
     public bool IsSelfIssuing =>
-        Kind is CredentialKind.ClientCredentials or CredentialKind.GoogleServiceAccount;
+        Kind is CredentialKind.ClientCredentials or CredentialKind.GoogleServiceAccount
+            or CredentialKind.TokenExchange;
 
     /// <summary>
     /// True for the kinds that need a person: a real grant belonging to a human, obtained by them

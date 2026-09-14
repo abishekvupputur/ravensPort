@@ -155,6 +155,16 @@ public static class VaultMapper
             fields.Add(new(VaultFields.ServiceAccountJson, credential.ServiceAccountJson));
         }
 
+        if (!string.IsNullOrEmpty(credential.ExchangeApiKey))
+        {
+            fields.Add(new(VaultFields.ExchangeApiKey, credential.ExchangeApiKey));
+        }
+
+        if (!string.IsNullOrWhiteSpace(credential.ExchangeRequestBody))
+        {
+            fields.Add(new(VaultFields.ExchangeRequestBody, credential.ExchangeRequestBody));
+        }
+
         if (credential.Token is { } token)
         {
             fields.Add(new(VaultFields.AccessToken, token.AccessToken));
@@ -192,6 +202,7 @@ public static class VaultMapper
                 CredentialKind.ApiKey => $"API key for '{credential.Name}'",
                 CredentialKind.GoogleServiceAccount => $"Google service account key for '{credential.Name}'",
                 CredentialKind.ClientCredentials => $"OAuth client credentials for '{credential.Name}'",
+                CredentialKind.TokenExchange => $"Token exchange secret for '{credential.Name}'",
                 _ => $"OAuth credential for '{credential.Name}'",
             },
         });
@@ -442,6 +453,8 @@ public static class VaultMapper
         credential.ClientSecret = item.Field(VaultFields.Password) ?? "";
         credential.ApiKey = item.Field(VaultFields.ApiKey);
         credential.ServiceAccountJson = item.Field(VaultFields.ServiceAccountJson);
+        credential.ExchangeApiKey = item.Field(VaultFields.ExchangeApiKey);
+        credential.ExchangeRequestBody = item.Field(VaultFields.ExchangeRequestBody);
 
         var accessToken = item.Field(VaultFields.AccessToken);
 

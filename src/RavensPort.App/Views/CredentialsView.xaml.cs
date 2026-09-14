@@ -36,6 +36,14 @@ public partial class CredentialsView : UserControl
         }
     }
 
+    private void ExchangeApiKeyBox_PasswordChanged(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (DataContext is CredentialsViewModel vm)
+        {
+            vm.NewExchangeApiKey = ExchangeApiKeyBox.Password;
+        }
+    }
+
     /// <summary>
     /// PasswordBox.Password is not a DependencyProperty, so it cannot be bound and the flow
     /// above is one-way: box to view model. That left the box still showing the previous
@@ -60,6 +68,11 @@ public partial class CredentialsView : UserControl
             case nameof(CredentialsViewModel.NewApiKey)
                 when vm.NewApiKey.Length == 0 && ApiKeyBox.Password.Length > 0:
                 ApiKeyBox.Clear();
+                break;
+
+            case nameof(CredentialsViewModel.NewExchangeApiKey)
+                when vm.NewExchangeApiKey.Length == 0 && ExchangeApiKeyBox.Password.Length > 0:
+                ExchangeApiKeyBox.Clear();
                 break;
         }
     }
