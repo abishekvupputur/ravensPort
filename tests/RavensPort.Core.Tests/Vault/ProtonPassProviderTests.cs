@@ -200,6 +200,57 @@ public class ProtonPassProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task AnUnchangedApiBridgeSurvivesASecondSave()
+    {
+        // Regression: the reconcile sweep's "keep" set used to be built from Credentials,
+        // RouteKeys and FunnelKeys only. An API bridge's key and manifest item were never in it,
+        // so every save's sweep saw its own just-written bridge items as orphans and deleted them
+        // straight back out — the bridge kept reporting "missing" no matter how often it was
+        // written back.
+        var fake = new FakeProtonPass();
+        var runner = fake.AsRunner();
+        var provider = NewProvider(runner);
+        var store = StoreWithSecrets();
+
+        var bridge = new McpApiBridgeRecord
+        {
+            Name = "Task tracker",
+            Slug = "tracker",
+            Key = ProxyKey.Generate(TimeSpan.FromDays(30)),
+        };
+        store.McpApiBridges.Add(bridge);
+
+        await provider.SaveAsync(store);
+
+        bool IsKeyItem(string title) =>
+            VaultItemNaming.TryParse(title, out var role, out var id)
+            && role == VaultItemRole.ApiBridgeKey && id == bridge.Id;
+
+        bool IsManifestItem(string title) =>
+            VaultItemNaming.TryParse(title, out var role, out var id)
+            && role == VaultItemRole.ApiBridgeManifest && id == bridge.Id;
+
+        var keyItemId = fake.ItemIdOf(IsKeyItem);
+        var manifestItemId = fake.ItemIdOf(IsManifestItem);
+
+        Assert.NotNull(keyItemId);
+        Assert.NotNull(manifestItemId);
+
+        store.Settings.ListenPort = 5999;
+        await provider.SaveAsync(store);
+
+        // The same items, untouched — a sweep that treats its own just-written bridge items as
+        // orphans would delete and never recreate them, since the create loop skips an unchanged
+        // record and only the sweep runs afterwards.
+        Assert.Equal(keyItemId, fake.ItemIdOf(IsKeyItem));
+        Assert.Equal(manifestItemId, fake.ItemIdOf(IsManifestItem));
+
+        var reloaded = await provider.LoadAsync();
+        var reloadedBridge = Assert.Single(reloaded.McpApiBridges);
+        Assert.Equal(bridge.Key.Value, reloadedBridge.Key.Value);
+    }
+
+    [Fact]
     public async Task AChangedRecordIsRecreatedAndItsPredecessorDeleted()
     {
         var fake = new FakeProtonPass();

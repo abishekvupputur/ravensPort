@@ -873,6 +873,8 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         var previousRecordIds = previousIndex.Credentials.Keys
             .Concat(previousIndex.RouteKeys.Keys)
             .Concat(previousIndex.FunnelKeys.Keys)
+            .Concat(previousIndex.ApiBridgeKeys.Keys)
+            .Concat(previousIndex.ApiBridgeManifests.Keys)
             .ToHashSet();
 
         var liveRecordIds = live.Select(i => i.RecordId).ToHashSet();
@@ -905,6 +907,8 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         var deletable = previousIndex.Credentials.Values
             .Concat(previousIndex.RouteKeys.Values)
             .Concat(previousIndex.FunnelKeys.Values)
+            .Concat(previousIndex.ApiBridgeKeys.Values)
+            .Concat(previousIndex.ApiBridgeManifests.Values)
             .ToHashSet(StringComparer.Ordinal);
 
         var doomed = existing
