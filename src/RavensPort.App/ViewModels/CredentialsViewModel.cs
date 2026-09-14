@@ -775,12 +775,8 @@ public sealed partial class CredentialsViewModel : ObservableObject
         var keepExistingBody = IsEditing && string.IsNullOrWhiteSpace(NewExchangeRequestBody);
 
         var hasSecret = NewExchangeMode == TokenExchangeMode.ApiKey
-            ? (keepExistingApiKey
-                ? !string.IsNullOrEmpty(_editingItem?.Record.ExchangeApiKey)
-                : !string.IsNullOrWhiteSpace(NewExchangeApiKey))
-            : (keepExistingBody
-                ? !string.IsNullOrWhiteSpace(_editingItem?.Record.ExchangeRequestBody)
-                : !string.IsNullOrWhiteSpace(NewExchangeRequestBody));
+            ? HasPendingExchangeApiKey(keepExistingApiKey)
+            : HasPendingExchangeBody(keepExistingBody);
 
         var bodyToValidate = keepExistingBody ? null : NewExchangeRequestBody;
 
@@ -847,6 +843,16 @@ public sealed partial class CredentialsViewModel : ObservableObject
         NewExchangeRequestBody = "";
         StatusMessage = $"Added '{created.Name}'. It mints its own tokens — click Get token to check the settings now.";
     }
+
+    /// <summary>Whether the pending form has a usable API key, keeping the stored one in mind on an edit.</summary>
+    private bool HasPendingExchangeApiKey(bool keepExisting) => keepExisting
+        ? !string.IsNullOrEmpty(_editingItem?.Record.ExchangeApiKey)
+        : !string.IsNullOrWhiteSpace(NewExchangeApiKey);
+
+    /// <inheritdoc cref="HasPendingExchangeApiKey"/>
+    private bool HasPendingExchangeBody(bool keepExisting) => keepExisting
+        ? !string.IsNullOrWhiteSpace(_editingItem?.Record.ExchangeRequestBody)
+        : !string.IsNullOrWhiteSpace(NewExchangeRequestBody);
 
     /// <summary>
     /// Forgets that a previous token request was refused.
