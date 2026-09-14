@@ -147,50 +147,53 @@ public static class CredentialValidation
             return "Exchange endpoint is required — it is where the secret is traded for a token.";
         }
 
-        if (UrlValidation.ValidateEndpoint(endpoint, "Exchange endpoint") is { } endpointError)
-        {
-            return endpointError;
-        }
+        var secretError = UrlValidation.ValidateEndpoint(endpoint, "Exchange endpoint")
+            ?? (mode == TokenExchangeMode.ApiKey
+                ? ValidateExchangeApiKey(hasSecret, apiKeyHeaderName)
+                : ValidateExchangeBody(hasSecret, customBody));
 
-        if (mode == TokenExchangeMode.ApiKey)
-        {
-            if (!hasSecret)
-            {
-                return "API key is required — it is what gets traded for a token.";
-            }
-
-            if (string.IsNullOrWhiteSpace(apiKeyHeaderName) || apiKeyHeaderName.Any(char.IsControl))
-            {
-                return "Header name is required and may not contain control characters.";
-            }
-        }
-        else
-        {
-            if (!hasSecret)
-            {
-                return "Request body is required — it is what gets posted to the exchange endpoint.";
-            }
-
-            // Checked here rather than left for the request to fail on: a body that cannot be
-            // parsed is a typo the user can fix right now, not something worth a round trip to
-            // discover.
-            if (customBody is not null)
-            {
-                try
-                {
-                    using var _ = JsonDocument.Parse(customBody);
-                }
-                catch (JsonException)
-                {
-                    return "Request body must be valid JSON.";
-                }
-            }
-        }
+        if (secretError is not null) return secretError;
 
         return string.IsNullOrWhiteSpace(tokenPath)
             ? "Token path is required — it says where in the response the token is, "
               + "e.g. 'access_token' or 'data.token'."
             : null;
+    }
+
+    private static string? ValidateExchangeApiKey(bool hasSecret, string? headerName)
+    {
+        if (!hasSecret)
+        {
+            return "API key is required — it is what gets traded for a token.";
+        }
+
+        return string.IsNullOrWhiteSpace(headerName) || headerName.Any(char.IsControl)
+            ? "Header name is required and may not contain control characters."
+            : null;
+    }
+
+    /// <summary>
+    /// Checked here rather than left for the request to fail on: a body that cannot be parsed is
+    /// a typo the user can fix right now, not something worth a round trip to discover.
+    /// </summary>
+    private static string? ValidateExchangeBody(bool hasSecret, string? customBody)
+    {
+        if (!hasSecret)
+        {
+            return "Request body is required — it is what gets posted to the exchange endpoint.";
+        }
+
+        if (customBody is null) return null;
+
+        try
+        {
+            using var _ = JsonDocument.Parse(customBody);
+            return null;
+        }
+        catch (JsonException)
+        {
+            return "Request body must be valid JSON.";
+        }
     }
 
     /// <summary>
