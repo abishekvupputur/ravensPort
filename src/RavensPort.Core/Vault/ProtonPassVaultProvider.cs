@@ -793,11 +793,15 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         var previousRecordIds = previousIndex.Credentials.Keys
             .Concat(previousIndex.RouteKeys.Keys)
             .Concat(previousIndex.FunnelKeys.Keys)
+            .Concat(previousIndex.ApiBridgeKeys.Keys)
+            .Concat(previousIndex.ApiBridgeManifests.Keys)
             .ToHashSet();
 
         var newRecordIds = index.Credentials.Keys
             .Concat(index.RouteKeys.Keys)
             .Concat(index.FunnelKeys.Keys)
+            .Concat(index.ApiBridgeKeys.Keys)
+            .Concat(index.ApiBridgeManifests.Keys)
             .ToHashSet();
 
         if (previousRecordIds.Count > 0 && newRecordIds.Count > 0 && !newRecordIds.Overlaps(previousRecordIds))
@@ -811,6 +815,8 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         var keep = index.Credentials.Values
             .Concat(index.RouteKeys.Values)
             .Concat(index.FunnelKeys.Values)
+            .Concat(index.ApiBridgeKeys.Values)
+            .Concat(index.ApiBridgeManifests.Values)
             .ToHashSet(StringComparer.Ordinal);
 
         // Only items the note being replaced actually pointed at, and this is the property that
@@ -825,6 +831,8 @@ await ReconcileAsync(existing, index, previousIndex, ct);
         var deletable = previousIndex.Credentials.Values
             .Concat(previousIndex.RouteKeys.Values)
             .Concat(previousIndex.FunnelKeys.Values)
+            .Concat(previousIndex.ApiBridgeKeys.Values)
+            .Concat(previousIndex.ApiBridgeManifests.Values)
             .ToHashSet(StringComparer.Ordinal);
 
         var doomed = before
