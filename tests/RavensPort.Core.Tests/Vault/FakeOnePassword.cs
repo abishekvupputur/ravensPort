@@ -49,7 +49,8 @@ public sealed class FakeOnePassword
 
     /// <summary>Puts one of the user's own entries in a vault, so it is not empty.</summary>
     /// <param name="state">"ARCHIVED" for one the user has put away — 1Password still reports it.</param>
-    public string AddItem(string vaultId, string title, string? state = null)
+    /// <param name="notes">The item's note field — what a manifest item's content round-trips through.</param>
+    public string AddItem(string vaultId, string title, string? state = null, string notes = "")
     {
         var id = $"item-{_nextId++}";
 
@@ -58,7 +59,7 @@ public sealed class FakeOnePassword
             ["title"] = title,
             ["category"] = "Login",
             ["fields"] = new JsonArray(),
-            ["notes"] = "",
+            ["notes"] = notes,
             ["state"] = state,
         };
 
@@ -170,16 +171,26 @@ public sealed class FakeOnePassword
         return array.ToJsonString();
     }
 
-    private CliResult GetItem(string id, string vaultId) =>
-        ItemsIn(vaultId).TryGetValue(id, out var item)
-            ? Ok(new JsonObject
-            {
-                ["id"] = id,
-                ["title"] = item["title"]?.GetValue<string>(),
-                ["fields"] = item["fields"]?.DeepClone(),
-                ["notes"] = item["notes"]?.GetValue<string>(),
-            }.ToJsonString())
-            : Fail($"\"{id}\" isn't an item.");
+    private CliResult GetItem(string id, string vaultId)
+    {
+        if (!ItemsIn(vaultId).TryGetValue(id, out var item)) return Fail($"\"{id}\" isn't an item.");
+
+        // Real 1Password answers neither success nor "isn't an item" for one the user archived —
+        // it is a distinct, ambiguous state SaysItemDoesNotExist deliberately does not recognize.
+        // See Archive().
+        if (item["state"]?.GetValue<string>() == "ARCHIVED")
+        {
+            return Fail($"[ERROR] item is not in an active state: \"{id}\".");
+        }
+
+        return Ok(new JsonObject
+        {
+            ["id"] = id,
+            ["title"] = item["title"]?.GetValue<string>(),
+            ["fields"] = item["fields"]?.DeepClone(),
+            ["notes"] = item["notes"]?.GetValue<string>(),
+        }.ToJsonString());
+    }
 
     /// <summary>
     /// The categories op actually accepts in a template, as `op item template get` emits them.
