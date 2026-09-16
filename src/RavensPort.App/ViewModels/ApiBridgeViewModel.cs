@@ -326,6 +326,12 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         }
 
         var fileName = Path.GetFileName(dialog.FileName);
+
+        // A plain-text copy of exactly what was read, kept regardless of whether the conversion
+        // below succeeds — useful precisely when it does not, since the spec that produced an
+        // error is the first thing worth re-reading.
+        ManifestBackupStore.SaveImportedSpec(fileName, specText);
+
         var result = OpenApiImporter.Convert(specText, fileName);
 
         if (result.Error is { } error)
@@ -425,6 +431,10 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
             StatusMessage = manifestError;
             return;
         }
+
+        // The manifest exactly as it stood in the editor at save time — comment header included,
+        // when it came from an OpenAPI import, so the warnings travel with the backup too.
+        ManifestBackupStore.SaveManifest(EditingBridge?.Name ?? NewBridgeName, ManifestJson);
 
         if (EditingBridge is { } editing)
         {
