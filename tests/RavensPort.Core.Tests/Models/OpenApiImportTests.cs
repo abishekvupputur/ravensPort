@@ -273,4 +273,235 @@ public class OpenApiImportTests
         Assert.Null(error);
         Assert.NotEmpty(manifest!.Tools);
     }
+
+    [Fact]
+    public void SkipsOptionsAndTraceMethodsWithAWarning()
+    {
+        var spec = Document("""
+            "/things": {
+              "get": { "operationId": "getThings", "responses": { "200": { "description": "ok" } } },
+              "options": { "operationId": "preflight", "responses": { "200": { "description": "ok" } } }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        Assert.Single(manifest!.Tools);
+        Assert.Contains(result.Warnings, w => w.Contains("OPTIONS or TRACE", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FailsWhenEveryOperationFailsItsOwnValidation()
+    {
+        var spec = Document("""
+            "/things": {
+              "get": {
+                "operationId": "getThings",
+                "parameters": [
+                  { "name": "bad=name", "in": "query", "schema": { "type": "string" } }
+                ],
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var result = Convert(spec);
+
+        Assert.NotNull(result.Error);
+        Assert.Contains("Nothing from this document fits", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WarnsWhenTheRequestBodyHasNoJsonContentAtAll()
+    {
+        var spec = Document("""
+            "/things": {
+              "post": {
+                "operationId": "upload",
+                "requestBody": {
+                  "content": { "multipart/form-data": { "schema": { "type": "string", "format": "binary" } } }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+        Assert.Equal(McpApiBridgeBodyMode.None, tool.Request!.BodyMode);
+        Assert.Contains(result.Warnings, w => w.Contains("multipart/form-data", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WarnsWhenAJsonBodyHasNoFixedProperties()
+    {
+        var spec = Document("""
+            "/things": {
+              "post": {
+                "operationId": "createThing",
+                "requestBody": {
+                  "content": { "application/json": { "schema": { "type": "object" } } }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+        Assert.Equal(McpApiBridgeBodyMode.None, tool.Request!.BodyMode);
+        Assert.Contains(result.Warnings, w => w.Contains("no fixed set of properties", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RenamesABodyPropertyThatCollidesWithAPathParameter()
+    {
+        var spec = Document("""
+            "/things/{id}": {
+              "put": {
+                "operationId": "updateThing",
+                "parameters": [
+                  { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+                ],
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+                      }
+                    }
+                  }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+        Assert.Equal(McpApiBridgeBodyMode.Arguments, tool.Request!.BodyMode);
+        Assert.Contains(result.Warnings, w => w.Contains("collided", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AllocatesALongOperationIdWithinTheToolNameCap()
+    {
+        var longId = new string('x', McpApiBridgeValidation.MaxToolNameLength + 20);
+
+        var spec = Document($$"""
+            "/things": {
+              "get": { "operationId": "{{longId}}", "responses": { "200": { "description": "ok" } } }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+        Assert.True(tool.Name.Length <= McpApiBridgeValidation.MaxToolNameLength);
+    }
+
+    /// <summary>
+    /// One operation exercising every schema and parameter feature at once: a path parameter whose
+    /// name needs sanitizing, a non-reserved header parameter with a description, an enum, an array
+    /// with typed items, a "format", an object-typed property, and a type this converter cannot map
+    /// to any single JSON Schema type (a 3.1-style union of two non-null types) — plus a summary and
+    /// a description that differ, so both halves of a tool's text get combined.
+    /// </summary>
+    [Fact]
+    public void MapsEveryParameterAndSchemaFeatureInOneOperation()
+    {
+        // OpenAPI 3.1.0, not the shared 3.0.0 Document() helper: a "type" array — the union this
+        // converter cannot map to one JSON Schema type — is only valid syntax from 3.1 onward.
+        var spec = """
+            {
+              "openapi": "3.1.0",
+              "info": { "title": "Test API", "version": "1" },
+              "paths": {
+                "/things/{item-id}": {
+                  "get": {
+                    "operationId": "getThing",
+                    "summary": "Gets a thing",
+                    "description": "Returns the full record.",
+                    "parameters": [
+                      { "name": "item-id", "in": "path", "required": true, "schema": { "type": "string" } },
+                      {
+                        "name": "X-Trace",
+                        "in": "header",
+                        "description": "Correlation id",
+                        "schema": { "type": "string", "format": "uuid", "enum": ["a", "b"] }
+                      },
+                      {
+                        "name": "tags",
+                        "in": "query",
+                        "schema": { "type": "array", "items": { "type": "integer" } }
+                      },
+                      {
+                        "name": "detail",
+                        "in": "query",
+                        "schema": { "type": "object" }
+                      },
+                      {
+                        "name": "weird",
+                        "in": "query",
+                        "schema": { "type": ["string", "integer"] }
+                      }
+                    ],
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+
+        Assert.Equal("Gets a thing Returns the full record.", tool.Description);
+        Assert.Equal("/things/{item_id}", tool.Request!.Path);
+        Assert.Equal("{X_Trace}", tool.Request.Headers["X-Trace"]);
+
+        var properties = tool.InputSchema.GetProperty("properties");
+        Assert.Equal("string", properties.GetProperty("item_id").GetProperty("type").GetString());
+        Assert.Equal("string", properties.GetProperty("X_Trace").GetProperty("type").GetString());
+        Assert.Equal("Correlation id", properties.GetProperty("X_Trace").GetProperty("description").GetString());
+        Assert.Equal("uuid", properties.GetProperty("X_Trace").GetProperty("format").GetString());
+        Assert.Equal(["a", "b"], properties.GetProperty("X_Trace").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("array", properties.GetProperty("tags").GetProperty("type").GetString());
+        Assert.Equal("integer", properties.GetProperty("tags").GetProperty("items").GetProperty("type").GetString());
+        Assert.Equal("object", properties.GetProperty("detail").GetProperty("type").GetString());
+
+        // The unmappable union falls back to string, with a warning naming it.
+        Assert.Equal("string", properties.GetProperty("weird").GetProperty("type").GetString());
+        Assert.Contains(result.Warnings, w => w.Contains("weird", StringComparison.Ordinal)
+                                               && w.Contains("could not map", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\0\0\0")]
+    [InlineData("\t\t\tnot: [valid: yaml: at: all: {{{")]
+    public void NeverThrowsRegardlessOfHowUnreadableTheInputIs(string garbage)
+    {
+        var result = Convert(garbage);
+
+        Assert.NotNull(result.Error);
+        Assert.Null(result.ManifestJson);
+    }
 }
