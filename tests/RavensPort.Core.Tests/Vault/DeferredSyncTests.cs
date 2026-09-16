@@ -16,6 +16,7 @@ namespace RavensPort.Core.Tests.Vault;
 /// that window has to be reconnected. In exchange, a locked manager never stops an edit, never
 /// stops a token refresh, and never takes a route down.
 /// </summary>
+[Collection(RavensPort.Core.Tests.Storage.ManifestStoreCollection.Name)]
 public class DeferredSyncTests : IDisposable
 {
     private readonly string _logPath = Path.Combine(Path.GetTempPath(), $"ravensport-sync-{Guid.NewGuid()}");
@@ -70,6 +71,53 @@ public class DeferredSyncTests : IDisposable
         Assert.False(cache.HasPendingChanges);
         Assert.Equal(VaultSyncState.Synced, queue.State);
         Assert.Contains((await vault.LoadAsync()).Credentials, c => c.Name == "queued");
+    }
+
+    /// <summary>
+    /// A real regression: the sync queue's snapshot detaches from the live store by round-tripping
+    /// it through JSON (see <c>ConfigStoreCache.SnapshotForSyncAsync</c>), and
+    /// <c>McpApiBridgeRecord.Manifest</c> is deliberately [JsonIgnore]d so it can never ride along
+    /// in the vault note. Missed the first time: that also strips it from this detached snapshot,
+    /// so the very next background sync — a token refresh, a settings toggle, anything that goes
+    /// through the queue rather than straight to a provider — would have written every bridge's
+    /// manifest to disk as empty. This exercises the actual queue, not a direct vault call, because
+    /// that is the one path where the bug was invisible.
+    /// </summary>
+    [Fact]
+    public async Task AQueuedSyncStillPersistsEachBridgesManifest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ravensport-deferred-manifest-" + Guid.NewGuid());
+        ManifestLocalStore.RootOverride = root;
+
+        try
+        {
+            var vault = new SwitchableVault();
+            var cache = new ConfigStoreCache(vault);
+            await cache.InitializeAsync();
+
+            var queue = NewQueue(cache, vault);
+
+            var manifestJson = McpApiBridgeSample.Read();
+            Assert.Null(McpApiBridgeValidation.TryReadManifest(manifestJson, out var manifest));
+
+            var bridge = new McpApiBridgeRecord { Name = "tracker", Slug = "tracker", Manifest = manifest! };
+            await cache.MutateAsync(store => store.McpApiBridges.Add(bridge));
+
+            Assert.True(await queue.TrySyncAsync());
+
+            var reloaded = await vault.LoadAsync();
+            var loadedBridge = Assert.Single(reloaded.McpApiBridges);
+            Assert.NotEmpty(loadedBridge.Manifest.Tools);
+
+            var onDisk = ManifestLocalStore.TryLoad(bridge.Id);
+            Assert.NotNull(onDisk);
+            Assert.NotEmpty(onDisk.Tools);
+        }
+        finally
+        {
+            ManifestLocalStore.RootOverride = null;
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

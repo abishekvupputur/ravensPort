@@ -485,6 +485,15 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
             Key = ProxyKey.Generate(NewBridgeKeyLifetime.Duration),
         };
 
+        // The manifest's canonical home — see ManifestLocalStore. Written, and checked, before the
+        // bridge is persisted at all: a bridge whose tool definitions never made it to disk is not
+        // a bridge worth creating.
+        if (ManifestLocalStore.Save(bridge.Id, manifest) is { } saveError)
+        {
+            StatusMessage = saveError;
+            return;
+        }
+
         await PersistAsync(s => s.McpApiBridges.Add(bridge),
             $"API bridge '{bridge.Name}' added at {McpApiBridgeEndpoints.BasePath}/{slug} with its own proxy key "
             + $"({bridge.Key.DescribeExpiry(DateTimeOffset.UtcNow)}) — copy the key from its row."
@@ -500,6 +509,12 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
     private async Task ReplaceManifestAsync(ApiBridgeItemViewModel item, McpApiBridgeManifest manifest)
     {
+        if (ManifestLocalStore.Save(item.Bridge.Id, manifest) is { } saveError)
+        {
+            StatusMessage = saveError;
+            return;
+        }
+
         await PersistAsync(s =>
         {
             if (s.McpApiBridges.FirstOrDefault(b => b.Id == item.Bridge.Id) is not { } stored) return;
@@ -547,6 +562,8 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         }, affected == 0
             ? $"API bridge '{item.Name}' deleted — clients pointed at {McpApiBridgeEndpoints.BasePath}/{item.Slug} will now get 404."
             : $"API bridge '{item.Name}' deleted, along with {affected} funnel source(s) that exposed it.");
+
+        ManifestLocalStore.Delete(item.Bridge.Id);
 
         await InvalidateSourcesForAsync(item.Bridge.Id);
 

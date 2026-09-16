@@ -565,6 +565,8 @@ public sealed class OnePasswordVaultProvider(
         var written = 0;
         var secretItems = VaultMapper.BuildSecretItems(store, previousIndex);
 
+        VaultMapper.PersistManifestsLocally(store);
+
         foreach (var item in secretItems)
         {
             ct.ThrowIfCancellationRequested();

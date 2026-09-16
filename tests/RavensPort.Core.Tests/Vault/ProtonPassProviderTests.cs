@@ -1,5 +1,6 @@
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
+using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
 
 namespace RavensPort.Core.Tests.Vault;
@@ -11,8 +12,11 @@ namespace RavensPort.Core.Tests.Vault;
 /// values as arguments, so this provider never updates. A changed record is written as a new item,
 /// the note is rewritten to point at it, and only then is the old one deleted.
 /// </summary>
+[Collection(RavensPort.Core.Tests.Storage.ManifestStoreCollection.Name)]
 public class ProtonPassProviderTests : IDisposable
 {
+    private readonly string _manifestRoot = Path.Combine(Path.GetTempPath(), $"ravensport-pass-manifests-{Guid.NewGuid()}");
+
     private const string ClientSecret = "SENTINEL-CLIENT-SECRET";
     private const string ApiKey = "SENTINEL-API-KEY";
     private const string AccessToken = "SENTINEL-ACCESS-TOKEN";
@@ -35,6 +39,11 @@ public class ProtonPassProviderTests : IDisposable
         Directory.CreateDirectory(_stubDir);
         _stub = Path.Combine(_stubDir, "pass-cli.exe");
         File.WriteAllText(_stub, "");
+
+        // Every real save now writes each bridge's manifest to ManifestLocalStore as a side effect
+        // — see VaultMapper.PersistManifestsLocally. Redirected so this never touches the machine's
+        // actual %LocalAppData%.
+        ManifestLocalStore.RootOverride = _manifestRoot;
     }
 
     [Fact]
@@ -203,10 +212,11 @@ public class ProtonPassProviderTests : IDisposable
     public async Task AnUnchangedApiBridgeSurvivesASecondSave()
     {
         // Regression: the reconcile sweep's "keep" set used to be built from Credentials,
-        // RouteKeys and FunnelKeys only. An API bridge's key and manifest item were never in it,
-        // so every save's sweep saw its own just-written bridge items as orphans and deleted them
-        // straight back out — the bridge kept reporting "missing" no matter how often it was
-        // written back.
+        // RouteKeys and FunnelKeys only. An API bridge's key item was never in it, so every save's
+        // sweep saw its own just-written key item as an orphan and deleted it straight back out —
+        // the bridge kept reporting "missing" no matter how often it was written back. (The
+        // manifest itself no longer lives in the vault at all — see ManifestLocalStore — so this is
+        // only about the key now.)
         var fake = new FakeProtonPass();
         var runner = fake.AsRunner();
         var provider = NewProvider(runner);
@@ -226,24 +236,18 @@ public class ProtonPassProviderTests : IDisposable
             VaultItemNaming.TryParse(title, out var role, out var id)
             && role == VaultItemRole.ApiBridgeKey && id == bridge.Id;
 
-        bool IsManifestItem(string title) =>
-            VaultItemNaming.TryParse(title, out var role, out var id)
-            && role == VaultItemRole.ApiBridgeManifest && id == bridge.Id;
-
         var keyItemId = fake.ItemIdOf(IsKeyItem);
-        var manifestItemId = fake.ItemIdOf(IsManifestItem);
 
         Assert.NotNull(keyItemId);
-        Assert.NotNull(manifestItemId);
+        Assert.Null(fake.ItemIdOf(title => title.Contains("api bridge manifest —", StringComparison.Ordinal)));
 
         store.Settings.ListenPort = 5999;
         await provider.SaveAsync(store);
 
-        // The same items, untouched — a sweep that treats its own just-written bridge items as
-        // orphans would delete and never recreate them, since the create loop skips an unchanged
+        // The same item, untouched — a sweep that treats its own just-written bridge item as an
+        // orphan would delete and never recreate it, since the create loop skips an unchanged
         // record and only the sweep runs afterwards.
         Assert.Equal(keyItemId, fake.ItemIdOf(IsKeyItem));
-        Assert.Equal(manifestItemId, fake.ItemIdOf(IsManifestItem));
 
         var reloaded = await provider.LoadAsync();
         var reloadedBridge = Assert.Single(reloaded.McpApiBridges);
@@ -427,8 +431,11 @@ public class ProtonPassProviderTests : IDisposable
 
     public void Dispose()
     {
+        ManifestLocalStore.RootOverride = null;
+
         try { Directory.Delete(_stubDir, recursive: true); } catch { /* best effort */ }
         try { Directory.Delete(_logPath, recursive: true); } catch { /* best effort */ }
+        try { Directory.Delete(_manifestRoot, recursive: true); } catch { /* best effort */ }
 
         // Nothing here has a finalizer, but the pattern is what CA1816 asks for and what a
         // derived test fixture would need if one ever did.
