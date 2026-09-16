@@ -633,6 +633,15 @@ Nothing validates arguments against the schema: it is advertisement to the model
 enforcement on the call path is that a placeholder the template needs is present and is a single
 value.
 
+### A plain-text copy on disk
+
+Every time a manifest is saved, and every time an OpenAPI spec is imported, RavensPort also drops a
+plain-text copy in `%LocalAppData%\RavensPort\manifests\` — unencrypted, timestamped, never read
+back by the app. Neither is a secret (a manifest never carries a credential — the route attaches
+one a hop later — and an OpenAPI spec is a public API description), so this is purely a convenience:
+something to reopen, diff, or re-import from if a vault save fails or a manifest gets overwritten.
+Best-effort — a failure to write it never blocks the real save.
+
 ### Where a manifest is stored
 
 Each bridge gets **two vault items of its own**: one holding its proxy key, and one holding its
