@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
@@ -9,6 +11,7 @@ namespace RavensPort.App.ViewModels;
 public sealed partial class ApiBridgeItemViewModel : ObservableObject
 {
     private readonly Action<ApiBridgeItemViewModel, string> _onChanged;
+    private readonly Action<string> _onStatus;
 
     public ApiBridgeItemViewModel(
         McpApiBridgeRecord bridge,
@@ -21,6 +24,7 @@ public sealed partial class ApiBridgeItemViewModel : ObservableObject
         Bridge = bridge;
         Route = route;
         _onChanged = onChanged;
+        _onStatus = onStatus;
         _enabled = bridge.Enabled;
 
         var scheme = isMtls ? "https" : "http";
@@ -39,6 +43,66 @@ public sealed partial class ApiBridgeItemViewModel : ObservableObject
         {
             if (args.PropertyName is nameof(ProxyKeyViewModel.Display)) OnPropertyChanged(nameof(ClientConfigSnippet));
         };
+
+        foreach (var header in Bridge.Headers)
+        {
+            Headers.Add(Wrap(header));
+        }
+
+        Headers.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasHeaders));
+        };
+    }
+
+    /// <summary>
+    /// Static headers sent on every call this bridge makes, ahead of whatever a tool's own
+    /// manifest sets for the same name. The common case is a header a whole upstream API demands
+    /// unconditionally — GitHub's REST API refuses every request with no User-Agent — so this is
+    /// set once here rather than repeated in every tool.
+    /// </summary>
+    public ObservableCollection<McpApiBridgeHeaderItemViewModel> Headers { get; } = [];
+
+    public bool HasHeaders => Headers.Count > 0;
+
+    [RelayCommand]
+    private void AddHeader()
+    {
+        var header = new McpApiBridgeHeader();
+        Bridge.Headers.Add(header);
+        Headers.Add(Wrap(header));
+
+        _onChanged(this, $"API bridge '{Name}' now has {Headers.Count} custom header(s) — name the new one.");
+    }
+
+    [RelayCommand]
+    private void RemoveHeader(McpApiBridgeHeaderItemViewModel? item)
+    {
+        if (item is null) return;
+
+        Bridge.Headers.Remove(item.Model);
+        Headers.Remove(item);
+
+        _onChanged(this, string.IsNullOrWhiteSpace(item.Model.Name)
+            ? $"API bridge '{Name}': removed an unnamed custom header."
+            : $"API bridge '{Name}': no longer sends '{item.Model.Name}' on every call.");
+    }
+
+    private McpApiBridgeHeaderItemViewModel Wrap(McpApiBridgeHeader header) =>
+        new(header, ValidateHeaderEntry, (_, message) => _onChanged(this, message), _onStatus);
+
+    /// <summary>
+    /// Answers a row's "may I become this?" question on behalf of the whole bridge — two entries
+    /// writing the same header name would silently overwrite each other, which no single row can
+    /// see on its own.
+    /// </summary>
+    private string? ValidateHeaderEntry(McpApiBridgeHeaderItemViewModel item, McpApiBridgeHeader candidate)
+    {
+        var proposed = Headers
+            .Select(existing => ReferenceEquals(existing, item) ? candidate : existing.Model)
+            .ToList();
+
+        return McpApiBridgeValidation.ValidateBridgeHeaders(proposed);
     }
 
     public McpApiBridgeRecord Bridge { get; }

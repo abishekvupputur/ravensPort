@@ -36,8 +36,7 @@
       of a worked example is two things to keep in step. LogicalName pins the resource name so it
       does not move with the file.
     -->
-    <EmbeddedResource Include="../../templates/api-mcp/sample-task-tracker.json"
-                      LogicalName="RavensPort.Core.Assets.sample-api-mcp-manifest.json" />
+    <EmbeddedResource Include="../../templates/api-mcp/sample-task-tracker.json" LogicalName="RavensPort.Core.Assets.sample-api-mcp-manifest.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +45,8 @@
       the old local store, and secrets now live in the user's password manager instead.
     -->
     <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="3.10.2" />
+    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="3.10.2" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageReference Include="IdentityModel.OidcClient" Version="6.0.0" />

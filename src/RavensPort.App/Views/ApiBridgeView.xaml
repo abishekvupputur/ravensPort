@@ -191,6 +191,45 @@ An agent choosing between one tool's three values does better than the same agen
                                  Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Style="{StaticResource HintTextStyle}"
                                    Text="Press Show above to reveal the key inside this snippet before copying it."/>
+
+                        <!-- Static headers sent on every call this bridge makes — before the
+                             route's credential, and overridden by whatever a tool's own manifest
+                             sets for the same name. The common case: a header a whole upstream API
+                             demands unconditionally, e.g. GitHub's REST API refusing every request
+                             with no User-Agent. -->
+                        <StackPanel DataContext="{Binding SelectedBridge}" Margin="0,14,0,0">
+                            <TextBlock Text="Custom headers" Style="{StaticResource SectionHeaderStyle}"
+                                       ToolTip="Sent on every call this bridge makes, ahead of whatever a tool's own manifest sets for the same name. Use this for a header the whole API demands unconditionally, such as User-Agent."/>
+
+                            <ItemsControl ItemsSource="{Binding Headers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Margin="0,0,6,0"
+                                                     Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                                                     ToolTip="Header name, e.g. User-Agent"/>
+                                            <TextBox Grid.Column="1" Margin="0,0,6,0"
+                                                     Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                                                     ToolTip="Literal value — this is not a manifest template, so {placeholders} are sent as-is"/>
+                                            <Button Grid.Column="2" Content="Remove" Width="70"
+                                                    Style="{StaticResource GhostButtonStyle}"
+                                                    Command="{Binding DataContext.RemoveHeaderCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="Stop sending this header on every call from this bridge."/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button Content="Add header" HorizontalAlignment="Left" Width="100"
+                                    Style="{StaticResource GhostButtonStyle}"
+                                    Command="{Binding AddHeaderCommand}"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -208,6 +247,9 @@ An agent choosing between one tool's three values does better than the same agen
                             <Button Content="Import file…" Width="110" Margin="0,0,6,0"
                                     Style="{StaticResource GhostButtonStyle}" Command="{Binding ImportManifestCommand}"
                                     ToolTip="Read a .json manifest into the editor"/>
+                            <Button Content="Import OpenAPI…" Width="130" Margin="0,0,6,0"
+                                    Style="{StaticResource GhostButtonStyle}" Command="{Binding ImportOpenApiCommand}"
+                                    ToolTip="Convert an OpenAPI 3.0/3.1 or Swagger 2.0 spec (JSON or YAML) into a manifest draft — review it before saving, it is not pre-validated for your route"/>
                             <Button Content="Save sample…" Width="110" Margin="0,0,6,0"
                                     Style="{StaticResource GhostButtonStyle}" Command="{Binding SaveSampleCommand}"
                                     ToolTip="Write the sample manifest to disk to edit it elsewhere"/>

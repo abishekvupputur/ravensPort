@@ -139,6 +139,25 @@ Responses come back as text. There is no `outputSchema` and no structured output
 returns a 40 MB export is a tool that returns the first megabyte of one — use the API's own field
 selection and paging parameters to keep answers small, and say so in the description.
 
+## Starting from an OpenAPI spec
+
+If the API already publishes an OpenAPI 3.0/3.1 or Swagger 2.0 document (JSON or YAML), do not
+transcribe it by hand — convert it first, then edit the result:
+
+```
+dotnet run --project tools/RavensPort.ManifestCheck -- --from-openapi spec.yaml --out my-api.json
+```
+
+Or in the app: **API to MCP** tab → **Import OpenAPI…**.
+
+This gets you one tool per operation with parameters already mapped into `inputSchema`, but it is a
+draft, never a finished manifest. It cannot know the user's route, so rule 2 below still applies in
+full, and a leading comment block on the output names everything it had to drop or guess at:
+credential-carrying headers and cookies (never mapped — the route attaches the credential), request
+bodies that are not `application/json` with a plain object schema, and anything past the 64-tool
+cap. It also never collapses similar operations into `variants` — that is a judgment call about
+what the choice *means* (see above), and worth doing by hand where it applies.
+
 ## Before you hand it over
 
 1. Run the validator:

@@ -130,6 +130,48 @@ public class McpApiBridgeValidationTests
             new Dictionary<string, string> { ["Not A Header"] = "x" }));
     }
 
+    // ---- bridge headers ------------------------------------------------------------------------
+
+    private static McpApiBridgeHeader Header(string name, string value = "x") => new() { Name = name, Value = value };
+
+    [Fact]
+    public void AcceptsAHandfulOfOrdinaryBridgeHeaders()
+    {
+        Assert.Null(McpApiBridgeValidation.ValidateBridgeHeaders(
+        [
+            Header("User-Agent", "RavensPort"),
+            Header("X-Api-Version", "2"),
+        ]));
+    }
+
+    [Fact]
+    public void RefusesTwoBridgeHeadersWithTheSameNameCaseInsensitively()
+    {
+        var error = McpApiBridgeValidation.ValidateBridgeHeaders([Header("User-Agent"), Header("user-agent")]);
+
+        Assert.NotNull(error);
+        Assert.Contains("unique", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RefusesABridgeHeaderThisPipelineOwns()
+    {
+        var error = McpApiBridgeValidation.ValidateBridgeHeaders([Header("Authorization", "Bearer x")]);
+
+        Assert.NotNull(error);
+        Assert.Contains("Authorization", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RefusesMoreBridgeHeadersThanTheCap()
+    {
+        var headers = Enumerable.Range(0, McpApiBridgeValidation.MaxBridgeHeaders + 1)
+            .Select(i => Header($"X-Header-{i}"))
+            .ToList();
+
+        Assert.NotNull(McpApiBridgeValidation.ValidateBridgeHeaders(headers));
+    }
+
     // ---- bodies ------------------------------------------------------------------------------
 
     [Fact]
