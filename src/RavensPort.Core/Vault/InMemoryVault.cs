@@ -283,6 +283,8 @@ public sealed class InMemoryVault : IConfigVault
         var index = new VaultIndex();
         var secretItems = VaultMapper.BuildSecretItems(store, previousIndex);
 
+        VaultMapper.PersistManifestsLocally(store);
+
         foreach (var item in secretItems)
         {
             var itemId = item.Spec.ItemId ?? $"item-{_nextItemId++}";

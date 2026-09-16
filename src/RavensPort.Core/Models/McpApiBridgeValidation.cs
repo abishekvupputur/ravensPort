@@ -27,10 +27,12 @@ public static class McpApiBridgeValidation
     /// <summary>
     /// Per-manifest ceiling, measured on the indented form that is actually stored.
     ///
-    /// A manifest gets a vault item of its own, so this is a bound on one item rather than on the
-    /// whole configuration — but neither password manager documents a size limit this app could
-    /// rely on, and a paste accident should not be the thing that finds it. Generous enough for a
-    /// documented API with skills attached.
+    /// A manifest lives in its own local file now (see <see cref="Storage.ManifestLocalStore"/>), so
+    /// nothing forces this number the way a vault item's own limit once did — this is purely a
+    /// sanity cap against a paste accident, generous enough for a documented API with skills
+    /// attached. It used to also be a vault-item bound; a real backend (Proton Pass, measured
+    /// directly) turned out to reject an item's content well under this, which is exactly the
+    /// failure moving storage to disk removes.
     /// </summary>
     public const int MaxManifestBytes = 128 * 1024;
 

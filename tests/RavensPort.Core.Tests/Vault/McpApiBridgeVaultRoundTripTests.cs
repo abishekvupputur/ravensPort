@@ -8,13 +8,27 @@ namespace RavensPort.Core.Tests.Vault;
 /// <summary>
 /// A bridge survives a trip through the vault.
 ///
-/// The manifest and the key take different paths — the manifest rides in the topology note, the
-/// key gets an item of its own — and both halves have a quiet failure mode. A manifest that does
-/// not round-trip byte for byte changes which HTTP call gets made; a key that is written but never
-/// read back leaves the endpoint answering 403 after the next restart with nothing logged.
+/// The manifest and the key take different paths — the manifest lives entirely on local disk now
+/// (see <see cref="ManifestLocalStore"/>; a real vault backend was measured to reject a note past a
+/// few tens of KB, well under what a manifest is allowed to be), while the key still gets an item of
+/// its own in the vault. Both halves have a quiet failure mode: a manifest that does not round-trip
+/// byte for byte changes which HTTP call gets made; a key that is written but never read back leaves
+/// the endpoint answering 403 after the next restart with nothing logged.
 /// </summary>
-public class McpApiBridgeVaultRoundTripTests
+[Collection(RavensPort.Core.Tests.Storage.ManifestStoreCollection.Name)]
+public class McpApiBridgeVaultRoundTripTests : IDisposable
 {
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "ravensport-bridge-vault-tests-" + Guid.NewGuid());
+
+    public McpApiBridgeVaultRoundTripTests() => ManifestLocalStore.RootOverride = _root;
+
+    public void Dispose()
+    {
+        ManifestLocalStore.RootOverride = null;
+
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
     private static McpApiBridgeRecord Bridge(string slug = "tracker") => new()
     {
         Name = "Task tracker",
@@ -38,7 +52,7 @@ public class McpApiBridgeVaultRoundTripTests
         JsonSerializer.Serialize(manifest, VaultRedaction.FullOptions);
 
     [Fact]
-    public async Task TheManifestComesBackByteForByte()
+    public async Task TheManifestComesBackByteForByteFromLocalStorage()
     {
         var store = new ConfigStore();
         var bridge = Bridge();
@@ -60,10 +74,15 @@ public class McpApiBridgeVaultRoundTripTests
         Assert.Equal(3, variantTool.Variants.Count);
         Assert.NotEmpty(loaded.Manifest.Skills[0].Content);
         Assert.NotNull(loaded.Manifest.Instructions);
+
+        // And it is genuinely on disk, not just in the reloaded ConfigStore.
+        var onDisk = ManifestLocalStore.TryLoad(bridge.Id);
+        Assert.NotNull(onDisk);
+        Assert.Equal(Canonical(bridge.Manifest), Canonical(onDisk));
     }
 
     [Fact]
-    public async Task TheKeyLivesInItsOwnItemAndTheNoteNeverHoldsIt()
+    public async Task TheKeyLivesInItsOwnItemAndTheNoteNeverHoldsTheManifest()
     {
         var store = new ConfigStore();
         var bridge = Bridge();
@@ -75,9 +94,9 @@ public class McpApiBridgeVaultRoundTripTests
         var note = vault.Items.Single(i => i.Title == VaultItemNaming.ConfigTitle);
         Assert.DoesNotContain(bridge.Key.Value, note.Field(VaultFields.NoteContent), StringComparison.Ordinal);
 
-        // The manifest is not in the note either. It is the largest thing a user writes, and the
-        // note is rewritten in full on every save — including every token refresh.
+        // The manifest is never in the vault at all now — not in the note, not in an item of its own.
         Assert.DoesNotContain("list_by_state", note.Field(VaultFields.NoteContent), StringComparison.Ordinal);
+        Assert.DoesNotContain(vault.Items, i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
 
         // ...but the bridge itself still is, so the topology stays readable in one place.
         Assert.Contains(bridge.Slug, note.Field(VaultFields.NoteContent), StringComparison.Ordinal);
@@ -91,13 +110,8 @@ public class McpApiBridgeVaultRoundTripTests
         Assert.Equal(bridge.Key.ExpiresUtc, reloaded.McpApiBridges[0].Key.ExpiresUtc);
     }
 
-    /// <summary>
-    /// The manifest gets an item of its own, named after the endpoint it belongs to, so someone
-    /// looking through their password manager can find and read what an agent is being offered
-    /// without opening the topology note at all.
-    /// </summary>
     [Fact]
-    public async Task TheManifestLivesInItsOwnItemPerBridge()
+    public async Task SavingSeveralBridgesWritesNoManifestItemsForAnyOfThem()
     {
         var store = new ConfigStore();
         var first = Bridge("tracker");
@@ -109,92 +123,87 @@ public class McpApiBridgeVaultRoundTripTests
         var vault = InMemoryVault.Empty();
         await vault.SaveAsync(store);
 
-        var manifests = vault.Items
-            .Where(i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal))
-            .ToList();
-
-        Assert.Equal(2, manifests.Count);
-        Assert.Contains(manifests, i => i.Title.Contains("/api-mcp/tracker", StringComparison.Ordinal));
-        Assert.Contains(manifests, i => i.Title.Contains("/api-mcp/billing", StringComparison.Ordinal));
-
-        // One item per bridge, per role: the manifest and the key never share one.
-        Assert.All(manifests, item => Assert.Contains("list_by_state", item.Field(VaultFields.NoteContent)!, StringComparison.Ordinal));
-        Assert.All(manifests, item => Assert.Null(item.Field(VaultFields.Password)));
+        Assert.DoesNotContain(vault.Items, i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
 
         var reloaded = await vault.LoadAsync();
 
         Assert.Equal(2, reloaded.McpApiBridges.Count);
         Assert.All(reloaded.McpApiBridges, b => Assert.NotEmpty(b.Manifest.Tools));
+        Assert.NotNull(ManifestLocalStore.TryLoad(first.Id));
+        Assert.NotNull(ManifestLocalStore.TryLoad(second.Id));
     }
 
     /// <summary>
-    /// The wording of the two bridge roles overlaps — "api bridge key" and "api bridge manifest" —
-    /// so the title scan that recovers a lost index has to tell them apart.
+    /// An install from before manifests moved out of the vault still has the old item sitting
+    /// there. The first load after upgrading has to recover it once, write it to local storage, and
+    /// leave the stale vault item to be swept on the bridge's next ordinary save — never delete the
+    /// bridge itself over it, which is what used to happen when the manifest was the vault's only copy.
     /// </summary>
     [Fact]
-    public async Task TheTwoBridgeItemsAreNotConfusedForEachOther()
+    public async Task ALegacyManifestStillOnlyInTheVaultIsMigratedToLocalStorageOnLoad()
     {
         var store = new ConfigStore();
-        var bridge = Bridge();
-        store.McpApiBridges.Add(bridge);
-
-        var vault = InMemoryVault.Empty();
-        await vault.SaveAsync(store);
-
-        vault.EditConfigNote(json =>
+        var bridge = new McpApiBridgeRecord
         {
-            var document = VaultDocument.TryParse(json)!;
-            document.Index = new VaultIndex();
-            return document.Serialize();
-        });
-
-        var reloaded = await vault.LoadAsync();
-        var loaded = Assert.Single(reloaded.McpApiBridges);
-
-        Assert.Equal(bridge.Key.Value, loaded.Key.Value);
-        Assert.Equal(Canonical(bridge.Manifest), Canonical(loaded.Manifest));
-    }
-
-    /// <summary>
-    /// A manifest item deleted in the password manager takes its bridge with it, the same rule a
-    /// credential follows: the vault is the only copy, and a bridge with no tools left to serve
-    /// would raise the same ghost on every launch.
-    /// </summary>
-    [Fact]
-    public async Task ABridgeWhoseManifestItemIsGoneIsRemovedAndReported()
-    {
-        var store = new ConfigStore();
-        var bridge = Bridge();
+            Name = "legacy", Slug = "legacy", Key = ProxyKey.Generate(TimeSpan.FromDays(30)),
+        };
         store.McpApiBridges.Add(bridge);
 
         var vault = InMemoryVault.Empty();
-        await vault.SaveAsync(store);
+        await vault.SaveAsync(store); // an ordinary save today never creates a manifest item
 
-        var manifestItem = vault.Items.Single(i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
-        await vault.DeleteItemAsync(manifestItem.ItemId);
+        // Simulate the pre-upgrade item by hand — SaveAsync no longer produces one to build from.
+        vault.AddForeignItem(VaultItemNaming.ForApiBridgeManifest(bridge.Id, bridge.Slug), "placeholder");
+        var seeded = vault.Items.Single(i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
+        vault.ReplaceItemField(seeded.ItemId, VaultFields.NoteContent, Canonical(ReadSample()));
+
+        // The save above already wrote an empty manifest locally, since it ran with nothing in
+        // memory yet — that could not happen in a real upgrade, where the *first* thing the new
+        // code does for an existing bridge is load (and migrate), never save. Reset to the "never
+        // written" state a genuine upgrade would actually start from.
+        ManifestLocalStore.Delete(bridge.Id);
+        Assert.Null(ManifestLocalStore.TryLoad(bridge.Id));
 
         var reloaded = await vault.LoadAsync();
 
-        Assert.Empty(reloaded.McpApiBridges);
-        Assert.Contains(vault.LastLoadRemovals, r => r.Contains(bridge.Name, StringComparison.Ordinal));
+        var loaded = Assert.Single(reloaded.McpApiBridges);
+        Assert.NotEmpty(loaded.Manifest.Tools);
+        Assert.Contains("moved", vault.LastLoadWarning ?? "", StringComparison.OrdinalIgnoreCase);
+
+        var onDisk = ManifestLocalStore.TryLoad(bridge.Id);
+        Assert.NotNull(onDisk);
+        Assert.NotEmpty(onDisk.Tools);
+
+        // The bridge's next ordinary save sweeps the now-unreferenced legacy item away...
+        await vault.SaveAsync(reloaded);
+        Assert.DoesNotContain(vault.Items, i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
+
+        // ...and the manifest still comes back on a later load, now purely from disk.
+        var reloadedAgain = await vault.LoadAsync();
+        Assert.NotEmpty(Assert.Single(reloadedAgain.McpApiBridges).Manifest.Tools);
     }
 
     /// <summary>
-    /// The item is free text a user can edit by hand, so broken JSON in it is a real case. It
-    /// costs that bridge its tools, not the whole load.
+    /// Corrupt content in a legacy vault item — free text a user could always edit by hand — costs
+    /// that bridge its tools during migration, not the whole load, and never destroys the bridge.
     /// </summary>
     [Fact]
-    public async Task AManifestItemEditedIntoNonsenseLoadsEmptyRatherThanThrowing()
+    public async Task ALegacyManifestItemEditedIntoNonsenseMigratesAsEmptyRatherThanThrowing()
     {
         var store = new ConfigStore();
-        store.McpApiBridges.Add(Bridge());
+        var bridge = new McpApiBridgeRecord
+        {
+            Name = "legacy", Slug = "legacy", Key = ProxyKey.Generate(TimeSpan.FromDays(30)),
+        };
+        store.McpApiBridges.Add(bridge);
         store.Routes.Add(new RouteMapping { PathPrefix = "/api" });
 
         var vault = InMemoryVault.Empty();
         await vault.SaveAsync(store);
 
-        var manifestItem = vault.Items.Single(i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
-        vault.ReplaceItemField(manifestItem.ItemId, VaultFields.NoteContent, "{ this is not json");
+        vault.AddForeignItem(VaultItemNaming.ForApiBridgeManifest(bridge.Id, bridge.Slug), "placeholder");
+        var seeded = vault.Items.Single(i => i.Title.Contains("api bridge manifest —", StringComparison.Ordinal));
+        vault.ReplaceItemField(seeded.ItemId, VaultFields.NoteContent, "{ this is not json");
 
         var reloaded = await vault.LoadAsync();
 
@@ -204,10 +213,30 @@ public class McpApiBridgeVaultRoundTripTests
     }
 
     /// <summary>
-    /// The index is a cache, and the fallback is a title scan. A role missing from either is the
-    /// failure this feature is most likely to ship with, because it only shows up on the second
-    /// run.
+    /// A bridge whose manifest cannot be found anywhere — no local file, nothing left in the vault
+    /// either — simply serves no tools. It must never be destroyed for that: unlike a credential's
+    /// secret, the vault stopped being the only copy of a manifest, so the old "the item is gone,
+    /// drop the whole record" rule no longer applies here.
     /// </summary>
+    [Fact]
+    public async Task ABridgeWithNoManifestAnywhereJustServesNothingRatherThanBeingDropped()
+    {
+        var store = new ConfigStore();
+        store.McpApiBridges.Add(new McpApiBridgeRecord
+        {
+            Name = "empty", Slug = "empty", Key = ProxyKey.Generate(TimeSpan.FromDays(30)),
+        });
+
+        var vault = InMemoryVault.Empty();
+        await vault.SaveAsync(store);
+
+        var reloaded = await vault.LoadAsync();
+
+        var loaded = Assert.Single(reloaded.McpApiBridges);
+        Assert.Empty(loaded.Manifest.Tools);
+        Assert.Empty(vault.LastLoadRemovals);
+    }
+
     [Fact]
     public async Task TheKeyIsFoundAgainEvenWhenTheIndexHasLostIt()
     {

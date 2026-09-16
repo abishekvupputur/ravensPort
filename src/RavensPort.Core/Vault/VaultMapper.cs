@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using RavensPort.Core.Models;
+using RavensPort.Core.Storage;
 
 namespace RavensPort.Core.Vault;
 
@@ -56,6 +57,27 @@ public sealed record VaultSecretItem(VaultItemRole Role, Guid RecordId, VaultIte
 public static class VaultMapper
 {
     /// <summary>
+    /// Writes every bridge's manifest to its local file — called once per real save, alongside
+    /// <see cref="BuildSecretItems"/> but from each provider's save method rather than from inside
+    /// it. <see cref="BuildSecretItems"/> is also called by <see cref="VaultIntegrityService"/> to
+    /// compute "what should exist" for its read-only report, and that call must never have this
+    /// side effect — a status check that writes to disk is not a status check.
+    ///
+    /// Best-effort, the same way every other local-file store in this app is on the automatic path:
+    /// the interactive save in the UI checks <see cref="Storage.ManifestLocalStore.Save"/> itself
+    /// and reports a failure before persisting anything, but a background save — a token refresh, a
+    /// settings toggle — must not fail the whole vault write over a manifest file that happens not
+    /// to be writable right now.
+    /// </summary>
+    public static void PersistManifestsLocally(ConfigStore store)
+    {
+        foreach (var bridge in store.McpApiBridges)
+        {
+            ManifestLocalStore.Save(bridge.Id, bridge.Manifest);
+        }
+    }
+
+    /// <summary>
     /// The items that must exist for this store's secrets, in the order they should be written.
     /// Records with nothing secret to store are skipped — an OAuth credential that has never been
     /// connected has no item until it does.
@@ -105,18 +127,11 @@ public static class VaultMapper
 
         foreach (var bridge in store.McpApiBridges)
         {
-            // The manifest, in an item of its own. Written even when empty, so the item exists
-            // from the moment the bridge does and a later load can tell "nothing written yet"
-            // from "the item the index points at is gone".
-            items.Add(new VaultSecretItem(VaultItemRole.ApiBridgeManifest, bridge.Id, new VaultItemSpec(
-                VaultItemNaming.ForApiBridgeManifest(bridge.Id, bridge.Slug),
-                VaultItemCategory.SecureNote,
-                [new VaultItemField(VaultFields.NoteContent, SerializeManifest(bridge.Manifest))])
-            {
-                ItemId = index.Find(VaultItemRole.ApiBridgeManifest, bridge.Id),
-                Caption = $"Tool definitions for API bridge '{bridge.Name}'",
-            }));
-
+            // The manifest itself is no longer written here — see ManifestLocalStore. A real vault
+            // backend (Proton Pass, measured directly) rejects a note past a few tens of KB, well
+            // under what a manifest is allowed to be, so the vault bought nothing here but a size
+            // ceiling nobody could see coming. Disk is now the only copy; this bridge's proxy key
+            // still belongs in the vault exactly as before.
             if (!bridge.Key.IsConfigured) continue;
 
             items.Add(new VaultSecretItem(VaultItemRole.ApiBridgeKey, bridge.Id, new VaultItemSpec(
@@ -259,7 +274,7 @@ public static class VaultMapper
 
         RestoreCredentials(store, document, secrets, report);
         RestoreKeys(store, secrets);
-        RestoreApiBridges(store, document, secrets, report);
+        RestoreApiBridges(store, secrets, report);
 
         return store;
     }
@@ -354,73 +369,53 @@ public static class VaultMapper
     }
 
     /// <summary>
-    /// Merges each bridge's manifest back, and drops the bridges whose manifest item has been
-    /// deleted — the same rule a credential follows, for the same reason: the vault is the only
-    /// copy, and a bridge with no tools left to serve would raise the same ghost on every launch.
+    /// Loads each bridge's manifest from local disk — the canonical copy since manifests stopped
+    /// being written to the vault (see the comment in <see cref="BuildSecretItems"/>).
+    ///
+    /// One migration path, for an install that still has a bridge whose manifest was never written
+    /// locally: if the vault still holds the old item, read it once and save it to
+    /// <see cref="ManifestLocalStore"/> so it survives from here on. The old vault item itself is
+    /// left alone — it is no longer in what <see cref="BuildSecretItems"/> expects, so the next
+    /// ordinary save sweeps it away the same way a deleted credential's item disappears.
+    ///
+    /// A bridge is never dropped for a missing manifest, migrated or not: unlike a credential's
+    /// secret, the vault has not been the only copy of a manifest for a while now, and destroying a
+    /// bridge — its proxy key, its funnel sources — over a file that is merely absent would be a far
+    /// worse outcome than the bridge simply serving no tools until one is imported again.
     /// </summary>
     private static void RestoreApiBridges(
         ConfigStore store,
-        VaultDocument document,
         IReadOnlyDictionary<(VaultItemRole Role, Guid Id), VaultItemContents> secrets,
         VaultLoadReport report)
     {
-        var orphaned = new List<McpApiBridgeRecord>();
+        var migrated = 0;
 
         foreach (var bridge in store.McpApiBridges)
         {
-            if (secrets.TryGetValue((VaultItemRole.ApiBridgeManifest, bridge.Id), out var item))
+            if (ManifestLocalStore.TryLoad(bridge.Id) is { } local)
             {
-                bridge.Manifest = ParseManifest(item.Field(VaultFields.NoteContent));
+                bridge.Manifest = local;
                 continue;
             }
 
-            if (document.Index.Find(VaultItemRole.ApiBridgeManifest, bridge.Id) is not null)
+            if (secrets.TryGetValue((VaultItemRole.ApiBridgeManifest, bridge.Id), out var item))
             {
-                orphaned.Add(bridge);
+                bridge.Manifest = ParseManifest(item.Field(VaultFields.NoteContent));
+                ManifestLocalStore.Save(bridge.Id, bridge.Manifest);
+                migrated++;
+                continue;
             }
+
+            bridge.Manifest = new McpApiBridgeManifest();
         }
 
-        foreach (var bridge in orphaned)
+        if (migrated > 0)
         {
-            DropApiBridge(store, bridge, report);
+            report.Warnings.Add(
+                $"{migrated} API bridge manifest(s) were moved from the vault to local storage "
+                + "(%LocalAppData%\\RavensPort\\manifests\\bridges\\) — they no longer sync across machines.");
         }
     }
-
-    private static void DropApiBridge(ConfigStore store, McpApiBridgeRecord bridge, VaultLoadReport report)
-    {
-        store.McpApiBridges.Remove(bridge);
-
-        // A funnel source left pointing at it would fail on every connect, with nothing in the UI
-        // able to explain why.
-        var stranded = store.McpSources
-            .Where(source => source.Kind == McpSourceKind.ApiBridge && source.BridgeId == bridge.Id)
-            .Select(source => source.Id)
-            .ToList();
-
-        foreach (var sourceId in stranded)
-        {
-            store.McpSources.RemoveAll(source => source.Id == sourceId);
-
-            foreach (var funnel in store.McpFunnels)
-            {
-                funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
-            }
-        }
-
-        var affected = stranded.Count == 0
-            ? ""
-            : $" {stranded.Count} funnel source(s) that exposed it were removed as well.";
-
-        report.Removals.Add(
-            $"API bridge '{bridge.Name}' was removed: the vault item holding its manifest is gone.{affected}");
-    }
-
-    /// <summary>
-    /// The manifest as it is stored. Indented, because the item exists partly so a user can open
-    /// it in their password manager and read — or edit — what their agent is being offered.
-    /// </summary>
-    private static string SerializeManifest(McpApiBridgeManifest manifest) =>
-        JsonSerializer.Serialize(manifest, VaultRedaction.FullOptions);
 
     /// <summary>
     /// Reads a manifest item back. Unparseable content yields an empty manifest rather than

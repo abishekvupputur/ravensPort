@@ -264,6 +264,20 @@ public sealed class ConfigStoreCache
             var json = JsonSerializer.Serialize(_current, VaultRedaction.FullOptions);
             var clone = JsonSerializer.Deserialize<ConfigStore>(json, VaultRedaction.FullOptions) ?? new ConfigStore();
 
+            // McpApiBridgeRecord.Manifest is [JsonIgnore]d — deliberately, so it can never ride
+            // along in the vault note — but that means this clone does not carry it either, and
+            // this snapshot is exactly what the sync queue hands to a provider's save, which persists
+            // each bridge's manifest to its local file. Reattached by id from the live store. Sharing
+            // the object rather than cloning it is safe: nothing in this codebase mutates a
+            // McpApiBridgeManifest in place once built — every edit replaces the whole object — so a
+            // concurrent edit on the live side can never be seen mid-write through this reference.
+            var liveManifests = _current.McpApiBridges.ToDictionary(b => b.Id, b => b.Manifest);
+
+            foreach (var bridge in clone.McpApiBridges)
+            {
+                if (liveManifests.TryGetValue(bridge.Id, out var manifest)) bridge.Manifest = manifest;
+            }
+
             return (clone, Interlocked.Read(ref _version));
         }
         finally

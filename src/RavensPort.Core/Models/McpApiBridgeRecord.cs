@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RavensPort.Core.Models;
 
 /// <summary>
@@ -34,6 +36,13 @@ public sealed class McpApiBridgeRecord
     /// </summary>
     public Guid RouteId { get; set; }
 
+    /// <summary>
+    /// Not written to the vault note — see <see cref="Storage.ManifestLocalStore"/>, the manifest's
+    /// only home now. Every bridge still carries it in memory (and every tool call reads it from
+    /// here), but excluded from this type's own JSON so it cannot ride along the next time the note
+    /// is rewritten, which happens on every save including a background token refresh.
+    /// </summary>
+    [JsonIgnore]
     public McpApiBridgeManifest Manifest { get; set; } = new();
 
     /// <summary>

@@ -633,32 +633,30 @@ Nothing validates arguments against the schema: it is advertisement to the model
 enforcement on the call path is that a placeholder the template needs is present and is a single
 value.
 
-### A plain-text copy on disk
-
-Every time a manifest is saved, and every time an OpenAPI spec is imported, RavensPort also drops a
-plain-text copy in `%LocalAppData%\RavensPort\manifests\` — unencrypted, timestamped, never read
-back by the app. Neither is a secret (a manifest never carries a credential — the route attaches
-one a hop later — and an OpenAPI spec is a public API description), so this is purely a convenience:
-something to reopen, diff, or re-import from if a vault save fails or a manifest gets overwritten.
-Best-effort — a failure to write it never blocks the real save.
-
 ### Where a manifest is stored
 
-Each bridge gets **two vault items of its own**: one holding its proxy key, and one holding its
-manifest, titled after the endpoint it belongs to.
+**Manifests live on local disk, not in the vault** — `%LocalAppData%\RavensPort\manifests\bridges\`,
+one plain JSON file per bridge, unencrypted. A manifest is not secret (it never carries a
+credential — the route attaches one a hop later), so a vault held nothing here worth protecting,
+only a size ceiling nobody could see coming: at least one real backend (Proton Pass, measured
+directly) rejects an item's content past a few tens of KB, well under what a manifest is allowed to
+be. Moving it out of the vault removes that failure mode entirely.
 
-The manifest is not secret, and it is still kept out of the `RavensPort Config` note. It is the
-largest thing most users write here, and that note is rewritten in full on every save — including
-every token refresh — so a manifest living there would be re-encrypted and re-synced by the
-password manager each time a token aged out. Its own item is also simply where someone would look
-for it: open `RavensPort api bridge manifest — /api-mcp/tracker` and read exactly what the agent is
-being offered.
+Every manifest save, and every OpenAPI import, also drops a second, timestamped copy in
+`%LocalAppData%\RavensPort\manifests\` (the parent of the `bridges\` folder above) — a plain-text
+history you can reopen, diff, or recover an older version from. That one is never read back by the
+app; only the single canonical file per bridge is.
 
-The note keeps the topology — the bridge's name, slug, route, and whether it is enabled — so the
-shape of the configuration is still readable in one place.
+**This means manifests no longer sync across machines that share a vault.** Everything else — routes,
+credentials, funnels, a bridge's own name/slug/route/proxy key — still does, through the
+`RavensPort Config` note exactly as before. Only the manifest itself is local to the machine that
+saved it. Point the same vault at RavensPort on a second machine and a bridge shows up there with an
+empty manifest until you import or paste one in again.
 
-Deleting a manifest item in your password manager removes that bridge on the next load, and says so
-in the load notice. The vault is the only copy.
+Upgrading from a version that still stored manifests in the vault: the first load after upgrading
+reads each bridge's manifest out of its old vault item one last time, writes it to the new local
+file, and says so in the load notice. The stale vault item is then cleaned up automatically the next
+time that bridge is saved — same as any other item nothing refers to anymore.
 
 ### Behaviour
 
@@ -689,7 +687,8 @@ in the load notice. The vault is the only copy.
 
 - One route per bridge. A tool spanning several APIs would need a credential per variant, which is
   not offered yet.
-- Manifests are capped at 128 KB each — as much as one vault item can be relied on to carry.
+- Manifests are capped at 128 KB each — a sanity limit against a paste accident, not a vault
+  constraint now that manifests live on local disk (see [Where a manifest is stored](#where-a-manifest-is-stored)).
 - **OpenAPI import is a draft, not a guarantee.** It does not collapse near-identical operations
   into variants, does not flatten `allOf`/`oneOf`/`anyOf` composition, and only maps a request body
   that is `application/json` with a plain object schema — anything else still needs hand editing.
