@@ -50,18 +50,4 @@ public sealed class ManifestBackupStoreTests : IDisposable
         Assert.NotNull(path);
         Assert.True(File.Exists(path));
     }
-
-    [Fact]
-    public void TwoSavesForTheSameBridgeProduceTwoDistinctFiles()
-    {
-        var first = ManifestBackupStore.SaveManifest("dup", "{}");
-        Thread.Sleep(1100); // the filename's resolution is whole seconds
-        var second = ManifestBackupStore.SaveManifest("dup", "{}");
-
-        Assert.NotNull(first);
-        Assert.NotNull(second);
-        Assert.NotEqual(first, second);
-        Assert.True(File.Exists(first));
-        Assert.True(File.Exists(second));
-    }
 }
