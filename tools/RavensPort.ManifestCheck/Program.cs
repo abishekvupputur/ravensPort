@@ -24,6 +24,12 @@ internal static class Program
             return args.Length == 0 ? 2 : 0;
         }
 
+        var fromOpenApiIndex = Array.IndexOf(args, "--from-openapi");
+        if (fromOpenApiIndex >= 0)
+        {
+            return CheckFromOpenApi(args, fromOpenApiIndex);
+        }
+
         var files = Collect(args, out var badPaths);
 
         foreach (var path in badPaths)
@@ -69,6 +75,11 @@ internal static class Program
             return false;
         }
 
+        return CheckText(json);
+    }
+
+    private static bool CheckText(string json)
+    {
         if (McpApiBridgeValidation.TryReadManifest(json, out var manifest) is { } error)
         {
             Console.WriteLine($"  INVALID  {error}");
@@ -77,6 +88,66 @@ internal static class Program
 
         Describe(manifest!);
         return true;
+    }
+
+    /// <summary>
+    /// Converts an OpenAPI 3.0/3.1 or Swagger 2.0 document (JSON or YAML) into a manifest draft and
+    /// runs it through the same check as any other file — the tool's whole reason to exist is
+    /// letting an agent find out whether what it produced is servable, and an agent handed a spec
+    /// instead of a hand-written manifest should get the same one-command answer.
+    /// </summary>
+    private static int CheckFromOpenApi(string[] args, int flagIndex)
+    {
+        var specPath = args.ElementAtOrDefault(flagIndex + 1);
+
+        if (specPath is null)
+        {
+            Console.Error.WriteLine("--from-openapi needs a spec file.");
+            return 2;
+        }
+
+        string specText;
+
+        try
+        {
+            specText = File.ReadAllText(specPath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"{specPath}: could not read it: {ex.Message}");
+            return 2;
+        }
+
+        var result = OpenApiImporter.Convert(specText, Path.GetFileName(specPath));
+
+        if (result.Error is { } error)
+        {
+            Console.Error.WriteLine($"{specPath}: {error}");
+            return 1;
+        }
+
+        foreach (var warning in result.Warnings)
+        {
+            Console.Error.WriteLine($"  WARN  {warning}");
+        }
+
+        var outputIndex = Array.IndexOf(args, "--out");
+        var outputPath = outputIndex >= 0 ? args.ElementAtOrDefault(outputIndex + 1) : null;
+
+        if (outputPath is not null)
+        {
+            File.WriteAllText(outputPath, result.ManifestJson!);
+            Console.WriteLine($"Wrote {outputPath}.");
+        }
+        else
+        {
+            Console.WriteLine(result.ManifestJson);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(specPath);
+
+        return CheckText(result.ManifestJson!) ? 0 : 1;
     }
 
     /// <summary>
@@ -177,6 +248,15 @@ internal static class Program
 
             The rules are documented in templates/api-mcp/AUTHORING.md. What this checks is exactly
             what RavensPort checks on import -- it calls the same validator.
+
+            Converting an OpenAPI spec into a manifest draft first:
+
+              dotnet run --project tools/RavensPort.ManifestCheck -- --from-openapi spec.json
+              dotnet run --project tools/RavensPort.ManifestCheck -- --from-openapi spec.yaml --out my-api.json
+
+            Prints the converted manifest (or writes it to --out), any warnings about what could not
+            be represented, and then checks the result exactly as above. Paths come out of the spec
+            unchanged -- check each one against the route's own prefix before saving.
             """);
     }
 }

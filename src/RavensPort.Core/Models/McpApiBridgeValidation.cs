@@ -43,6 +43,13 @@ public static class McpApiBridgeValidation
     public const int MaxToolNameLength =
         McpNameMapper.MaxNameLength - McpFunnelValidation.MaxAliasLength - 2;
 
+    /// <summary>
+    /// A handful of static headers is the real use — User-Agent, an API-version header, a static
+    /// tenant id. A cap exists so this cannot grow into a second place to attach credentials by
+    /// accident, which <see cref="IsBridgeReservedHeaderName"/> already refuses one name at a time.
+    /// </summary>
+    public const int MaxBridgeHeaders = 16;
+
     private static readonly string[] PermittedMethods =
         ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 
@@ -66,6 +73,18 @@ public static class McpApiBridgeValidation
         LocalAccessGuard.FunnelHopHeaderName,
         LocalAccessGuard.BridgeHopHeaderName,
     ];
+
+    /// <summary>
+    /// Whether a manifest — or, identically, a bridge's static headers — is refused this name.
+    /// The one predicate <see cref="ValidateHeaders"/> and <see cref="ValidateBridgeHeaders"/> both
+    /// answer from, and what <c>McpApiBridgeHandlerFactory</c> checks again at call time: a bridge's
+    /// static headers are ordinary config-note data, editable outside this validator by anyone who
+    /// can open the vault note by hand, so the call path re-checks rather than trusting that
+    /// whatever is stored already passed here.
+    /// </summary>
+    public static bool IsBridgeReservedHeaderName(string name) =>
+        RouteValidation.IsReservedHeaderName(name)
+        || BridgeReservedHeaders.Contains(name, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Forgiving on the way in: case-insensitive property names, trailing commas, and comments
@@ -121,6 +140,41 @@ public static class McpApiBridgeValidation
         routes.Any(r => r.Id == routeId)
             ? null
             : "Pick the route this API is reached through — its credential is what the tools will use.";
+
+    /// <summary>
+    /// A bridge's own static headers — sent on every call it makes, ahead of whatever a tool's own
+    /// manifest sets for the same name. Shares its per-header rules with a manifest's
+    /// <see cref="ValidateHeaders"/> (valid name, not reserved, no control characters) so the same
+    /// header is never accepted in one editor and refused in the other; the one rule specific to
+    /// this list is that, unlike a manifest's headers, two entries writing the same name really
+    /// would silently overwrite each other here — there is no per-tool distinction to tell them
+    /// apart by.
+    /// </summary>
+    public static string? ValidateBridgeHeaders(IReadOnlyList<McpApiBridgeHeader> headers)
+    {
+        if (headers.Count > MaxBridgeHeaders)
+        {
+            return $"A bridge may declare at most {MaxBridgeHeaders} custom headers. This one declares {headers.Count}.";
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var header in headers)
+        {
+            var name = (header.Name ?? "").Trim();
+
+            if (!seen.Add(name))
+            {
+                return string.IsNullOrEmpty(name)
+                    ? "has two headers with no name."
+                    : $"has two headers both named '{name}'. Header names must be unique.";
+            }
+        }
+
+        var asDictionary = headers.ToDictionary(h => (h.Name ?? "").Trim(), h => h.Value ?? "");
+
+        return ValidateHeaders(asDictionary) is { } error ? $"custom headers: {error}" : null;
+    }
 
     // ---- the manifest ----------------------------------------------------------------------
 
@@ -490,15 +544,10 @@ public static class McpApiBridgeValidation
                 return $"header '{trimmed}' is not a valid HTTP header name.";
             }
 
-            if (RouteValidation.IsReservedHeaderName(trimmed))
+            if (IsBridgeReservedHeaderName(trimmed))
             {
-                return $"header '{trimmed}' is set by the proxy itself and cannot be written by a manifest.";
-            }
-
-            if (BridgeReservedHeaders.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-            {
-                return $"header '{trimmed}' is owned by this proxy's own authentication and cannot "
-                       + "be written by a manifest. The route's credential is attached for you.";
+                return $"header '{trimmed}' is owned by this proxy's own authentication or forwarding "
+                       + "and cannot be set here. The route's credential is attached for you.";
             }
 
             // A CR or LF here would end the header line and let the rest be read as further

@@ -164,8 +164,26 @@ public sealed class McpApiBridgeHandlerFactory
             // that resolves back into /api-mcp or /mcp from recursing.
             message.Headers.TryAddWithoutValidation(LocalAccessGuard.BridgeHopHeaderName, "1");
 
+            // The bridge's own defaults first — a header the whole upstream API demands
+            // unconditionally, User-Agent being the common case, set once rather than in every
+            // tool. Re-checked against the reserved list here rather than trusting the save-time
+            // validator: this list is ordinary config-note data, editable by hand in the vault
+            // note like everything else there, and the one thing worse than a bad header is one
+            // that overwrites the credential transform's own.
+            foreach (var header in bridge.Headers)
+            {
+                if (string.IsNullOrWhiteSpace(header.Name)) continue;
+                if (McpApiBridgeValidation.IsBridgeReservedHeaderName(header.Name)) continue;
+
+                message.Headers.Remove(header.Name);
+                message.Headers.TryAddWithoutValidation(header.Name, header.Value);
+            }
+
+            // The manifest's own headers for this tool win over the bridge's defaults — a tool
+            // that needs a different value for the same name is being more specific, not wrong.
             foreach (var (header, value) in built.Headers)
             {
+                message.Headers.Remove(header);
                 message.Headers.TryAddWithoutValidation(header, value);
             }
 

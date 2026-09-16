@@ -185,6 +185,20 @@
         "resolved": "1.1.0",
         "contentHash": "kz0PEW2lhqygehI/d6XsPCQzD7ff7gUJaVGPVETX611eadGsA3A877GdSlU0LRVMCTH/+P3o2iDTak+S08V2+A=="
       },
+      "Microsoft.OpenApi": {
+        "type": "Transitive",
+        "resolved": "3.10.2",
+        "contentHash": "qzg4a3WmgQm28Azaporbnsu+KHA+vq5sgpQQFLiJgB06Rra2S+kzGAU7pzUB8/UIwZJCSCY2JEE/M5e0hQ2K8w=="
+      },
+      "Microsoft.OpenApi.YamlReader": {
+        "type": "Transitive",
+        "resolved": "3.10.2",
+        "contentHash": "qVWoRH8gBWcs2C67e5crYLXPPqK3O8VbzN9G4nxC3Ykjv+Vjv6BJZXx9WyAohe2UT5ZOkHr4LdLJ/ZpaptWdZQ==",
+        "dependencies": {
+          "Microsoft.OpenApi": "3.10.2",
+          "SharpYaml": "2.1.5"
+        }
+      },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
         "resolved": "17.8.0",
@@ -246,6 +260,11 @@
         "type": "Transitive",
         "resolved": "6.5.0",
         "contentHash": "QWINE2x3MbTODsWT1Gh71GaGb5icBz4chS8VYvTgsBnsi8esgN6wtHhydd7fvToWECYGq7T4cgBBDiKD/363fg=="
+      },
+      "SharpYaml": {
+        "type": "Transitive",
+        "resolved": "2.1.5",
+        "contentHash": "1pNSpfXxNAgCQ9sacKKpEWO2DxTefoLEjw0v1nWMvyJScUWacoHvjXr4LfcUkhm0qYgNYripFFiUeEzW4tdXIQ=="
       },
       "System.CodeDom": {
         "type": "Transitive",
@@ -328,6 +347,8 @@
         "dependencies": {
           "Google.Apis.Auth": "[1.75.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
+          "Microsoft.OpenApi": "[3.10.2, )",
+          "Microsoft.OpenApi.YamlReader": "[3.10.2, )",
           "ModelContextProtocol.AspNetCore": "[2.2.0, )",
           "Yarp.ReverseProxy": "[2.3.0, )"
         }

@@ -43,4 +43,26 @@ public sealed class McpApiBridgeRecord
     public string ManifestOrigin { get; set; } = "";
 
     public DateTimeOffset ImportedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Static headers attached to every call this bridge makes — before the route's credential is
+    /// attached one hop further along, and overridden by whatever a tool's own manifest sets for
+    /// the same name. For a header the whole upstream API demands unconditionally rather than per
+    /// operation: GitHub's REST API refuses every request with no <c>User-Agent</c>, and repeating
+    /// that in all 60-odd tools of a manifest would be the kind of thing nobody keeps in step.
+    ///
+    /// Bridge topology, not manifest content, so it lives with <see cref="Name"/> and
+    /// <see cref="RouteId"/> in the ordinary config note rather than the manifest's own vault item —
+    /// it is not secret and not something a manifest re-import should ever touch.
+    /// </summary>
+    public List<McpApiBridgeHeader> Headers { get; set; } = [];
+}
+
+/// <summary>One static header name/value pair, written on every call a bridge makes.</summary>
+public sealed class McpApiBridgeHeader
+{
+    public string Name { get; set; } = "";
+    public string Value { get; set; } = "";
+
+    public McpApiBridgeHeader Clone() => new() { Name = Name, Value = Value };
 }

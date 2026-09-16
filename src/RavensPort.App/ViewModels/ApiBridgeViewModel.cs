@@ -293,6 +293,55 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Converts an OpenAPI 3.0/3.1 or Swagger 2.0 document (JSON or YAML) into a manifest draft and
+    /// fills the editor with it — the same "text in, validator decides" path as
+    /// <see cref="ImportManifest"/> and <see cref="LoadSample"/>. Nothing here is trusted blindly:
+    /// warnings about what could not be represented travel as a comment header on the generated
+    /// text, which <see cref="McpApiBridgeValidation"/> already tolerates on read.
+    /// </summary>
+    [RelayCommand]
+    private void ImportOpenApi()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import an OpenAPI spec",
+            DefaultExt = ".json",
+            Filter = "OpenAPI spec (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        string specText;
+
+        try
+        {
+            specText = File.ReadAllText(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not read that file: {ex.Message}";
+            return;
+        }
+
+        var fileName = Path.GetFileName(dialog.FileName);
+        var result = OpenApiImporter.Convert(specText, fileName);
+
+        if (result.Error is { } error)
+        {
+            StatusMessage = $"Could not import {fileName}: {error}";
+            return;
+        }
+
+        ManifestJson = result.ManifestJson!;
+        NewBridgeManifestOrigin = $"openapi:{fileName}";
+
+        StatusMessage = result.Warnings.Count == 0
+            ? $"Imported {fileName} — review the draft below before saving."
+            : $"Imported {fileName} — {result.Warnings.Count} warning(s), see the comment at the top of the manifest.";
+    }
+
     /// <summary>Where the text in the editor came from, recorded on the bridge when it is saved.</summary>
     [ObservableProperty] private string _newBridgeManifestOrigin = PastedOrigin;
 

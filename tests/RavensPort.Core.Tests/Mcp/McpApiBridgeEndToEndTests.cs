@@ -204,6 +204,41 @@ public class McpApiBridgeEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ABridgesCustomHeaderIsSentOnEveryCall()
+    {
+        await _host.MutateAsync(store =>
+        {
+            var bridge = store.McpApiBridges.Single(b => b.Id == _bridge.Id);
+            bridge.Headers.Add(new McpApiBridgeHeader { Name = "User-Agent", Value = "RavensPort-Test" });
+        });
+
+        var client = await _host.ConnectBridgeAsync("tracker");
+
+        // get_task's own manifest sets no headers, so the bridge's default is the only source.
+        await client.CallToolAsync("get_task", new Dictionary<string, object?> { ["id"] = "1" });
+
+        Assert.Equal("RavensPort-Test", _upstream.Single().Header("User-Agent"));
+    }
+
+    [Fact]
+    public async Task AToolsOwnHeaderOverridesTheBridgesDefaultOfTheSameName()
+    {
+        await _host.MutateAsync(store =>
+        {
+            var bridge = store.McpApiBridges.Single(b => b.Id == _bridge.Id);
+            bridge.Headers.Add(new McpApiBridgeHeader { Name = "Accept", Value = "text/plain" });
+        });
+
+        var client = await _host.ConnectBridgeAsync("tracker");
+
+        // list_tasks' own manifest sets Accept: application/json — more specific than the
+        // bridge's default, so it should win rather than being sent twice or dropped.
+        await client.CallToolAsync("list_tasks", new Dictionary<string, object?> { ["query"] = "cats" });
+
+        Assert.Equal("application/json", _upstream.Single().Header("Accept"));
+    }
+
+    [Fact]
     public async Task TheModelsChoiceOfVariantDecidesWhichEndpointIsCalled()
     {
         var client = await _host.ConnectBridgeAsync("tracker");
