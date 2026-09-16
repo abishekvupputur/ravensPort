@@ -20,7 +20,7 @@ namespace RavensPort.Core.Storage;
 public static class ManifestBackupStore
 {
     /// <summary>Set only from tests, so a round trip exercises real file I/O without touching the machine's actual %LocalAppData%.</summary>
-    internal static string? RootOverride;
+    internal static string? RootOverride { get; set; }
 
     private static string Directory => RootOverride ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

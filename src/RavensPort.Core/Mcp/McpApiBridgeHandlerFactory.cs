@@ -152,45 +152,7 @@ public sealed class McpApiBridgeHandlerFactory
 
         try
         {
-            using var message = new HttpRequestMessage(built.Method, new Uri(_loopback.BaseFor(route), built.PathAndQuery.TrimStart('/')));
-
-            // The route's own key, read live rather than captured, so regenerating it on the
-            // Routes tab does not leave every bridge authenticating with a stale one. A route
-            // whose key has expired fails here with 403 exactly as any other client would, which
-            // is the point of an expiry the user set.
-            message.Headers.TryAddWithoutValidation(LocalAccessGuard.ApiKeyHeaderName, route.Key.Value);
-
-            // Marks this as a bridge's own hop. Both gates refuse it, which is what stops a route
-            // that resolves back into /api-mcp or /mcp from recursing.
-            message.Headers.TryAddWithoutValidation(LocalAccessGuard.BridgeHopHeaderName, "1");
-
-            // The bridge's own defaults first — a header the whole upstream API demands
-            // unconditionally, User-Agent being the common case, set once rather than in every
-            // tool. Re-checked against the reserved list here rather than trusting the save-time
-            // validator: this list is ordinary config-note data, editable by hand in the vault
-            // note like everything else there, and the one thing worse than a bad header is one
-            // that overwrites the credential transform's own.
-            foreach (var header in bridge.Headers)
-            {
-                if (string.IsNullOrWhiteSpace(header.Name)) continue;
-                if (McpApiBridgeValidation.IsBridgeReservedHeaderName(header.Name)) continue;
-
-                message.Headers.Remove(header.Name);
-                message.Headers.TryAddWithoutValidation(header.Name, header.Value);
-            }
-
-            // The manifest's own headers for this tool win over the bridge's defaults — a tool
-            // that needs a different value for the same name is being more specific, not wrong.
-            foreach (var (header, value) in built.Headers)
-            {
-                message.Headers.Remove(header);
-                message.Headers.TryAddWithoutValidation(header, value);
-            }
-
-            if (built.Body is { } body)
-            {
-                message.Content = new StringContent(body, Encoding.UTF8, built.ContentType);
-            }
+            using var message = BuildRequestMessage(bridge, route, built);
 
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
             budget.CancelAfter(CallTimeout);
@@ -249,6 +211,57 @@ public sealed class McpApiBridgeHandlerFactory
 
             return Failure($"The call failed: {summary}");
         }
+    }
+
+    /// <summary>
+    /// The outgoing request for one tool call: the route's own key and hop marker, the bridge's
+    /// static headers, the tool's own headers (which win on a name collision), and the body.
+    /// Pulled out of <see cref="CallToolAsync"/> so that method reads as the network call and its
+    /// error handling, not also the header-precedence rules.
+    /// </summary>
+    private HttpRequestMessage BuildRequestMessage(McpApiBridgeRecord bridge, RouteMapping route, McpApiBridgeRequestBuilder.BuiltRequest built)
+    {
+        var message = new HttpRequestMessage(built.Method, new Uri(_loopback.BaseFor(route), built.PathAndQuery.TrimStart('/')));
+
+        // The route's own key, read live rather than captured, so regenerating it on the Routes
+        // tab does not leave every bridge authenticating with a stale one. A route whose key has
+        // expired fails here with 403 exactly as any other client would, which is the point of an
+        // expiry the user set.
+        message.Headers.TryAddWithoutValidation(LocalAccessGuard.ApiKeyHeaderName, route.Key.Value);
+
+        // Marks this as a bridge's own hop. Both gates refuse it, which is what stops a route that
+        // resolves back into /api-mcp or /mcp from recursing.
+        message.Headers.TryAddWithoutValidation(LocalAccessGuard.BridgeHopHeaderName, "1");
+
+        // The bridge's own defaults first — a header the whole upstream API demands
+        // unconditionally, User-Agent being the common case, set once rather than in every tool.
+        // Re-checked against the reserved list here rather than trusting the save-time validator:
+        // this list is ordinary config-note data, editable by hand in the vault note like
+        // everything else there, and the one thing worse than a bad header is one that overwrites
+        // the credential transform's own.
+        foreach (var header in bridge.Headers)
+        {
+            if (string.IsNullOrWhiteSpace(header.Name)) continue;
+            if (McpApiBridgeValidation.IsBridgeReservedHeaderName(header.Name)) continue;
+
+            message.Headers.Remove(header.Name);
+            message.Headers.TryAddWithoutValidation(header.Name, header.Value);
+        }
+
+        // The manifest's own headers for this tool win over the bridge's defaults — a tool that
+        // needs a different value for the same name is being more specific, not wrong.
+        foreach (var (header, value) in built.Headers)
+        {
+            message.Headers.Remove(header);
+            message.Headers.TryAddWithoutValidation(header, value);
+        }
+
+        if (built.Body is { } body)
+        {
+            message.Content = new StringContent(body, Encoding.UTF8, built.ContentType);
+        }
+
+        return message;
     }
 
     private static bool IsRedirect(HttpStatusCode status) => (int)status is >= 300 and < 400;

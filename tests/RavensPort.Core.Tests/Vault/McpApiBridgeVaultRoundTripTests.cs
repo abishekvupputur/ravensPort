@@ -27,6 +27,8 @@ public class McpApiBridgeVaultRoundTripTests : IDisposable
         ManifestLocalStore.RootOverride = null;
 
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+
+        GC.SuppressFinalize(this);
     }
 
     private static McpApiBridgeRecord Bridge(string slug = "tracker") => new()

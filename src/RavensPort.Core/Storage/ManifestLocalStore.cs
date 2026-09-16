@@ -28,7 +28,7 @@ public static class ManifestLocalStore
     /// Set only from tests (via <c>InternalsVisibleTo</c>) so a round-trip test exercises real file
     /// I/O without touching the machine's actual <c>%LocalAppData%</c>.
     /// </summary>
-    internal static string? RootOverride;
+    internal static string? RootOverride { get; set; }
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 

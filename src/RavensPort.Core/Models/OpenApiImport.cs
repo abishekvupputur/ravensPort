@@ -179,6 +179,22 @@ public static class OpenApiImporter
 
     // ---- one operation ------------------------------------------------------------------------
 
+    /// <summary>
+    /// Everything one operation's conversion accumulates into, bundled so the methods that fill it
+    /// take one parameter instead of six — <c>path</c> stays separate since it is reassigned, not
+    /// appended to.
+    /// </summary>
+    private sealed class ToolBuildState(string toolName, List<string> warnings)
+    {
+        public string ToolName { get; } = toolName;
+        public JsonObject Properties { get; } = [];
+        public List<string> Required { get; } = [];
+        public HashSet<string> UsedArgNames { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> Query { get; } = [];
+        public Dictionary<string, string> Headers { get; } = [];
+        public List<string> Warnings { get; } = warnings;
+    }
+
     private static McpApiBridgeTool BuildTool(
         string path,
         string methodName,
@@ -188,28 +204,19 @@ public static class OpenApiImporter
         List<string> warnings)
     {
         var name = AllocateToolName(operation.OperationId, methodName, path, usedToolNames);
-
-        var properties = new JsonObject();
-        var required = new List<string>();
-        var usedArgNames = new HashSet<string>(StringComparer.Ordinal);
-
-        var query = new Dictionary<string, string>();
-        var headers = new Dictionary<string, string>();
+        var state = new ToolBuildState(name, warnings);
         var rewrittenPath = path;
 
         foreach (var parameter in MergeParameters(sharedParameters, operation.Parameters))
         {
-            AddParameter(parameter, name, ref rewrittenPath, query, headers, properties, required, usedArgNames, warnings);
+            AddParameter(parameter, ref rewrittenPath, state);
         }
 
-        var bodyMode = McpApiBridgeBodyMode.None;
+        var bodyMode = operation.RequestBody is { } requestBody
+            ? AddRequestBody(requestBody, state)
+            : McpApiBridgeBodyMode.None;
 
-        if (operation.RequestBody is { } requestBody)
-        {
-            bodyMode = AddRequestBody(requestBody, name, properties, required, usedArgNames, warnings);
-        }
-
-        var inputSchema = BuildInputSchema(properties, required);
+        var inputSchema = BuildInputSchema(state.Properties, state.Required);
 
         return new McpApiBridgeTool
         {
@@ -221,15 +228,15 @@ public static class OpenApiImporter
             {
                 Method = methodName,
                 Path = rewrittenPath,
-                Query = query,
-                Headers = headers,
+                Query = state.Query,
+                Headers = state.Headers,
                 BodyMode = bodyMode,
             },
         };
     }
 
     /// <summary>Operation-level parameters override a path-level one of the same name and location.</summary>
-    private static IEnumerable<IOpenApiParameter> MergeParameters(
+    private static Dictionary<(string Name, ParameterLocation? In), IOpenApiParameter>.ValueCollection MergeParameters(
         IList<IOpenApiParameter> shared, IList<IOpenApiParameter>? operationLevel)
     {
         var merged = new Dictionary<(string Name, ParameterLocation? In), IOpenApiParameter>();
@@ -247,37 +254,28 @@ public static class OpenApiImporter
         return merged.Values;
     }
 
-    private static void AddParameter(
-        IOpenApiParameter parameter,
-        string toolName,
-        ref string path,
-        Dictionary<string, string> query,
-        Dictionary<string, string> headers,
-        JsonObject properties,
-        List<string> required,
-        HashSet<string> usedArgNames,
-        List<string> warnings)
+    private static void AddParameter(IOpenApiParameter parameter, ref string path, ToolBuildState state)
     {
         if (string.IsNullOrWhiteSpace(parameter.Name)) return;
 
         if (parameter.In == ParameterLocation.Cookie)
         {
-            warnings.Add($"'{toolName}': cookie parameter '{parameter.Name}' was skipped — a bridge does not forward cookies.");
+            state.Warnings.Add($"'{state.ToolName}': cookie parameter '{parameter.Name}' was skipped — a bridge does not forward cookies.");
             return;
         }
 
         if (parameter.In == ParameterLocation.Header
             && (RouteValidation.IsReservedHeaderName(parameter.Name) || IsBridgeReservedHeader(parameter.Name)))
         {
-            warnings.Add($"'{toolName}': header parameter '{parameter.Name}' was skipped — the route attaches the credential.");
+            state.Warnings.Add($"'{state.ToolName}': header parameter '{parameter.Name}' was skipped — the route attaches the credential.");
             return;
         }
 
-        var argName = Deduplicate(SanitizeArgName(parameter.Name), usedArgNames);
+        var argName = Deduplicate(SanitizeArgName(parameter.Name), state.UsedArgNames);
 
-        AddSchemaProperty(properties, argName, parameter.Schema, parameter.Description, warnings, toolName);
+        AddSchemaProperty(state.Properties, argName, parameter.Schema, parameter.Description, state.Warnings, state.ToolName);
 
-        if (parameter.Required || parameter.In == ParameterLocation.Path) required.Add(argName);
+        if (parameter.Required || parameter.In == ParameterLocation.Path) state.Required.Add(argName);
 
         switch (parameter.In)
         {
@@ -290,22 +288,16 @@ public static class OpenApiImporter
                 break;
 
             case ParameterLocation.Query:
-                query[parameter.Name] = $"{{{argName}}}";
+                state.Query[parameter.Name] = $"{{{argName}}}";
                 break;
 
             case ParameterLocation.Header:
-                headers[parameter.Name] = $"{{{argName}}}";
+                state.Headers[parameter.Name] = $"{{{argName}}}";
                 break;
         }
     }
 
-    private static McpApiBridgeBodyMode AddRequestBody(
-        IOpenApiRequestBody requestBody,
-        string toolName,
-        JsonObject properties,
-        List<string> required,
-        HashSet<string> usedArgNames,
-        List<string> warnings)
+    private static McpApiBridgeBodyMode AddRequestBody(IOpenApiRequestBody requestBody, ToolBuildState state)
     {
         var json = (requestBody.Content ?? new Dictionary<string, IOpenApiMediaType>()).FirstOrDefault(
             pair => pair.Key.Equals("application/json", StringComparison.OrdinalIgnoreCase));
@@ -314,7 +306,7 @@ public static class OpenApiImporter
         {
             if (requestBody.Content is { Count: > 0 })
             {
-                warnings.Add($"'{toolName}': request body content ({string.Join(", ", requestBody.Content.Keys)}) "
+                state.Warnings.Add($"'{state.ToolName}': request body content ({string.Join(", ", requestBody.Content.Keys)}) "
                              + "is not application/json and was not imported. Add it by hand if the tool needs it.");
             }
 
@@ -326,7 +318,7 @@ public static class OpenApiImporter
 
         if (schema is null || bodyProperties is not { Count: > 0 })
         {
-            warnings.Add($"'{toolName}': the JSON request body has no fixed set of properties in the spec "
+            state.Warnings.Add($"'{state.ToolName}': the JSON request body has no fixed set of properties in the spec "
                          + "(or uses allOf/oneOf/anyOf, which this importer does not flatten) and was not imported.");
 
             return McpApiBridgeBodyMode.None;
@@ -336,17 +328,17 @@ public static class OpenApiImporter
 
         foreach (var (propertyName, propertySchema) in bodyProperties)
         {
-            var argName = Deduplicate(SanitizeArgName(propertyName), usedArgNames, preferOriginal: propertyName);
+            var argName = Deduplicate(SanitizeArgName(propertyName), state.UsedArgNames, preferOriginal: propertyName);
 
             if (argName != propertyName)
             {
-                warnings.Add($"'{toolName}': body property '{propertyName}' collided with a path/query/header "
+                state.Warnings.Add($"'{state.ToolName}': body property '{propertyName}' collided with a path/query/header "
                              + $"argument and was renamed to '{argName}'.");
             }
 
-            AddSchemaProperty(properties, argName, propertySchema, description: null, warnings, toolName);
+            AddSchemaProperty(state.Properties, argName, propertySchema, description: null, state.Warnings, state.ToolName);
 
-            if (bodyRequired.Contains(propertyName)) required.Add(argName);
+            if (bodyRequired.Contains(propertyName)) state.Required.Add(argName);
         }
 
         return McpApiBridgeBodyMode.Arguments;
