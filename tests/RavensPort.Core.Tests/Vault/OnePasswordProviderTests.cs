@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
+using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
 
 namespace RavensPort.Core.Tests.Vault;
@@ -9,8 +11,11 @@ namespace RavensPort.Core.Tests.Vault;
 /// the user up, a real save-and-load round trip, and the rule that matters most: no secret ever
 /// reaches a command-line argument.
 /// </summary>
+[Collection(RavensPort.Core.Tests.Storage.ManifestStoreCollection.Name)]
 public class OnePasswordProviderTests : IDisposable
 {
+    private readonly string _manifestRoot = Path.Combine(Path.GetTempPath(), $"ravensport-op-manifests-{Guid.NewGuid()}");
+
     private const string ClientSecret = "SENTINEL-CLIENT-SECRET";
     private const string ApiKey = "SENTINEL-API-KEY";
     private const string AccessToken = "SENTINEL-ACCESS-TOKEN";
@@ -34,6 +39,11 @@ public class OnePasswordProviderTests : IDisposable
         Directory.CreateDirectory(_stubDir);
         _stub = Path.Combine(_stubDir, "op.exe");
         File.WriteAllText(_stub, "");
+
+        // Every real save now writes each bridge's manifest to ManifestLocalStore as a side effect
+        // — see VaultMapper.PersistManifestsLocally. Redirected so this never touches the machine's
+        // actual %LocalAppData%.
+        ManifestLocalStore.RootOverride = _manifestRoot;
     }
 
     // ---- Probe ----------------------------------------------------------------------------------
@@ -140,6 +150,56 @@ public class OnePasswordProviderTests : IDisposable
 
         var reloaded = await provider.LoadAsync();
         Assert.Equal(ClientSecret, reloaded.Credentials.Single(c => c.Id == credential.Id).ClientSecret);
+    }
+
+    /// <summary>
+    /// Real regression: an install that never finished migrating a manifest out of the vault (see
+    /// VaultMapper.RestoreApiBridges) can have a leftover "api bridge manifest —" item sitting
+    /// there. 1Password answers neither success nor "isn't an item" for one the user archived — a
+    /// distinct, ambiguous state ReadItemJsonAsync deliberately refuses to treat as "gone", to avoid
+    /// ever mistaking a transient failure for a deleted secret. That rule is right for an actual
+    /// secret; applied unchanged to this legacy, non-secret, read-only role it took the *entire*
+    /// load down — every credential, every route — over one item nothing needs anymore.
+    /// </summary>
+    [Fact]
+    public async Task AnArchivedLegacyManifestItemDoesNotFailTheWholeLoad()
+    {
+        var fake = new FakeOnePassword();
+        var provider = NewProvider(fake.AsRunner());
+        var store = StoreWithSecrets();
+
+        var bridge = new McpApiBridgeRecord
+        {
+            Name = "Legacy bridge",
+            Slug = "legacy",
+            Key = ProxyKey.Generate(TimeSpan.FromDays(30)),
+        };
+        store.McpApiBridges.Add(bridge);
+
+        await provider.SaveAsync(store);
+
+        // Simulate the leftover item by hand — an ordinary save today never creates one, so both
+        // the item and the note's own index entry for it (an ordinary save's recovery scan does not
+        // see an archived item, only a stale index still pointing at one does) have to be seeded.
+        var manifestItemId = fake.AddItem(
+            fake.VaultId,
+            VaultItemNaming.ForApiBridgeManifest(bridge.Id, bridge.Slug),
+            notes: """{"version":1,"tools":[{"name":"x","request":{"method":"GET","path":"/x"}}]}""");
+        fake.Archive(manifestItemId);
+
+        var configItem = fake.Items.Single(i => i["title"]?.GetValue<string>() == VaultItemNaming.ConfigTitle);
+        var document = VaultDocument.TryParse(configItem["notes"]?.GetValue<string>() ?? "")!;
+        document.Index.ApiBridgeManifests[bridge.Id] = manifestItemId;
+        configItem["notes"] = document.Serialize();
+
+        var reloaded = await provider.LoadAsync();
+
+        // Everything else still loaded — the archived item cost this one bridge its migration,
+        // nothing more.
+        Assert.Equal(ClientSecret, reloaded.Credentials.Single(c => c.Name == "Google Drive").ClientSecret);
+        var reloadedBridge = Assert.Single(reloaded.McpApiBridges);
+        Assert.Equal(bridge.Id, reloadedBridge.Id);
+        Assert.Empty(reloadedBridge.Manifest.Tools);
     }
 
     // ---- Round trip -----------------------------------------------------------------------------
@@ -375,8 +435,11 @@ public class OnePasswordProviderTests : IDisposable
 
     public void Dispose()
     {
+        ManifestLocalStore.RootOverride = null;
+
         try { Directory.Delete(_stubDir, recursive: true); } catch { /* best effort */ }
         try { Directory.Delete(_logPath, recursive: true); } catch { /* best effort */ }
+        try { Directory.Delete(_manifestRoot, recursive: true); } catch { /* best effort */ }
 
         // Nothing here has a finalizer, but the pattern is what CA1816 asks for and what a
         // derived test fixture would need if one ever did.

@@ -1095,8 +1095,31 @@ await ReconcileDeletionsAsync(items, secretItems, previousIndex, ct);
         var tasks = wanted.Select(async pair =>
         {
             var ((role, id), itemId) = pair;
-            var contents = await GetItemAsync(itemId, ct);
-            return (role, id, contents);
+
+            try
+            {
+                var contents = await GetItemAsync(itemId, ct);
+                return (role, id, contents);
+            }
+            catch (VaultCliException ex) when (role == VaultItemRole.ApiBridgeManifest)
+            {
+                // This role is read-only now, for one release's worth of migrating an install that
+                // still has a manifest only in the vault (see VaultMapper.RestoreApiBridges) — the
+                // manifest itself has not lived here for a while, and nothing further ever writes
+                // this item again. GetItemAsync throws rather than returning null specifically when
+                // 1Password cannot positively confirm an item is gone (e.g. it is archived, not
+                // deleted), which is the right call for an actual secret: silently treating "cannot
+                // tell" as "deleted" would destroy a credential. A manifest is not a secret and this
+                // item is not the only copy of anything anymore, so failing the *entire* load over
+                // it — every credential, every route — would be a wildly disproportionate price for
+                // a read that only ever mattered once. Skipped; the bridge just tries again migrating
+                // on its next load, exactly as if the item were not there this time either.
+                activityLog.Log(
+                    $"VAULT 1Password — could not read a legacy API bridge manifest item ({ex.Message}); "
+                    + "skipped rather than failing the load. It will be tried again next launch.");
+
+                return (role, id, (VaultItemContents?)null);
+            }
         });
 
         var results = await Task.WhenAll(tasks);
