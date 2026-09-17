@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     public MainWindow(
         MainWindowViewModel mainWindowViewModel,
         SetupViewModel setupViewModel,
+        DashboardViewModel dashboardViewModel,
         CredentialsViewModel credentialsViewModel,
         RoutesViewModel routesViewModel,
         McpFunnelViewModel mcpFunnelViewModel,
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
         DataContext = mainWindowViewModel;
 
         SetupViewControl.DataContext = setupViewModel;
+        DashboardViewControl.DataContext = dashboardViewModel;
         CredentialsViewControl.DataContext = credentialsViewModel;
         RoutesViewControl.DataContext = routesViewModel;
         McpFunnelViewControl.DataContext = mcpFunnelViewModel;
@@ -45,6 +47,12 @@ public partial class MainWindow : Window
         // Only react to the TabControl itself; ComboBoxes inside the tabs raise the same
         // routed event and would otherwise trigger a reload on every dropdown change.
         if (!ReferenceEquals(e.OriginalSource, sender)) return;
+
+        // The Dashboard reads every other tab's configuration, so it is always stale on arrival.
+        if (DashboardViewControl.DataContext is DashboardViewModel dashboardViewModel)
+        {
+            dashboardViewModel.Reload();
+        }
 
         // The Routes tab shows credentials owned by the Credentials tab, so re-read them
         // on every switch — otherwise a newly added credential is missing from the dropdown.

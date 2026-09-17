@@ -44,6 +44,7 @@ public class LocalAccessGuardTests : IAsyncLifetime
                             new ActivityLog(Path.Combine(Path.GetTempPath(), $"ravensport-test-logs-{Guid.NewGuid()}")));
                         services.AddSingleton<IConfigVault>(_ => new InMemoryVault());
                         services.AddSingleton<ConfigStoreCache>();
+                        services.AddSingleton<ProxyTrafficStats>();
                     })
                     .Configure(app =>
                     {
@@ -119,6 +120,62 @@ public class LocalAccessGuardTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("upstream-payload", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task TrafficIsCountedAgainstTheEndpointThatServedIt()
+    {
+        // Through the real middleware rather than against the counter directly: the counting hook
+        // lives in the request path, and the thing worth proving is that a request actually
+        // reaches it and is attributed to the endpoint the guard matched.
+        var stats = _host.Services.GetRequiredService<ProxyTrafficStats>();
+        stats.Clear();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://127.0.0.1/anything");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, ValidKey);
+        request.Headers.Add("User-Agent", "ravensport-tests/1.0");
+
+        await _client.SendAsync(request);
+
+        var endpoint = Assert.Single(stats.Snapshot());
+
+        Assert.Equal(ProxyTargetKind.Route, endpoint.Kind);
+        Assert.Equal("route '/anything'", endpoint.Description);
+        Assert.Equal(1, endpoint.Calls);
+        Assert.Equal(0, endpoint.Failed);
+        Assert.Equal("ravensport-tests/1.0", Assert.Single(endpoint.Clients).UserAgent);
+    }
+
+    [Fact]
+    public async Task ARefusedRequestIsCountedAsRefusedRatherThanServed()
+    {
+        var stats = _host.Services.GetRequiredService<ProxyTrafficStats>();
+        stats.Clear();
+
+        // Right path, wrong key: the endpoint is known, so the refusal is attributed to it.
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://127.0.0.1/anything");
+        request.Headers.Add(LocalAccessGuard.ApiKeyHeaderName, OtherRouteKey);
+
+        await _client.SendAsync(request);
+
+        var endpoint = Assert.Single(stats.Snapshot());
+
+        Assert.Equal(1, endpoint.Denied);
+        Assert.Equal(0, endpoint.Calls);
+    }
+
+    [Fact]
+    public async Task ARequestToNoKnownEndpointIsCountedWithoutInventingOne()
+    {
+        var stats = _host.Services.GetRequiredService<ProxyTrafficStats>();
+        stats.Clear();
+
+        await _client.GetAsync("http://127.0.0.1/nothing-here");
+
+        // Nothing to attribute it to, so it must not appear as an endpoint of its own — otherwise
+        // anyone probing paths could fill this table with entries that do not exist.
+        Assert.Empty(stats.Snapshot());
+        Assert.Equal(1, stats.UnroutableDenied);
     }
 
     [Fact]

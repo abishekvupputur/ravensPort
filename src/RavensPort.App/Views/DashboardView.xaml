@@ -1,0 +1,232 @@
+﻿<UserControl x:Class="RavensPort.App.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:helpers="clr-namespace:RavensPort.App.Helpers"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d" d:DesignWidth="720"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <sys:String x:Key="CountingHelpText">These counts live in memory and start again every time RavensPort does.
+
+The inventory above them — how many routes, funnels and bridges exist, and which are switched on — comes from your configuration and is always current. The traffic is only what has gone through since this run started, so an endpoint showing no calls may simply not have been called yet today.
+
+The durable record is the activity log on the Settings tab.</sys:String>
+
+        <sys:String x:Key="ClientHelpText">Callers are told apart by the User-Agent they send, which on a loopback-only proxy is the only thing that distinguishes them — every caller has the same address.
+
+A client that sends no agent string is listed as one group, and so is anything beyond the first two dozen distinct agents on an endpoint. Nothing here is written to disk.</sys:String>
+
+        <sys:String x:Key="SessionHelpText">Sessions this proxy is holding open to MCP servers upstream, on behalf of a funnel.
+
+These are outbound: a funnel keeps one session per source and reuses it. They are dropped after ten minutes unused, so a source missing from this list is idle rather than broken.
+
+Inbound sessions are not listed because there are none to list — RavensPort serves MCP statelessly, so each request stands alone and no client stays connected between calls.</sys:String>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  helpers:SmoothScroll.Enable="True" Padding="0,0,4,0">
+        <StackPanel Margin="16">
+
+            <Grid Margin="0,0,0,6">
+                <TextBlock Text="Dashboard" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center"/>
+                <Button Content="Reset counters" HorizontalAlignment="Right"
+                        Style="{StaticResource GhostButtonStyle}" Command="{Binding ResetCountersCommand}"
+                        ToolTip="Forget the traffic counted so far. Your configuration is untouched."/>
+            </Grid>
+
+            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
+                       Text="What this proxy is serving, what is actually being called, and by what."/>
+
+            <!-- Summary -->
+            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="{Binding InventorySummary}" FontSize="13" TextWrapping="Wrap"/>
+
+                    <TextBlock Text="{Binding TrafficSummary}" Margin="0,8,0,0" FontSize="13" TextWrapping="Wrap"
+                               Foreground="{StaticResource AccentBrush}"/>
+
+                    <TextBlock Text="{Binding DeniedSummary}" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{StaticResource WarningBrush}"
+                               Visibility="{Binding HasDenials, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                    <TextBlock Text="{Binding CountingSince}" Style="{StaticResource HintTextStyle}"
+                               Margin="0,8,0,0" ToolTip="{StaticResource CountingHelpText}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Credential problems: only shown when there are any. -->
+            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14"
+                    Visibility="{Binding HasCredentialProblems, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel>
+                    <TextBlock Text="Credentials needing attention" Style="{StaticResource SectionHeaderStyle}"/>
+                    <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                               Text="Every route using one of these will start failing, or already is."/>
+
+                    <ItemsControl ItemsSource="{Binding Credentials}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding State}" FontSize="12"
+                                               Foreground="{StaticResource ErrorBrush}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Endpoints -->
+            <TextBlock Text="Endpoints" Style="{StaticResource SectionHeaderStyle}"/>
+            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                       Text="Every route, funnel and bridge, busiest first. Anything greyed out is switched off or has not been called this run."/>
+
+            <DataGrid ItemsSource="{Binding Endpoints}" AutoGenerateColumns="False" IsReadOnly="True"
+                      MaxHeight="320" Margin="0,0,0,18">
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsQuiet}" Value="True">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="KIND" Width="64" Binding="{Binding Kind}"/>
+                    <DataGridTemplateColumn Header="ENDPOINT" Width="*" MinWidth="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Address}" FontSize="10"
+                                               FontFamily="Cascadia Code, Consolas"
+                                               Foreground="{StaticResource DisabledTextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="CALLS" Width="70" Binding="{Binding CallsDisplay}"/>
+                    <DataGridTextColumn Header="CALLERS" Width="70" Binding="{Binding ClientsDisplay}"/>
+                    <DataGridTemplateColumn Header="PROBLEMS" Width="120">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ProblemsDisplay}" FontSize="11" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasProblems}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="LAST USED" Width="90" Binding="{Binding LastUsed}"/>
+                    <DataGridTemplateColumn Header="STATE" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="off" FontSize="11" Foreground="{StaticResource DisabledTextBrush}"
+                                               Visibility="{Binding Enabled, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                    <TextBlock Text="{Binding KeyState}" FontSize="10"
+                                               Foreground="{StaticResource DisabledTextBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- Callers -->
+            <Grid Margin="0,0,0,2">
+                <TextBlock Text="Callers" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center"
+                           ToolTip="{StaticResource ClientHelpText}"/>
+            </Grid>
+            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                       ToolTip="{StaticResource ClientHelpText}"
+                       Text="Who has called, by the agent string they sent, and what each of them reached."/>
+
+            <TextBlock Style="{StaticResource EmptyStateStyle}"
+                       Text="Nothing has called this proxy since it started."
+                       Visibility="{Binding HasClients, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+
+            <DataGrid ItemsSource="{Binding Clients}" AutoGenerateColumns="False" IsReadOnly="True"
+                      MaxHeight="260" Margin="0,0,0,18"
+                      Visibility="{Binding HasClients, Converter={StaticResource BoolToVisibilityConverter}}">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="AGENT" Width="*" MinWidth="220">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding UserAgent}" FontSize="11" VerticalAlignment="Center"
+                                           FontFamily="Cascadia Code, Consolas"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding UserAgent}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="CALLS" Width="70" Binding="{Binding CallsDisplay}"/>
+                    <DataGridTemplateColumn Header="REACHED" Width="210">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding EndpointsDisplay}" FontSize="11" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding EndpointsDisplay}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="LAST SEEN" Width="90" Binding="{Binding LastSeen}"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- Upstream MCP sessions -->
+            <TextBlock Text="Upstream MCP sessions" Style="{StaticResource SectionHeaderStyle}"
+                       ToolTip="{StaticResource SessionHelpText}"/>
+            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                       ToolTip="{StaticResource SessionHelpText}"
+                       Text="Connections this proxy is holding open to MCP servers on a funnel's behalf. Inbound MCP is stateless, so there are no client sessions to list."/>
+
+            <TextBlock Style="{StaticResource EmptyStateStyle}"
+                       Text="No upstream sessions are open."
+                       Visibility="{Binding HasUpstreamSessions, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+
+            <DataGrid ItemsSource="{Binding UpstreamSessions}" AutoGenerateColumns="False" IsReadOnly="True"
+                      MaxHeight="200" Margin="0,0,0,18"
+                      Visibility="{Binding HasUpstreamSessions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="FUNNEL" Width="*" MinWidth="140" Binding="{Binding Funnel}"/>
+                    <DataGridTextColumn Header="SOURCE" Width="*" MinWidth="140" Binding="{Binding Source}"/>
+                    <DataGridTemplateColumn Header="STATE" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding State}" FontSize="11" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFaulted}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="LAST USED" Width="90" Binding="{Binding LastUsed}"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

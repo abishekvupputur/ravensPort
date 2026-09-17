@@ -63,6 +63,28 @@ public sealed class McpSourceConnectionPool : IAsyncDisposable
     }
 
     /// <summary>
+    /// One live upstream session: a funnel holding a connection to one of its sources, and when it
+    /// was last used. <paramref name="FunnelId"/> is <see cref="DiscoveryFunnelId"/> for the
+    /// sessions the GUI's own discovery opens rather than a funnel.
+    /// </summary>
+    public sealed record PooledConnection(
+        Guid FunnelId, Guid SourceId, DateTimeOffset LastUsedUtc, bool IsConnected, bool IsFaulted);
+
+    /// <summary>
+    /// What the pool is holding right now. The only live connection state the app has: everything
+    /// else the Dashboard shows is counted after the fact, whereas these are sessions open at this
+    /// moment. Evicted after <see cref="IdleTimeout"/> of disuse, so a session missing from here
+    /// means idle rather than broken.
+    /// </summary>
+    public IReadOnlyList<PooledConnection> Snapshot() =>
+        [.. _connections.Select(pair => new PooledConnection(
+            pair.Key.FunnelId,
+            pair.Key.SourceId,
+            pair.Value.LastUsedUtc,
+            pair.Value.Client.IsCompletedSuccessfully,
+            pair.Value.Client.IsFaulted))];
+
+    /// <summary>
     /// Runs one operation against a source's session for a funnel.
     ///
     /// <paramref name="isIdempotent"/> decides what happens when the session turns out to be

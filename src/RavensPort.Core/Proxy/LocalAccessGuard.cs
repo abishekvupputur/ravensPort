@@ -9,6 +9,14 @@ using RavensPort.Core.Storage;
 
 namespace RavensPort.Core.Proxy;
 
+/// <summary>Which of the three kinds of endpoint a request was addressed to.</summary>
+public enum ProxyTargetKind
+{
+    Route,
+    Funnel,
+    Bridge,
+}
+
 /// <summary>
 /// The only thing standing between a local caller and the user's OAuth grant.
 ///
@@ -84,10 +92,19 @@ public static class LocalAccessGuard
                                ?? throw new InvalidOperationException("ConfigStoreCache is not registered.");
         var activityLog = app.ApplicationServices.GetService(typeof(ActivityLog)) as ActivityLog
                           ?? throw new InvalidOperationException("ActivityLog is not registered.");
+        var traffic = app.ApplicationServices.GetService(typeof(ProxyTrafficStats)) as ProxyTrafficStats
+                      ?? throw new InvalidOperationException("ProxyTrafficStats is not registered.");
 
         return app.Use(async (context, next) =>
         {
-            var rejection = Reject(context, configStoreCache);
+            // Resolved once and handed to the check, rather than resolved again inside it: the
+            // store can be swapped between calls, and the request must be judged and counted
+            // against the same snapshot it was matched to.
+            var target = ResolveTarget(configStoreCache.Current, context.Request.Path);
+            var rejection = Reject(context, target);
+
+            // The only thing that tells callers apart here; read before the response is touched.
+            var userAgent = context.Request.Headers.UserAgent.ToString();
 
             // Read before stripping, since the funnel gate downstream needs to know.
             context.Items[FunnelHopItemKey] = context.Request.Headers.ContainsKey(FunnelHopHeaderName);
@@ -101,6 +118,19 @@ public static class LocalAccessGuard
 
             if (rejection is { } reason)
             {
+                // A refusal against a path that names no endpoint is counted on its own: there is
+                // nothing to attribute it to, and it is worth seeing that something is knocking.
+                if (target is null)
+                {
+                    traffic.RecordUnroutableDenial();
+                }
+                else
+                {
+                    traffic.Record(
+                        target.Kind, target.Id, target.Description, userAgent,
+                        StatusCodes.Status403Forbidden, denied: true);
+                }
+
                 activityLog.Log($"DENIED {context.Request.Method} {context.Request.Path} — {reason}");
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync(
@@ -126,6 +156,12 @@ public static class LocalAccessGuard
             });
 
             await next();
+
+            // Past the guard, so the path named an endpoint and Reject would have refused it
+            // otherwise. Counted after the pipeline so the status is the one the caller saw.
+            traffic.Record(
+                target!.Kind, target.Id, target.Description, userAgent,
+                context.Response.StatusCode, denied: false);
         });
     }
 
@@ -155,7 +191,7 @@ public static class LocalAccessGuard
     }
 
     /// <summary>Returns null when the request is allowed, or a short reason when it is not.</summary>
-    private static string? Reject(HttpContext context, ConfigStoreCache configStoreCache)
+    private static string? Reject(HttpContext context, ProxyTarget? target)
     {
         var request = context.Request;
 
@@ -202,7 +238,6 @@ public static class LocalAccessGuard
         // no route and no funnel has no key, and is refused with the same 403 as a wrong key
         // rather than a distinguishable answer — otherwise an unauthenticated caller could map
         // which prefixes exist by watching status codes.
-        var target = ResolveTarget(configStoreCache.Current, request.Path);
         if (target is null || !target.Key.IsConfigured)
         {
             return "no proxy key is configured for this path";
@@ -225,7 +260,7 @@ public static class LocalAccessGuard
     /// must present.
     /// Null when the path belongs to neither.
     /// </summary>
-    public sealed record ProxyTarget(string Description, ProxyKey Key);
+    public sealed record ProxyTarget(ProxyTargetKind Kind, Guid Id, string Description, ProxyKey Key);
 
     /// <summary>
     /// Resolves a request path to the endpoint that owns it.
@@ -252,7 +287,9 @@ public static class LocalAccessGuard
                 McpFunnelEndpoints.ExtractSlug(path),
                 f => f.Slug);
 
-            return funnel is null ? null : new ProxyTarget($"funnel '{funnel.Name}'", funnel.Key);
+            return funnel is null
+                ? null
+                : new ProxyTarget(ProxyTargetKind.Funnel, funnel.Id, $"funnel '{funnel.Name}'", funnel.Key);
         }
 
         if (path.StartsWithSegments(McpApiBridgeEndpoints.BasePath))
@@ -262,12 +299,16 @@ public static class LocalAccessGuard
                 McpApiBridgeEndpoints.ExtractSlug(path),
                 b => b.Slug);
 
-            return bridge is null ? null : new ProxyTarget($"API bridge '{bridge.Name}'", bridge.Key);
+            return bridge is null
+                ? null
+                : new ProxyTarget(ProxyTargetKind.Bridge, bridge.Id, $"API bridge '{bridge.Name}'", bridge.Key);
         }
 
         var match = LongestMatchingRoute(store, path);
 
-        return match is null ? null : new ProxyTarget($"route '{match.PathPrefix}'", match.Key);
+        return match is null
+            ? null
+            : new ProxyTarget(ProxyTargetKind.Route, match.Id, $"route '{match.PathPrefix}'", match.Key);
     }
 
     private static T? FindBySlug<T>(IEnumerable<T> records, string? slug, Func<T, string> slugOf)

@@ -69,6 +69,9 @@
             </Border>
 
             <TabControl x:Name="TabsControl" SelectionChanged="TabControl_SelectionChanged">
+            <TabItem Header="Dashboard">
+                <views:DashboardView x:Name="DashboardViewControl"/>
+            </TabItem>
             <TabItem Header="Credentials">
                 <views:CredentialsView x:Name="CredentialsViewControl"/>
             </TabItem>

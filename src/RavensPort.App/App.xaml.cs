@@ -201,6 +201,7 @@ public partial class App : Application
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
         builder.Services.AddSingleton<ApiBridgeViewModel>();
+        builder.Services.AddSingleton<DashboardViewModel>();
 
         // The tabs as one dependency: everything that rebuilds them rebuilds all of them.
         builder.Services.AddSingleton<AppTabs>();

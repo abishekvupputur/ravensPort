@@ -23,6 +23,9 @@ public static class ProxyStartupExtensions
     public static IServiceCollection AddRavensPort(this IServiceCollection services)
     {
         services.AddSingleton<ActivityLog>();
+
+        // Counts what goes through the guard, for the Dashboard. In memory, reset on restart.
+        services.AddSingleton<ProxyTrafficStats>();
         services.AddSingleton<ICliRunner, CliRunner>();
 
         services.AddSingleton<OnePasswordSession>();
