@@ -40,9 +40,19 @@
             <TextBlock Grid.Column="0" Text="Group by" Style="{StaticResource FieldLabelStyle}"
                        VerticalAlignment="Center" Margin="0,0,8,0"/>
 
+            <!-- An ItemTemplate rather than DisplayMemberPath: the themed ComboBox draws its
+                 selection box from SelectionBoxItemTemplate, which mirrors ItemTemplate only.
+                 DisplayMemberPath works through an internal template selector that never reaches
+                 it, so the closed box fell back to ToString() and read "OpenApiGroupingOption…". -->
             <ComboBox Grid.Column="1" Width="150" ItemsSource="{Binding GroupingOptions}"
-                      SelectedItem="{Binding Grouping}" DisplayMemberPath="Label"
-                      ToolTip="Buckets the list so a thousand-operation document is not one flat wall of rows"/>
+                      SelectedItem="{Binding Grouping}"
+                      ToolTip="Buckets the list so a thousand-operation document is not one flat wall of rows">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Label}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <TextBlock Grid.Column="2" Text="{Binding MatchSummary}" Style="{StaticResource HintTextStyle}"
                        VerticalAlignment="Center" Margin="12,0,12,0" TextTrimming="CharacterEllipsis"/>
