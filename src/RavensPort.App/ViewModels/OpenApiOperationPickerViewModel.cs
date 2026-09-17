@@ -105,7 +105,13 @@ public sealed class OpenApiOperationGroupViewModel : OpenApiPickerNodeViewModel
     /// </summary>
     public bool? IsSelected
     {
-        get => _selectedLeafCount == 0 ? false : _selectedLeafCount == Leaves.Count ? true : null;
+        get
+        {
+            if (_selectedLeafCount == 0) return false;
+
+            return _selectedLeafCount == Leaves.Count ? true : null;
+        }
+
         set => _owner.SetSelection(Leaves, value ?? false);
     }
 
@@ -317,7 +323,7 @@ public sealed partial class OpenApiOperationPickerViewModel : ObservableObject
             : $"{visible.Count} of {Rows.Count} operations match";
     }
 
-    private IReadOnlyList<OpenApiPickerNodeViewModel> Build(
+    private List<OpenApiPickerNodeViewModel> Build(
         IReadOnlyList<OpenApiOperationRowViewModel> rows,
         IReadOnlyList<Func<OpenApiOperationRowViewModel, string>> keys,
         int depth)
