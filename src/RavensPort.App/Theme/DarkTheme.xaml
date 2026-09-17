@@ -209,17 +209,32 @@
                                 Width="14" Height="14"
                                 Background="{StaticResource PanelAltBrush}" BorderBrush="#555555" BorderThickness="1"
                                 CornerRadius="2" Margin="0,0,7,0" VerticalAlignment="Center">
-                            <Path x:Name="CheckMark"
-                                  Data="M 2 6 L 5 10 L 12 2"
-                                  Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
-                                  Visibility="Collapsed"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Grid>
+                                <Path x:Name="CheckMark"
+                                      Data="M 2 6 L 5 10 L 12 2"
+                                      Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
+                                      Visibility="Collapsed"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                                <!-- The "some but not all" state, for a checkbox that stands for a
+                                     group of others. Nothing sets IsChecked to null unless it is
+                                     three-state, so this is invisible to every other checkbox. -->
+                                <Rectangle x:Name="IndeterminateMark"
+                                           Width="8" Height="2" RadiusX="1" RadiusY="1"
+                                           Fill="{StaticResource AccentBrush}"
+                                           Visibility="Collapsed"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
                         </Border>
                         <ContentPresenter VerticalAlignment="Center"/>
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="IndeterminateMark" Property="Visibility" Value="Visible"/>
                             <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -332,6 +347,18 @@
     </Style>
 
     <!-- Section card — replaces GroupBox (AIUsage never uses GroupBox chrome) -->
+    <!-- A small boxed readout for a running figure against a limit, e.g. "62 / 64 tools". Boxed so
+         it reads as a gauge rather than as more prose in the hint line beside it. -->
+    <Style x:Key="CapChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="7,2"/>
+        <Setter Property="Margin" Value="0,0,6,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <Style x:Key="SectionCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
@@ -414,6 +441,89 @@
                             <ContentPresenter ContentSource="SelectedContent"/>
                         </Border>
                     </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ── TreeView ────────────────────────────────────────────────────────────
+         Templated for the same reason the DataGrid below is: the stock TreeViewItem draws its
+         expander glyph and its selection highlight with system colours, which on this background
+         come out as a washed-out triangle and a Windows-blue bar.
+
+         The row is a plain Border rather than a highlight: this tree is a list of tick boxes, so
+         "which row is selected" is noise — what matters is what is checked. -->
+    <Style x:Key="TreeExpanderToggleStyle" TargetType="ToggleButton">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="Transparent">
+                        <Path x:Name="Glyph" Data="M 4 2 L 9 7 L 4 12 Z"
+                              Fill="{StaticResource MutedTextBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Glyph" Property="Data" Value="M 2 4 L 12 4 L 7 10 Z"/>
+                            <Setter TargetName="Glyph" Property="Fill" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Glyph" Property="Fill" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="TreeView">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="4"/>
+    </Style>
+
+    <Style TargetType="TreeViewItem">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="Padding" Value="0,3"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TreeViewItem">
+                    <StackPanel>
+                        <Border x:Name="Row" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="18"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <ToggleButton x:Name="Expander" Grid.Column="0" ClickMode="Press"
+                                              Style="{StaticResource TreeExpanderToggleStyle}"
+                                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"/>
+
+                                <ContentPresenter x:Name="Header" Grid.Column="1" ContentSource="Header"
+                                                  HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="False">
+                            <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                        </Trigger>
+                        <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{StaticResource HoverBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
