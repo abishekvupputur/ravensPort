@@ -93,10 +93,11 @@ spoke MCP, and plenty it could never reach on its own.
   picks a variant of, plus prompts and skill documents. Each call goes out through the route you
   chose, so its credential is attached exactly as for any other call and no token ever goes in a
   manifest
-- **OpenAPI import** — pick an OpenAPI 3.0/3.1 or Swagger 2.0 document, JSON or YAML, and get a
-  manifest draft in the editor: one tool per operation, parameters mapped into `inputSchema`. It is
-  a starting point, not a bypass — the same validator checks it before it can be saved, and anything
-  it could not represent (a credential-carrying header, a non-JSON body) is named in a warning
+- **OpenAPI import** — pick an OpenAPI 3.0/3.1 or Swagger 2.0 document, JSON or YAML, and choose
+  which of its operations become tools before anything is converted: grouped by tag, path or method,
+  searchable with `*` and `?` wildcards, with both manifest caps shown as running totals so you know
+  what fits while you pick. It is a starting point, not a bypass — the same validator checks the
+  result before it can be saved, and anything that could not be represented is named in a warning
 - **Multi-provider OAuth2** — Google (via `Google.Apis.Auth`), GitHub, Nextcloud, or any custom
   OAuth2 provider (via `IdentityModel.OidcClient`; plain OAuth2, no OIDC discovery required)
 - **Device code sign-in** — the RFC 8628 grant: the provider issues a short code, you enter it on
@@ -502,13 +503,36 @@ format, or **Save sample…** to edit one outside the app. Importing a file fill
 than saving directly, so a manifest that fails validation can be fixed where it is. The preview
 below the editor lists every call the manifest would make before you save it.
 
-Already have an OpenAPI 3.0/3.1 or Swagger 2.0 document for the API? **Import OpenAPI…** converts
-it — JSON or YAML — into a manifest draft in the same editor: one tool per operation, path/query/
-header parameters mapped into `inputSchema`, JSON request bodies mapped where they have a fixed
-shape. It is a draft, not a finished manifest: it does not know your route's prefix, so check every
-path against it before saving, and read the comment block at the top of what it produces — that is
-where it names what it had to skip (credential-carrying headers, cookies, non-JSON bodies, anything
-past the 64-tool cap). The same conversion is available from the command line:
+Already have an OpenAPI 3.0/3.1 or Swagger 2.0 document for the API? **Import OpenAPI…** reads it —
+JSON or YAML — and shows you every operation it declares, so you pick which ones become tools before
+anything is converted.
+
+[![Choosing which operations to import](media/openAPIPicker.png)](media/openAPIPicker.png)
+
+Choosing matters because real documents are large and a manifest holds 64 tools: GitHub's own REST
+description declares 1239 operations, and Tailscale's 93. Converting the lot and keeping whatever
+fit would leave you with the first 64 in alphabetical order, which is never the handful you actually
+wanted. So:
+
+- **Group** by tag (the document's own grouping), by path, by method, or not at all. Groups start
+  collapsed, so a thousand operations open as a few dozen readable buckets.
+- **Search** with `*` and `?` across the method, path, operation ID, summary and tags. A plain word
+  matches anywhere; a pattern with a wildcard has to match the whole field, so `user` finds anything
+  containing it while `/repos/*` matches only paths that start that way.
+- **Tick what you want**, one at a time or a whole group at once — a group's box selects and clears
+  everything under it, at any depth, and shows a dash while only some of it is chosen. Every "select
+  all", including each group's, acts on what the search is showing rather than the whole document,
+  so the usual move is: select none, search, select all of what is left.
+- **Watch both caps** while you pick. `53 / 64 tools` and `122 / 128 KB` update as you tick and turn
+  red on their own, so you find out what fits while choosing rather than afterwards.
+
+The result is a manifest draft in the same editor, with path, query and header parameters mapped
+into `inputSchema` and JSON request bodies mapped into arguments. It is a draft, not a finished
+manifest: it does not know your route's prefix, so check every path against it before saving, and
+read the comment block at the top of what it produces — that is where it names anything it had to
+skip (credential-carrying headers, cookies, non-JSON bodies) or rename.
+
+The command line converts a whole document instead, with no picking:
 
 ```
 dotnet run --project tools/RavensPort.ManifestCheck -- --from-openapi spec.yaml --out my-api.json
@@ -690,8 +714,14 @@ time that bridge is saved — same as any other item nothing refers to anymore.
 - Manifests are capped at 128 KB each — a sanity limit against a paste accident, not a vault
   constraint now that manifests live on local disk (see [Where a manifest is stored](#where-a-manifest-is-stored)).
 - **OpenAPI import is a draft, not a guarantee.** It does not collapse near-identical operations
-  into variants, does not flatten `allOf`/`oneOf`/`anyOf` composition, and only maps a request body
-  that is `application/json` with a plain object schema — anything else still needs hand editing.
+  into variants, and it cannot send a body that is not JSON — `application/octet-stream` or
+  `text/plain` operations import without theirs, since the manifest format has no raw-body mode.
+  A `GET` that declares a request body is imported without it, because a manifest may not send one.
+  Everything else it cannot represent costs only the part in question: a parameter the format cannot
+  name is left out and the tool kept, `allOf` is flattened, `oneOf`/`anyOf` become a union of
+  optional fields, and a body the document does not describe field by field is still forwarded —
+  whatever arguments the path, query and headers did not consume are sent as the body, which the
+  tool's description says so an agent knows it may pass them.
 - No structured output: results come back as text, since there is no schema validator here to
   honour an `outputSchema`.
 

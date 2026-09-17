@@ -1,3 +1,5 @@
+using System.Text.Json;
+using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests.Models;
@@ -182,12 +184,13 @@ public class OpenApiImportTests
     }
 
     [Fact]
-    public void DropsAToolWhoseParameterNameTheFormatCannotRepresentRatherThanFailingTheWholeImport()
+    public void SkipsAParameterTheFormatCannotRepresentAndKeepsTheToolItBelongsTo()
     {
         // Tailscale's own published spec has exactly this: a query parameter whose "name" is
         // documentation text ("<field>=<value> filters") rather than an identifier. The manifest
-        // validator rightly refuses '=' in a query parameter name; the importer must drop that one
-        // tool and keep going, not hand back a manifest that fails whole.
+        // validator rightly refuses '=' in a query parameter name — but the cost of that should be
+        // the one parameter, not the endpoint. Dropping the tool lost a working call over a
+        // documentation typo in somebody else's spec.
         var spec = Document("""
             "/ok": {
               "get": { "operationId": "getOk", "responses": { "200": { "description": "ok" } } }
@@ -207,9 +210,14 @@ public class OpenApiImportTests
         var (error, manifest) = ReadBack(result);
 
         Assert.Null(error);
-        Assert.Single(manifest!.Tools);
-        Assert.Equal("getOk", manifest.Tools[0].Name);
-        Assert.Contains(result.Warnings, w => w.Contains("getBroken") && w.Contains("dropped"));
+        Assert.Equal(["getBroken", "getOk"], manifest!.Tools.Select(t => t.Name));
+
+        // The tool is there and callable; it simply has no argument for the parameter that could
+        // not be named.
+        var broken = manifest.Tools.Single(t => t.Name == "getBroken");
+        Assert.Empty(broken.Request!.Query);
+
+        Assert.Contains(result.Warnings, w => w.Contains("getBroken") && w.Contains("was skipped"));
     }
 
     [Fact]
@@ -295,13 +303,13 @@ public class OpenApiImportTests
     [Fact]
     public void FailsWhenEveryOperationFailsItsOwnValidation()
     {
+        // A path this format refuses outright, rather than an unusable parameter — those are now
+        // left out one at a time and the tool survives them, which is the point of the two tests
+        // above. This is a failure nothing can be dropped to fix.
         var spec = Document("""
-            "/things": {
+            "/things/../etc": {
               "get": {
                 "operationId": "getThings",
-                "parameters": [
-                  { "name": "bad=name", "in": "query", "schema": { "type": "string" } }
-                ],
                 "responses": { "200": { "description": "ok" } }
               }
             }
@@ -338,8 +346,12 @@ public class OpenApiImportTests
     }
 
     [Fact]
-    public void WarnsWhenAJsonBodyHasNoFixedProperties()
+    public void ForwardsABodyTheSpecDoesNotDescribeRatherThanSendingNoneAtAll()
     {
+        // A free-form object, or a map keyed by something arbitrary — Tailscale's split-DNS body is
+        // exactly this. There are no fields to declare, but Arguments mode forwards whatever the
+        // caller passes, so the call still works. Sending no body produced a tool that reached the
+        // endpoint empty and failed at the far end.
         var spec = Document("""
             "/things": {
               "post": {
@@ -357,8 +369,146 @@ public class OpenApiImportTests
 
         Assert.Null(error);
         var tool = Assert.Single(manifest!.Tools);
+
+        Assert.Equal(McpApiBridgeBodyMode.Arguments, tool.Request!.BodyMode);
+
+        // And the description says so, because nothing else would tell an agent it may send fields.
+        Assert.Contains("fields the spec does not list", tool.Description, StringComparison.Ordinal);
+
+        // The claim that matters: calling it actually produces a body. Asserting the mode alone
+        // would still pass if the arguments went nowhere.
+        var arguments = new Dictionary<string, JsonElement>
+        {
+            ["anything"] = JsonDocument.Parse("\"a value\"").RootElement,
+        };
+
+        var (built, buildError) = McpApiBridgeRequestBuilder.Build(tool, arguments);
+
+        Assert.Null(buildError);
+        Assert.Equal("""{"anything":"a value"}""", built!.Body);
+    }
+
+    [Fact]
+    public void FlattensAnAllOfBodyIntoOneSetOfProperties()
+    {
+        var spec = Document("""
+            "/things": {
+              "post": {
+                "operationId": "createThing",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "allOf": [
+                          {
+                            "type": "object",
+                            "properties": { "name": { "type": "string" } },
+                            "required": ["name"]
+                          },
+                          {
+                            "type": "object",
+                            "properties": { "size": { "type": "integer" } }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var (error, manifest) = ReadBack(Convert(spec));
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+
+        var schema = tool.InputSchema;
+        var properties = schema.GetProperty("properties");
+
+        Assert.Equal("string", properties.GetProperty("name").GetProperty("type").GetString());
+        Assert.Equal("integer", properties.GetProperty("size").GetProperty("type").GetString());
+
+        // Every allOf branch applies at once, so its required fields stay required.
+        Assert.Equal(["name"], schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
+    public void TakesAOneOfBodyAsAUnionOfOptionalProperties()
+    {
+        var spec = Document("""
+            "/things": {
+              "post": {
+                "operationId": "createThing",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": { "byId": { "type": "string" } },
+                            "required": ["byId"]
+                          },
+                          {
+                            "type": "object",
+                            "properties": { "byName": { "type": "string" } },
+                            "required": ["byName"]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var (error, manifest) = ReadBack(Convert(spec));
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+
+        var properties = tool.InputSchema.GetProperty("properties");
+        Assert.True(properties.TryGetProperty("byId", out _));
+        Assert.True(properties.TryGetProperty("byName", out _));
+
+        // Which branch applies is the caller's choice, so neither branch's field may be demanded —
+        // requiring both would refuse every valid call.
+        Assert.False(tool.InputSchema.TryGetProperty("required", out _));
+    }
+
+    [Fact]
+    public void ImportsAGetThatDeclaresARequestBodyWithoutThatBody()
+    {
+        // GitHub's repos_get-content is a GET with a requestBody. A manifest may not send one, and
+        // attaching it anyway had the validator refuse the whole tool.
+        var spec = Document("""
+            "/things": {
+              "get": {
+                "operationId": "getThings",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": { "type": "object", "properties": { "q": { "type": "string" } } }
+                    }
+                  }
+                },
+                "responses": { "200": { "description": "ok" } }
+              }
+            }
+            """);
+
+        var result = Convert(spec);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+
         Assert.Equal(McpApiBridgeBodyMode.None, tool.Request!.BodyMode);
-        Assert.Contains(result.Warnings, w => w.Contains("no fixed set of properties", StringComparison.Ordinal));
+        Assert.Contains(result.Warnings, w => w.Contains("request body on a GET", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -503,5 +653,68 @@ public class OpenApiImportTests
 
         Assert.NotNull(result.Error);
         Assert.Null(result.ManifestJson);
+    }
+
+    [Fact]
+    public void DiscoverListsEveryOperationWithItsTagsAndSkipsOptionsAndTrace()
+    {
+        var spec = Document("""
+            "/things": {
+              "get": {
+                "operationId": "listThings", "summary": "List things", "tags": ["things"],
+                "responses": { "200": { "description": "ok" } }
+              },
+              "options": { "operationId": "preflight", "responses": { "200": { "description": "ok" } } }
+            },
+            "/things/{id}": {
+              "delete": { "operationId": "deleteThing", "responses": { "200": { "description": "ok" } } }
+            }
+            """);
+
+        var (error, operations, _) = OpenApiImporter.Discover(spec);
+
+        Assert.Null(error);
+        Assert.Equal(2, operations.Count);
+
+        var listed = Assert.Single(operations, o => o.OperationId == "listThings");
+        Assert.Equal("/things", listed.Path);
+        Assert.Equal("GET", listed.Method);
+        Assert.Equal("List things", listed.Summary);
+        Assert.Equal(["things"], listed.Tags);
+
+        var deleted = Assert.Single(operations, o => o.OperationId == "deleteThing");
+        Assert.Empty(deleted.Tags);
+    }
+
+    [Fact]
+    public void DiscoverReportsTheSameErrorAsConvertForAnUnreadableDocument()
+    {
+        var (error, operations, _) = OpenApiImporter.Discover("this is not json or yaml or anything of the sort: {{{");
+
+        Assert.NotNull(error);
+        Assert.Empty(operations);
+    }
+
+    [Fact]
+    public void ConvertWithIncludeOnlyBuildsOnlyTheNamedOperationsWithNoWarning()
+    {
+        var spec = Document("""
+            "/things": {
+              "get": { "operationId": "listThings", "responses": { "200": { "description": "ok" } } },
+              "post": { "operationId": "createThing", "responses": { "200": { "description": "ok" } } }
+            },
+            "/other": {
+              "get": { "operationId": "getOther", "responses": { "200": { "description": "ok" } } }
+            }
+            """);
+
+        var includeOnly = new HashSet<(string Path, string Method)> { ("/things", "GET") };
+        var result = OpenApiImporter.Convert(spec, SourceName, includeOnly);
+        var (error, manifest) = ReadBack(result);
+
+        Assert.Null(error);
+        var tool = Assert.Single(manifest!.Tools);
+        Assert.Equal("listThings", tool.Name);
+        Assert.Empty(result.Warnings);
     }
 }
