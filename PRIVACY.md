@@ -202,7 +202,7 @@ the published source says it is, and this document can be held to that source ra
 trust.
 
 **Building it yourself** produces the same application from the same source; see
-[README.md](README.md#building).
+[Building](https://github.com/abishekvupputur/ravensPort/wiki/Building).
 
 **Most of this code was written by AI.** RavensPort was built with Claude (Anthropic) as the
 principal author of the code, directed and reviewed by a human developer  — the majority of commits in this repository record that explicitly. This is disclosed because it bears on how much weight to put on the paragraphs above:
