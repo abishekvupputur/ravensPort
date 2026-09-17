@@ -497,6 +497,18 @@ public static class McpApiBridgeValidation
         return McpApiBridgePlaceholders.Validate(value, what);
     }
 
+    /// <summary>
+    /// Whether a name may be used as a query parameter at all, separate from the rest of the checks
+    /// so a converter can leave out the one parameter it cannot represent instead of finding out
+    /// afterwards that the whole tool is refused. Published specs do contain these: Tailscale's has
+    /// a parameter literally named "&lt;field&gt;=&lt;value&gt; filters", documentation text left in
+    /// the name slot.
+    /// </summary>
+    public static bool IsUsableQueryParameterName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && name.IndexOfAny(['&', '=', '#', '?']) < 0
+        && !name.Any(char.IsControl);
+
     public static string? ValidateQuery(IReadOnlyDictionary<string, string> query)
     {
         if (query.Keys.Any(string.IsNullOrWhiteSpace))

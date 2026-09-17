@@ -33,6 +33,20 @@ public sealed class OpenApiImportResult
 }
 
 /// <summary>
+/// One operation a spec declares, as listed by <see cref="OpenApiImporter.Discover"/> before
+/// conversion. <paramref name="EstimatedBytes"/> is what this operation adds to the manifest's
+/// stored size — measured as the difference it makes to a real serialization, so it accounts for
+/// the indentation the tool carries inside the array, which serializing it on its own would miss.
+/// </summary>
+public sealed record OpenApiOperationSummary(
+    string Path,
+    string Method,
+    string? OperationId,
+    string? Summary,
+    IReadOnlyList<string> Tags,
+    int EstimatedBytes = 0);
+
+/// <summary>
 /// Turns an OpenAPI 3.0/3.1 or Swagger 2.0 document — JSON or YAML — into a manifest draft: one
 /// tool per operation, parameters mapped into <c>inputSchema</c>, using the same
 /// <c>{placeholder}</c> syntax OpenAPI paths already use.
@@ -56,37 +70,25 @@ public static class OpenApiImporter
 
     private static readonly JsonSerializerOptions ManifestWriteOptions = new() { WriteIndented = true };
 
-    public static OpenApiImportResult Convert(string specText, string sourceName)
+    public static OpenApiImportResult Convert(string specText, string sourceName) =>
+        Convert(specText, sourceName, includeOnly: null);
+
+    /// <summary>
+    /// <paramref name="includeOnly"/> null means every operation the spec has (today's behavior);
+    /// otherwise only (path, method) pairs present in the set are built into tools — everything else
+    /// is left out silently, since that is a deliberate exclusion the caller made, not a limitation
+    /// this converter is reporting on.
+    /// </summary>
+    public static OpenApiImportResult Convert(
+        string specText, string sourceName, IReadOnlySet<(string Path, string Method)>? includeOnly)
     {
-        Microsoft.OpenApi.OpenApiDocument? document;
-        OpenApiDiagnostic? diagnostic;
+        var (error, document, diagnostic) = ParseDocument(specText);
 
-        try
-        {
-            var settings = new OpenApiReaderSettings();
-            settings.AddYamlReader();
-
-            var result = OpenApiModelFactory.Parse(specText, format: null, settings);
-            document = result.Document;
-            diagnostic = result.Diagnostic;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return OpenApiImportResult.Failed($"This is not a readable OpenAPI document: {ex.Message}");
-        }
-
-        if (document is null || document.Paths.Count == 0)
-        {
-            var detail = diagnostic is { Errors.Count: > 0 }
-                ? string.Join(" ", diagnostic.Errors.Select(e => e.Message))
-                : "no paths were found in it.";
-
-            return OpenApiImportResult.Failed($"This is not a usable OpenAPI document: {detail}");
-        }
+        if (error is not null) return OpenApiImportResult.Failed(error);
 
         var manifest = new McpApiBridgeManifest
         {
-            Title = document.Info?.Title,
+            Title = document!.Info?.Title,
             Description = Truncate(document.Info?.Description),
         };
 
@@ -106,6 +108,11 @@ public static class OpenApiImporter
                 if (!PermittedMethods.Contains(methodName))
                 {
                     skippedByMethod++;
+                    continue;
+                }
+
+                if (includeOnly is not null && !includeOnly.Contains((path, methodName)))
+                {
                     continue;
                 }
 
@@ -177,6 +184,100 @@ public static class OpenApiImporter
         return OpenApiImportResult.Succeeded(withHeader, warnings);
     }
 
+    /// <summary>
+    /// Parse only — one entry per operation <see cref="Convert(string,string,IReadOnlySet{ValueTuple{string,string}}?)"/>
+    /// could build (same <see cref="PermittedMethods"/> filter, so nothing shown here is a dead end),
+    /// for a picker to list before any tool gets built.
+    ///
+    /// Each operation is costed as it goes, so a picker can show a running size against the
+    /// manifest's byte cap without re-parsing the document — which for a spec the size of GitHub's
+    /// is the expensive part by a wide margin. <c>BaseManifestBytes</c> is what a manifest of this
+    /// document with no tools in it already weighs.
+    /// </summary>
+    public static (string? Error, IReadOnlyList<OpenApiOperationSummary> Operations, int BaseManifestBytes) Discover(
+        string specText)
+    {
+        var (error, document, _) = ParseDocument(specText);
+
+        if (error is not null) return (error, [], 0);
+
+        // Reused for every measurement: one tool in, measure, take it out again.
+        var scratch = new McpApiBridgeManifest
+        {
+            Title = document!.Info?.Title,
+            Description = Truncate(document.Info?.Description),
+        };
+
+        var baseBytes = McpApiBridgeValidation.MeasureBytes(scratch);
+
+        var operations = new List<OpenApiOperationSummary>();
+        var discardedWarnings = new List<string>();
+
+        foreach (var (path, item) in document.Paths.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            var sharedParameters = item.Parameters ?? [];
+
+            foreach (var (method, operation) in (item.Operations ?? new Dictionary<HttpMethod, Microsoft.OpenApi.OpenApiOperation>())
+                         .OrderBy(o => o.Key.Method, StringComparer.Ordinal))
+            {
+                var methodName = method.Method.ToUpperInvariant();
+
+                if (!PermittedMethods.Contains(methodName)) continue;
+
+                var tags = operation.Tags?.Select(tag => tag.Name).Where(name => name is not null).Cast<string>().ToList()
+                           ?? [];
+
+                // A name set of its own, so this measurement does not depend on which other
+                // operations happen to have been costed before it.
+                discardedWarnings.Clear();
+                var tool = BuildTool(
+                    path, methodName, operation, sharedParameters,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase), discardedWarnings);
+
+                scratch.Tools.Clear();
+                scratch.Tools.Add(tool);
+
+                var bytes = McpApiBridgeValidation.MeasureBytes(scratch) - baseBytes;
+
+                operations.Add(new OpenApiOperationSummary(
+                    path, methodName, operation.OperationId, operation.Summary, tags, bytes));
+            }
+        }
+
+        return (null, operations, baseBytes);
+    }
+
+    private static (string? Error, Microsoft.OpenApi.OpenApiDocument? Document, OpenApiDiagnostic? Diagnostic) ParseDocument(string specText)
+    {
+        Microsoft.OpenApi.OpenApiDocument? document;
+        OpenApiDiagnostic? diagnostic;
+
+        try
+        {
+            var settings = new OpenApiReaderSettings();
+            settings.AddYamlReader();
+
+            var result = OpenApiModelFactory.Parse(specText, format: null, settings);
+            document = result.Document;
+            diagnostic = result.Diagnostic;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return ($"This is not a readable OpenAPI document: {ex.Message}", null, null);
+        }
+
+        if (document is null || document.Paths.Count == 0)
+        {
+            var detail = diagnostic is { Errors.Count: > 0 }
+                ? string.Join(" ", diagnostic.Errors.Select(e => e.Message))
+                : "no paths were found in it.";
+
+            return ($"This is not a usable OpenAPI document: {detail}", null, null);
+        }
+
+        return (null, document, diagnostic);
+    }
+
     // ---- one operation ------------------------------------------------------------------------
 
     /// <summary>
@@ -193,6 +294,14 @@ public static class OpenApiImporter
         public Dictionary<string, string> Query { get; } = [];
         public Dictionary<string, string> Headers { get; } = [];
         public List<string> Warnings { get; } = warnings;
+
+        /// <summary>
+        /// Appended to the tool's description when the body could not be described field by field.
+        /// The call still works — <see cref="McpApiBridgeBodyMode.Arguments"/> forwards whatever
+        /// arguments the path, query and headers did not consume — but an agent only knows it may
+        /// send them if something says so.
+        /// </summary>
+        public string? BodyNote { get; set; }
     }
 
     private static McpApiBridgeTool BuildTool(
@@ -213,7 +322,7 @@ public static class OpenApiImporter
         }
 
         var bodyMode = operation.RequestBody is { } requestBody
-            ? AddRequestBody(requestBody, state)
+            ? AddRequestBody(requestBody, methodName, state)
             : McpApiBridgeBodyMode.None;
 
         var inputSchema = BuildInputSchema(state.Properties, state.Required);
@@ -221,7 +330,7 @@ public static class OpenApiImporter
         return new McpApiBridgeTool
         {
             Name = name,
-            Description = CombineDescription(operation.Summary, operation.Description),
+            Description = CombineDescription(operation.Summary, operation.Description, state.BodyNote),
             ReadOnly = methodName is "GET" or "HEAD",
             InputSchema = inputSchema,
             Request = new McpApiBridgeRequest
@@ -271,6 +380,25 @@ public static class OpenApiImporter
             return;
         }
 
+        // A parameter the format cannot name is left out on its own rather than allowed to fail the
+        // whole tool later. One unusable parameter costs that parameter; it should not cost the
+        // endpoint — published specs do carry them, and the endpoint is usually fine without.
+        if (parameter.In == ParameterLocation.Query
+            && !McpApiBridgeValidation.IsUsableQueryParameterName(parameter.Name))
+        {
+            state.Warnings.Add($"'{state.ToolName}': query parameter '{parameter.Name}' was skipped — a name containing "
+                               + "& = # ? or control characters reads as structure rather than as part of the name. "
+                               + "The rest of the tool was imported.");
+            return;
+        }
+
+        if (parameter.In == ParameterLocation.Header && !RouteValidation.IsValidHeaderName(parameter.Name.Trim()))
+        {
+            state.Warnings.Add($"'{state.ToolName}': header parameter '{parameter.Name}' was skipped — it is not a valid "
+                               + "HTTP header name. The rest of the tool was imported.");
+            return;
+        }
+
         var argName = Deduplicate(SanitizeArgName(parameter.Name), state.UsedArgNames);
 
         AddSchemaProperty(state.Properties, argName, parameter.Schema, parameter.Description, state.Warnings, state.ToolName);
@@ -297,8 +425,20 @@ public static class OpenApiImporter
         }
     }
 
-    private static McpApiBridgeBodyMode AddRequestBody(IOpenApiRequestBody requestBody, ToolBuildState state)
+    private static McpApiBridgeBodyMode AddRequestBody(
+        IOpenApiRequestBody requestBody, string methodName, ToolBuildState state)
     {
+        // A manifest may not send a body with GET or HEAD, and specs do declare one anyway —
+        // GitHub's repos_get-content is a GET with a request body. Leaving the body off keeps the
+        // endpoint; attaching it would have the validator refuse the tool whole.
+        if (methodName is "GET" or "HEAD")
+        {
+            state.Warnings.Add($"'{state.ToolName}': the spec declares a request body on a {methodName}, which a "
+                               + "manifest cannot send. The tool was imported without it.");
+
+            return McpApiBridgeBodyMode.None;
+        }
+
         var json = (requestBody.Content ?? new Dictionary<string, IOpenApiMediaType>()).FirstOrDefault(
             pair => pair.Key.Equals("application/json", StringComparison.OrdinalIgnoreCase));
 
@@ -314,19 +454,27 @@ public static class OpenApiImporter
         }
 
         var schema = json.Value.Schema;
-        var bodyProperties = schema?.Properties;
 
-        if (schema is null || bodyProperties is not { Count: > 0 })
+        var properties = new Dictionary<string, IOpenApiSchema?>(StringComparer.Ordinal);
+        var required = new HashSet<string>(StringComparer.Ordinal);
+
+        if (schema is not null) CollectBodyProperties(schema, properties, required, depth: 0);
+
+        if (properties.Count == 0)
         {
-            state.Warnings.Add($"'{state.ToolName}': the JSON request body has no fixed set of properties in the spec "
-                         + "(or uses allOf/oneOf/anyOf, which this importer does not flatten) and was not imported.");
+            // A body the spec does not describe field by field — a free-form object, a map keyed by
+            // something arbitrary (Tailscale's split DNS), or a composition this could not flatten.
+            // Arguments mode still sends it: whatever the agent passes that the path, query and
+            // headers did not consume becomes the body. Dropping the body instead produced a tool
+            // that called the endpoint with nothing in it, which fails at the far end rather than
+            // here, and is the less honest of the two.
+            state.BodyNote = "This call takes a JSON request body whose fields the spec does not list. "
+                             + "Pass them as arguments and they are forwarded as the body.";
 
-            return McpApiBridgeBodyMode.None;
+            return McpApiBridgeBodyMode.Arguments;
         }
 
-        var bodyRequired = schema.Required ?? new HashSet<string>();
-
-        foreach (var (propertyName, propertySchema) in bodyProperties)
+        foreach (var (propertyName, propertySchema) in properties)
         {
             var argName = Deduplicate(SanitizeArgName(propertyName), state.UsedArgNames, preferOriginal: propertyName);
 
@@ -338,10 +486,48 @@ public static class OpenApiImporter
 
             AddSchemaProperty(state.Properties, argName, propertySchema, description: null, state.Warnings, state.ToolName);
 
-            if (bodyRequired.Contains(propertyName)) state.Required.Add(argName);
+            if (required.Contains(propertyName)) state.Required.Add(argName);
         }
 
         return McpApiBridgeBodyMode.Arguments;
+    }
+
+    /// <summary>
+    /// Flattens a request-body schema into one set of properties.
+    ///
+    /// <c>allOf</c> is a genuine merge — every branch applies at once, so its required fields stay
+    /// required. <c>oneOf</c> and <c>anyOf</c> are a union taken as all-optional: exactly one branch
+    /// (or some combination) applies, and which one is the caller's choice, so calling any branch's
+    /// field required here would refuse valid calls. That is a description of the body rather than a
+    /// faithful translation of the rule, and it is the closest this format can express — the
+    /// alternative, which this used to do, was to send no body at all.
+    /// </summary>
+    private static void CollectBodyProperties(
+        IOpenApiSchema schema,
+        Dictionary<string, IOpenApiSchema?> properties,
+        HashSet<string> required,
+        int depth,
+        bool optional = false)
+    {
+        // Guards against a self-referencing schema, which a $ref cycle makes reachable.
+        if (depth > 8) return;
+
+        if (schema.Properties is { Count: > 0 } own)
+        {
+            foreach (var (name, propertySchema) in own) properties.TryAdd(name, propertySchema);
+
+            if (!optional && schema.Required is { Count: > 0 } names)
+            {
+                foreach (var name in names) required.Add(name);
+            }
+        }
+
+        foreach (var branch in schema.AllOf ?? []) CollectBodyProperties(branch, properties, required, depth + 1, optional);
+
+        foreach (var branch in (schema.OneOf ?? []).Concat(schema.AnyOf ?? []))
+        {
+            CollectBodyProperties(branch, properties, required, depth + 1, optional: true);
+        }
     }
 
     // ---- schema -------------------------------------------------------------------------------
@@ -508,12 +694,23 @@ public static class OpenApiImporter
 
     // ---- text -------------------------------------------------------------------------------
 
-    private static string? CombineDescription(string? summary, string? description)
+    private static string? CombineDescription(string? summary, string? description, string? note = null)
     {
-        if (string.IsNullOrWhiteSpace(summary)) return Truncate(description);
-        if (string.IsNullOrWhiteSpace(description) || description == summary) return Truncate(summary);
+        var text = string.IsNullOrWhiteSpace(summary) ? description
+            : string.IsNullOrWhiteSpace(description) || description == summary ? summary
+            : $"{summary} {description}";
 
-        return Truncate($"{summary} {description}");
+        if (string.IsNullOrWhiteSpace(note)) return Truncate(text);
+        if (string.IsNullOrWhiteSpace(text)) return Truncate(note);
+
+        // The note survives the cap rather than being truncated off the end of a long description:
+        // it is the only thing telling an agent that this call takes a body at all, so the prose
+        // gives way to it instead.
+        var room = McpApiBridgeValidation.MaxDescriptionLength - note.Length - 1;
+
+        if (room <= 0) return Truncate(note);
+
+        return $"{(text.Length > room ? text[..room] : text)} {note}";
     }
 
     private static string? Truncate(string? text) =>

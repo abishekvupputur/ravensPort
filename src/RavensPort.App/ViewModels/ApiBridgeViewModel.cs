@@ -332,11 +332,23 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         // error is the first thing worth re-reading.
         ManifestBackupStore.SaveImportedSpec(fileName, specText);
 
-        var result = OpenApiImporter.Convert(specText, fileName);
+        var (discoverError, operations, baseManifestBytes) = OpenApiImporter.Discover(specText);
 
-        if (result.Error is { } error)
+        if (discoverError is { } error)
         {
             StatusMessage = $"Could not import {fileName}: {error}";
+            return;
+        }
+
+        var pickerViewModel = new OpenApiOperationPickerViewModel(
+            specText, fileName, operations, baseManifestBytes);
+        var result = Views.OpenApiOperationPickerWindow.Show(pickerViewModel);
+
+        if (result is null) return;
+
+        if (result.Error is { } convertError)
+        {
+            StatusMessage = $"Could not import {fileName}: {convertError}";
             return;
         }
 
