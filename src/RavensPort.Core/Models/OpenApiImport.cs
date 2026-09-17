@@ -82,7 +82,7 @@ public static class OpenApiImporter
     public static OpenApiImportResult Convert(
         string specText, string sourceName, IReadOnlySet<(string Path, string Method)>? includeOnly)
     {
-        var (error, document, diagnostic) = ParseDocument(specText);
+        var (error, document) = ParseDocument(specText);
 
         if (error is not null) return OpenApiImportResult.Failed(error);
 
@@ -197,7 +197,7 @@ public static class OpenApiImporter
     public static (string? Error, IReadOnlyList<OpenApiOperationSummary> Operations, int BaseManifestBytes) Discover(
         string specText)
     {
-        var (error, document, _) = ParseDocument(specText);
+        var (error, document) = ParseDocument(specText);
 
         if (error is not null) return (error, [], 0);
 
@@ -247,7 +247,7 @@ public static class OpenApiImporter
         return (null, operations, baseBytes);
     }
 
-    private static (string? Error, Microsoft.OpenApi.OpenApiDocument? Document, OpenApiDiagnostic? Diagnostic) ParseDocument(string specText)
+    private static (string? Error, Microsoft.OpenApi.OpenApiDocument? Document) ParseDocument(string specText)
     {
         Microsoft.OpenApi.OpenApiDocument? document;
         OpenApiDiagnostic? diagnostic;
@@ -263,7 +263,7 @@ public static class OpenApiImporter
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return ($"This is not a readable OpenAPI document: {ex.Message}", null, null);
+            return ($"This is not a readable OpenAPI document: {ex.Message}", null);
         }
 
         if (document is null || document.Paths.Count == 0)
@@ -272,10 +272,10 @@ public static class OpenApiImporter
                 ? string.Join(" ", diagnostic.Errors.Select(e => e.Message))
                 : "no paths were found in it.";
 
-            return ($"This is not a usable OpenAPI document: {detail}", null, null);
+            return ($"This is not a usable OpenAPI document: {detail}", null);
         }
 
-        return (null, document, diagnostic);
+        return (null, document);
     }
 
     // ---- one operation ------------------------------------------------------------------------
@@ -696,9 +696,20 @@ public static class OpenApiImporter
 
     private static string? CombineDescription(string? summary, string? description, string? note = null)
     {
-        var text = string.IsNullOrWhiteSpace(summary) ? description
-            : string.IsNullOrWhiteSpace(description) || description == summary ? summary
-            : $"{summary} {description}";
+        string? text;
+
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            text = description;
+        }
+        else if (string.IsNullOrWhiteSpace(description) || description == summary)
+        {
+            text = summary;
+        }
+        else
+        {
+            text = $"{summary} {description}";
+        }
 
         if (string.IsNullOrWhiteSpace(note)) return Truncate(text);
         if (string.IsNullOrWhiteSpace(text)) return Truncate(note);

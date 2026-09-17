@@ -13,12 +13,8 @@ namespace RavensPort.App.Views;
 /// </summary>
 public partial class OpenApiOperationPickerWindow : Window
 {
-    private readonly OpenApiOperationPickerViewModel _viewModel;
-
     public OpenApiOperationPickerWindow(OpenApiOperationPickerViewModel viewModel)
     {
-        _viewModel = viewModel;
-
         InitializeComponent();
         DataContext = viewModel;
 
