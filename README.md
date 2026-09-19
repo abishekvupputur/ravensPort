@@ -39,9 +39,10 @@
   mTLS — <a href="https://github.com/abishekvupputur/ravensPort/wiki/Installation#from-the-microsoft-store">why</a>.</sub>
 </p>
 
-A tray-resident Windows app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
+A tray-resident desktop app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
 flow and token lifecycle for upstream APIs and MCP servers, then lets you compose those servers
-into filtered, per-agent MCP endpoints.
+into filtered, per-agent MCP endpoints. Windows is the supported platform; an experimental
+Debian/Ubuntu build is coming in v5.0.0.
 
 [![MCP Funnel tab](media/mcpFunnelScreen.png)](media/mcpFunnelScreen.png)
 
@@ -69,6 +70,21 @@ Or take the installer from [Releases](../../releases), or the
 instructions, including building from source, are in
 [Installation](https://github.com/abishekvupputur/ravensPort/wiki/Installation).
 
+### Debian / Ubuntu <sub>experimental · upcoming in v5.0.0</sub>
+
+v5.0.0 moves the interface to Avalonia and adds a `.deb` for Debian and Ubuntu (x86-64). It is
+built from a checkout for now — there is no package on the Releases page yet:
+
+```bash
+packaging/build-deb.sh
+sudo apt install ./packaging/ravensport_5.0.0_amd64.deb
+```
+
+It has had far less use than the Windows build, and a few things differ by necessity — the Proton
+Pass session key lives in the desktop keyring rather than behind Windows Hello, and `pass-cli` must
+be installed in a system location. Everything is on the wiki:
+**[Linux build (Upcoming in v5.0.0)](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build-%28Upcoming-in-v5.0.0%29)**.
+
 ## Documentation
 
 Everything lives in the **[wiki](https://github.com/abishekvupputur/ravensPort/wiki)**.
@@ -86,6 +102,7 @@ Everything lives in the **[wiki](https://github.com/abishekvupputur/ravensPort/w
 | [Logs](https://github.com/abishekvupputur/ravensPort/wiki/Logs) | What is recorded, what is redacted, and where it goes |
 | [Troubleshooting](https://github.com/abishekvupputur/ravensPort/wiki/Troubleshooting) | When something does not work |
 | [Building](https://github.com/abishekvupputur/ravensPort/wiki/Building) | Building, testing and packaging from source |
+| [Linux build (Upcoming in v5.0.0)](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build-%28Upcoming-in-v5.0.0%29) | Building, installing and running the experimental Debian/Ubuntu package |
 
 Manifests ready to use are in [`templates/api-mcp/`](templates/api-mcp/), and the format is
 documented in [AUTHORING.md](templates/api-mcp/AUTHORING.md).
