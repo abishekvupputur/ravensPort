@@ -20,9 +20,13 @@ public interface IFileOpenPicker
     /// too: there is nothing the caller could do about it except ask for another.
     /// </summary>
     /// <param name="title">The dialog's own title.</param>
-    /// <param name="extension">Extension without the dot, e.g. "json".</param>
-    /// <param name="filterName">What to call that extension in the type list, e.g. "Manifest".</param>
-    Task<PickedFile?> PickFileAsync(string title, string extension, string filterName);
+    /// <param name="extensions">Extensions without the dot, e.g. "json" — all offered as one type.</param>
+    /// <param name="filterName">What to call them in the type list, e.g. "Manifest".</param>
+    Task<PickedFile?> PickFileAsync(string title, IReadOnlyList<string> extensions, string filterName);
+
+    /// <summary>The common case of <see cref="PickFileAsync(string, IReadOnlyList{string}, string)"/>: one extension.</summary>
+    Task<PickedFile?> PickFileAsync(string title, string extension, string filterName) =>
+        PickFileAsync(title, [extension], filterName);
 }
 
 /// <summary>

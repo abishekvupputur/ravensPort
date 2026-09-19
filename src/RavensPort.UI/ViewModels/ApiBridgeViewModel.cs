@@ -41,6 +41,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     private readonly IClipboardService _clipboard;
     private readonly IFileOpenPicker _fileOpenPicker;
     private readonly IFileSavePicker _fileSavePicker;
+    private readonly IOpenApiOperationPicker _operationPicker;
 
     public ObservableCollection<ApiBridgeItemViewModel> Bridges { get; } = [];
     public ObservableCollection<RouteMapping> Routes { get; } = [];
@@ -114,7 +115,8 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         KestrelMtlsState mtlsState,
         IClipboardService clipboard,
         IFileOpenPicker fileOpenPicker,
-        IFileSavePicker fileSavePicker)
+        IFileSavePicker fileSavePicker,
+        IOpenApiOperationPicker operationPicker)
     {
         _configStoreCache = configStoreCache;
         _connectionPool = connectionPool;
@@ -123,6 +125,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         _clipboard = clipboard;
         _fileOpenPicker = fileOpenPicker;
         _fileSavePicker = fileSavePicker;
+        _operationPicker = operationPicker;
 
         Bridges.CollectionChanged += (_, _) =>
         {
@@ -306,23 +309,14 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     /// text, which <see cref="McpApiBridgeValidation"/> already tolerates on read.
     /// </summary>
     [RelayCommand]
-    private void ImportOpenApi()
+    private async Task ImportOpenApiAsync()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Import an OpenAPI spec",
-            DefaultExt = ".json",
-            Filter = "OpenAPI spec (*.json;*.yaml;*.yml)|*.json;*.yaml;*.yml|All files (*.*)|*.*",
-            CheckFileExists = true,
-        };
-
-        if (dialog.ShowDialog() != true) return;
-
-        string specText;
+        PickedFile? picked;
 
         try
         {
-            specText = File.ReadAllText(dialog.FileName);
+            picked = await _fileOpenPicker.PickFileAsync(
+                "Import an OpenAPI spec", ["json", "yaml", "yml"], "OpenAPI spec");
         }
         catch (Exception ex)
         {
@@ -330,7 +324,10 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
             return;
         }
 
-        var fileName = Path.GetFileName(dialog.FileName);
+        if (picked is null) return;
+
+        var specText = picked.Text;
+        var fileName = picked.Name;
 
         // A plain-text copy of exactly what was read, kept regardless of whether the conversion
         // below succeeds — useful precisely when it does not, since the spec that produced an
@@ -347,7 +344,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
         var pickerViewModel = new OpenApiOperationPickerViewModel(
             specText, fileName, operations, baseManifestBytes);
-        var result = Views.OpenApiOperationPickerWindow.Show(pickerViewModel);
+        var result = await _operationPicker.PickAsync(pickerViewModel);
 
         if (result is null) return;
 

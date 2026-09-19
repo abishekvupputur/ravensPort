@@ -40,6 +40,7 @@ internal sealed class ViewModelFixture : IDisposable
         services.AddSingleton<IHelloConsentPrompt, ConsentingPrompt>();
         services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
         services.AddSingleton<IFileOpenPicker, RecordingOpenPicker>();
+        services.AddSingleton<IOpenApiOperationPicker, CancellingOperationPicker>();
 
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<VaultStatusViewModel>();

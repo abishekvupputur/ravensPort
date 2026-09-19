@@ -89,15 +89,31 @@
                             Background="{StaticResource PanelAltBrush}" BorderBrush="#555555"
                             BorderThickness="1" CornerRadius="2" Margin="0,0,7,0"
                             VerticalAlignment="Center">
-                        <Path Name="CheckMark" Data="M 2 6 L 5 10 L 12 2"
-                              Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
-                              IsVisible="False"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Grid>
+                            <Path Name="CheckMark" Data="M 2 6 L 5 10 L 12 2"
+                                  Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
+                                  IsVisible="False"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                            <!-- The "some but not all" state, for a checkbox that stands for a
+                                 group of others. Nothing sets IsChecked to null unless it is
+                                 three-state, so this is invisible to every other checkbox. -->
+                            <Rectangle Name="IndeterminateMark" Width="8" Height="2" RadiusX="1" RadiusY="1"
+                                       Fill="{StaticResource AccentBrush}"
+                                       IsVisible="False"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
                     </Border>
                     <ContentPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
                 </StackPanel>
             </ControlTemplate>
         </Setter>
+    </Style>
+    <Style Selector="CheckBox:indeterminate /template/ Rectangle#IndeterminateMark">
+        <Setter Property="IsVisible" Value="True"/>
+    </Style>
+    <Style Selector="CheckBox:indeterminate /template/ Border#CheckBorder">
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
     </Style>
     <Style Selector="CheckBox:checked /template/ Path#CheckMark">
         <Setter Property="IsVisible" Value="True"/>
@@ -470,6 +486,44 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="0,1,0,0"/>
         <Setter Property="Padding" Value="14,8"/>
+    </Style>
+
+    <!-- ── TreeView ────────────────────────────────────────────────────────────
+         Properties and two template parts, not a template: Fluent's TreeViewItem already has the
+         expander and the indentation. What it has too much of is selection — this tree is a list
+         of tick boxes, so "which row is selected" is noise and what matters is what is checked. -->
+    <Style Selector="TreeView">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="4"/>
+    </Style>
+    <Style Selector="TreeViewItem">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Padding" Value="0,3"/>
+    </Style>
+    <Style Selector="TreeViewItem /template/ ToggleButton#PART_ExpandCollapseChevron">
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+    </Style>
+    <Style Selector="TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="TreeViewItem:pointerover /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
+    </Style>
+
+    <!-- A small boxed readout for a running figure against a limit, e.g. "62 / 64 tools". Boxed so
+         it reads as a gauge rather than as more prose in the hint line beside it. -->
+    <Style Selector="Border.capChip">
+        <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="7,2"/>
+        <Setter Property="Margin" Value="0,0,6,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
 </Styles>

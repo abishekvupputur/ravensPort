@@ -233,6 +233,7 @@ public partial class App : Application
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
         builder.Services.AddSingleton<IFileSavePicker, AvaloniaFileSavePicker>();
         builder.Services.AddSingleton<IFileOpenPicker, AvaloniaFileOpenPicker>();
+        builder.Services.AddSingleton<IOpenApiOperationPicker, AvaloniaOpenApiOperationPicker>();
 
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<VaultStatusViewModel>();

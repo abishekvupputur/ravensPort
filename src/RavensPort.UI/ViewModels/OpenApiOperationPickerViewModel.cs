@@ -416,8 +416,13 @@ public sealed partial class OpenApiOperationPickerViewModel : ObservableObject
         IsOverSizeCap = EstimatedManifestBytes > McpApiBridgeValidation.MaxManifestBytes;
         SizeSummary = $"{Kilobytes(EstimatedManifestBytes)} / {Kilobytes(McpApiBridgeValidation.MaxManifestBytes)} KB";
 
+        OnPropertyChanged(nameof(IsOverAnyCap));
+
         ImportCommand.NotifyCanExecuteChanged();
     }
+
+    /// <summary>Either cap is exceeded, so something will be dropped from the import.</summary>
+    public bool IsOverAnyCap => IsOverToolCap || IsOverSizeCap;
 
     /// <summary>
     /// One decimal below 10 KB, whole numbers above it — enough to see a small selection grow

@@ -118,6 +118,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<IHelloConsentPrompt, AvaloniaHelloConsentPrompt>();
         builder.Services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
         builder.Services.AddSingleton<IFileOpenPicker, RecordingOpenPicker>();
+        builder.Services.AddSingleton<IOpenApiOperationPicker, CancellingOperationPicker>();
 
         // The device flow opens the verification page itself rather than going through
         // IPlatformLauncher, so recording that launcher is not enough — without this the suite opens
@@ -350,11 +351,21 @@ internal sealed class RecordingOpenPicker : IFileOpenPicker
     /// <summary>Every title it was asked with, in order.</summary>
     public List<string> Asked { get; } = [];
 
-    public Task<PickedFile?> PickFileAsync(string title, string extension, string filterName)
+    public Task<PickedFile?> PickFileAsync(string title, IReadOnlyList<string> extensions, string filterName)
     {
         Asked.Add(title);
         return Task.FromResult(Next);
     }
+}
+
+/// <summary>
+/// <see cref="IOpenApiOperationPicker"/> that cancels. A suite that showed the real dialog would
+/// hang, and nothing here exercises the picker itself — its view model has its own unit tests.
+/// </summary>
+internal sealed class CancellingOperationPicker : IOpenApiOperationPicker
+{
+    public Task<RavensPort.Core.Models.OpenApiImportResult?> PickAsync(OpenApiOperationPickerViewModel viewModel) =>
+        Task.FromResult<RavensPort.Core.Models.OpenApiImportResult?>(null);
 }
 
 internal sealed class RecordingSavePicker : IFileSavePicker
