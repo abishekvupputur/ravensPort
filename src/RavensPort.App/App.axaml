@@ -1,0 +1,31 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RavensPort.App"
+             RequestedThemeVariant="Dark">
+
+    <!--
+        Fluent supplies the control templates; the app's own palette goes over the top of it in
+        Theme/. Dark is requested rather than inherited from the system: this is a dark app, the
+        WPF one had no light variant either, and a half-themed light mode would look broken rather
+        than adaptive.
+    -->
+    <Application.Styles>
+        <FluentTheme />
+        <!-- After Fluent, so these win where they overlap. Fluent supplies the control templates
+             and behaviour this does not restate. -->
+        <!-- The DataGrid ships its own theme in its own package; without this the control renders
+             as nothing at all. -->
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+        <StyleInclude Source="avares://RavensPort/Theme/Controls.axaml"/>
+    </Application.Styles>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://RavensPort/Theme/Palette.axaml"/>
+                <ResourceInclude Source="avares://RavensPort/Theme/Shared.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+</Application>

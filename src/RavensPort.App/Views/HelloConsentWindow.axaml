@@ -1,0 +1,133 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="RavensPort.Views.HelloConsentWindow"
+        Title="RavensPort access request"
+        SizeToContent="Height" Width="480" CanResize="False"
+        WindowDecorations="None" ShowInTaskbar="True" Topmost="True"
+        WindowStartupLocation="Manual"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI">
+    <!--
+        Shown before Windows Hello is asked for anything. Every time, without exception — including
+        when the user has just pressed a button that says "Windows Hello" on it.
+
+        The exception is what would make it useless. The value here is a rule the user can hold:
+        a Hello prompt with no RavensPort window in front of it is one to refuse. That only works
+        if RavensPort really does always ask first, because "usually asks first" gives an attacker
+        the gap. And there is one to take: RavensPort's Hello credential is scoped to the Windows
+        account rather than to RavensPort — an unpackaged app gets no stronger boundary — so
+        another program running as the same user can ask to sign with it. It cannot do so quietly,
+        since it must raise a Hello prompt, which is precisely the signal this teaches.
+
+        It also has to be a real window for a mechanical reason: the Hello prompt parents itself to
+        the foreground window, and a tray app that starts hidden has none. Asked from behind no
+        window at all, the credential service reports the request cancelled without ever showing
+        anything — indistinguishable from the user saying no.
+
+        WindowDecorations="None" where WPF used WindowChrome: the caption below is the app's own so
+        that this safety-critical dialog keeps the visual identity of the screen that opened it,
+        rather than wearing Windows' light title bar.
+    -->
+    <Border BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1" Background="{StaticResource BgBrush}">
+        <Grid RowDefinitions="34,Auto">
+
+            <Border Grid.Row="0" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1"
+                    PointerPressed="Caption_PointerPressed">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="11,0,0,0">
+                        <!-- HighQuality on every mark in this window. The default filter point-drops
+                             most of the source when the shrink is this steep — 17 device-independent
+                             units from a full-size mark — and the feather edges came out ragged.
+                             HighQuality area-averages instead, which is what keeps these readable at
+                             a glance, and readable is the whole job: this is the window whose job is
+                             to be recognised as RavensPort's. -->
+                        <Image Source="avares://RavensPort/Assets/logo.png" Width="17" Height="17" Margin="0,0,7,0"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        <TextBlock Text="RavensPort access request" FontSize="12"
+                                   Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button Content="×" FontSize="20" FontWeight="Light" Width="42" Height="33"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Padding="0,0,0,3"
+                            Background="Transparent" BorderThickness="0"
+                            Foreground="{StaticResource MutedTextBrush}"
+                            ToolTip.Tip="Close" Click="CancelButton_Click"/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1" Padding="30,26,30,22">
+                <StackPanel>
+                    <TextBlock Text="WINDOWS HELLO ACCESS REQUEST" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"
+                               Margin="0,0,0,10"/>
+                    <TextBlock x:Name="HeadingText" Classes="section"
+                               FontSize="21" HorizontalAlignment="Center" TextAlignment="Center"
+                               TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+                    <!-- RavensPort and the local Windows Hello credential are deliberately shown as
+                         distinct parties, like an access-request screen: the gesture authorizes this
+                         app, but neither Proton nor the password manager receives it. -->
+                    <Grid HorizontalAlignment="Center" Margin="0,0,0,20" ColumnDefinitions="78,38,78">
+                        <Border Width="72" Height="72" CornerRadius="14" Background="#111111"
+                                BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1">
+                            <!-- The app's own full-size mark, not the 192px copy the callback page
+                                 embeds: this tile is 68 units, which is already 136 real pixels at
+                                 200% scaling and more on a 4K display, so the small one had nothing
+                                 left to give. -->
+                            <Image Source="avares://RavensPort/Assets/logo.png" Stretch="Uniform" Margin="2"
+                                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        </Border>
+
+                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                            <Border Width="18" Height="18" Background="{StaticResource SuccessBrush}"
+                                    CornerRadius="9" HorizontalAlignment="Center"/>
+                            <Path Data="M 4 9 L 7.5 12.5 L 14 5.5" Stroke="White" StrokeThickness="1.8"
+                                  StrokeLineCap="Round"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <!-- Which manager this consent is about. Set in code rather than fixed here:
+                             the same window now fronts a Proton Pass session key and a 1Password
+                             service token, and showing the wrong vendor above "approve this" would
+                             be worse than showing none at all. -->
+                        <Border Grid.Column="2" Width="72" Height="72" CornerRadius="14" Background="#111111"
+                                BorderBrush="{StaticResource BorderBrush0}" BorderThickness="1">
+                            <Image x:Name="VendorLogo" Source="avares://RavensPort/Assets/proton-pass-logo.png"
+                                   Stretch="Uniform" Margin="6"
+                                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock x:Name="BodyText" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" TextAlignment="Center"
+                               Margin="8,0,8,18"/>
+
+                    <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush0}"
+                            BorderThickness="1" Padding="14" CornerRadius="7" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="WHAT YOU ARE APPROVING" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="DetailText" Classes="hint"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#272218" BorderBrush="#5A461B" BorderThickness="1" Padding="11,9"
+                            CornerRadius="6" Margin="0,0,0,16">
+                        <TextBlock Classes="hint"
+                                   Text="Security check: only continue when you just asked RavensPort to use Windows Hello. Otherwise choose Not now."/>
+                    </Border>
+
+                    <TextBlock x:Name="StatusText" Classes="hint"
+                               TextAlignment="Center" Margin="0,0,0,12" IsVisible="False"/>
+
+                    <WrapPanel HorizontalAlignment="Right">
+                        <Button x:Name="CancelButton" Content="Not now" Margin="0,0,8,0" MinWidth="94"
+                                Classes="ghost" IsCancel="True" Click="CancelButton_Click"/>
+                        <Button x:Name="ConfirmButton" MinWidth="190"
+                                IsDefault="True" Click="ConfirmButton_Click"/>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

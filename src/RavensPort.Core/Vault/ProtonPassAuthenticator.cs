@@ -24,7 +24,7 @@ namespace RavensPort.Core.Vault;
 public sealed partial class ProtonPassAuthenticator(
     ICliRunner cliRunner,
     ProtonPassSession session,
-    HelloKeyProtector helloKeyProtector,
+    ISessionKeyProtector helloKeyProtector,
     VaultGateService gate,
     ActivityLog activityLog)
 {

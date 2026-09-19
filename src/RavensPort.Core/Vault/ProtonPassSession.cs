@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -199,8 +200,46 @@ public sealed class ProtonPassSession(ActivityLog activityLog, string? directory
         if (_permissionsChecked) return;
         _permissionsChecked = true;
 
-        if (!OperatingSystem.IsWindows()) return;
+        // Both platforms get the same intent — nobody but this user reads the session directory —
+        // by the only mechanism each one has. Returning early off Windows, as this used to, left
+        // the directory at whatever the umask gave it, which on a shared machine is usually
+        // world-readable. The session key is not in here, but the pass-cli session is.
+        if (OperatingSystem.IsWindows())
+        {
+            TightenWindowsAcl();
+        }
+        else
+        {
+            TightenUnixMode();
+        }
+    }
 
+    /// <summary>
+    /// Owner-only, by mode bits. The equivalent of the ACL work below and a great deal shorter,
+    /// because Unix permissions have no inheritance to strip and no other principals to remove.
+    /// </summary>
+    [UnsupportedOSPlatform("windows")]
+    private void TightenUnixMode()
+    {
+        const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+        try
+        {
+            if (!Directory.Exists(SessionDirectory)) return;
+            if (File.GetUnixFileMode(SessionDirectory) == ownerOnly) return;
+
+            File.SetUnixFileMode(SessionDirectory, ownerOnly);
+            activityLog.Log("VAULT tightened the pass-cli session directory to the current user only");
+        }
+        catch (Exception ex)
+        {
+            activityLog.Log($"VAULT could not verify permissions on the session directory: {ex.Message}");
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private void TightenWindowsAcl()
+    {
         try
         {
             if (WindowsIdentity.GetCurrent().User is not { } user) return;
@@ -238,6 +277,7 @@ public sealed class ProtonPassSession(ActivityLog activityLog, string? directory
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static FileSystemAccessRule OwnerRule(SecurityIdentifier user) => new(
         user,
         FileSystemRights.FullControl,

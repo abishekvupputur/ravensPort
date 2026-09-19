@@ -50,9 +50,21 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     /// </summary>
     private static readonly Dictionary<string, string[]> ExpectedPublishers = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["op.exe"] = ["Agilebits", "AgileBits, Inc.", "AgileBits Inc."],
-        ["pass-cli.exe"] = ["Proton AG", "Proton Technologies AG"],
+        ["op"] = ["Agilebits", "AgileBits, Inc.", "AgileBits Inc."],
+        ["pass-cli"] = ["Proton AG", "Proton Technologies AG"],
     };
+
+    /// <summary>
+    /// The name without its extension, so that <c>op</c> and <c>op.exe</c> are the same binary as
+    /// far as this policy is concerned.
+    ///
+    /// Not cosmetic. The map used to be keyed on the Windows filenames, and on any platform where
+    /// the CLI is called <c>op</c> a lookup missed — which fell through to "not a password-manager
+    /// CLI, so not signature-checked" and allowed it. The refusal further down was unreachable
+    /// there, so the effect of adding a portable build would have been to disable this gate on
+    /// exactly the platform that cannot verify a signature.
+    /// </summary>
+    private static string PolicyKey(string fileName) => Path.GetFileNameWithoutExtension(fileName);
 
     private static readonly string[] OverrideVariables =
         [VaultProbe.OnePasswordPathVariable, VaultProbe.ProtonPassPathVariable];
@@ -61,7 +73,7 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     {
         var name = Path.GetFileName(resolvedPath);
 
-        if (!ExpectedPublishers.TryGetValue(name, out var expected))
+        if (!ExpectedPublishers.TryGetValue(PolicyKey(name), out var expected))
         {
             return new TrustDecision(true, "not a password-manager CLI, so not signature-checked");
         }
@@ -73,7 +85,24 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
 
         if (!OperatingSystem.IsWindows())
         {
-            return new TrustDecision(true, "Authenticode is Windows-only");
+            // A different question, because there is no signature to ask about: not who published
+            // this file, but whether an unprivileged process could have put it there. See
+            // UnixExecutableProvenance for why that is the right substitute and what it does not
+            // claim.
+            //
+            // This branch used to allow, reasoning that Authenticode is Windows-only. That was true
+            // and harmless while the app could not run off Windows. Reachable, it meant: run
+            // whatever file called 'op' turns up first on the PATH, and hand it the vault session
+            // key — the exact attack this class exists to stop.
+            if (UnixExecutableProvenance.IsAdministratorInstalled(resolvedPath, out var why))
+            {
+                return new TrustDecision(true, "installed in a system location only an administrator can write to");
+            }
+
+            return new TrustDecision(false,
+                $"'{name}' at {resolvedPath} is not one RavensPort can vouch for: {why}. This is the "
+                + "program your vault session key gets handed to. Install it with your package "
+                + $"manager, or point {VariableFor(name)} at a copy you trust.");
         }
 
         var signature = ExecutableSignature.Read(resolvedPath);
@@ -121,7 +150,7 @@ public sealed class AuthenticodeTrustPolicy : IExecutableTrustPolicy
     }
 
     private static string VariableFor(string exeName) =>
-        string.Equals(exeName, "op.exe", StringComparison.OrdinalIgnoreCase)
+        string.Equals(PolicyKey(exeName), "op", StringComparison.OrdinalIgnoreCase)
             ? VaultProbe.OnePasswordPathVariable
             : VaultProbe.ProtonPassPathVariable;
 }

@@ -1,0 +1,129 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RavensPort.UI.ViewModels"
+        x:Class="RavensPort.Views.OpenApiOperationPickerWindow"
+        x:DataType="vm:OpenApiOperationPickerViewModel"
+        Title="Select operations to import" Height="640" Width="900" MinHeight="380" MinWidth="620"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI">
+    <Window.Styles>
+        <!-- The two caps go red on their own: either one alone can trim the import. -->
+        <Style Selector="TextBlock.cap">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.cap.over">
+            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="TreeViewItem" x:DataType="vm:OpenApiPickerNodeViewModel">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <TextBlock Grid.Row="0" Classes="hint" Margin="0,0,0,12" TextWrapping="Wrap"
+                   Text="Tick the operations you want as tools. Search accepts * and ? wildcards and covers the method, path, operation ID, summary and tags — a plain word matches anywhere, a pattern with a wildcard must match the whole field."/>
+
+        <!-- Search -->
+        <TextBox Grid.Row="1" Text="{Binding SearchText}"
+                 VerticalContentAlignment="Center"
+                 ToolTip.Tip="Try: user • /repos/* • GET • *pulls* • issues_?et*"/>
+
+        <!-- Grouping, and the two that act on everything the search is showing. -->
+        <Grid Grid.Row="2" Margin="0,10,0,0" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+            <TextBlock Grid.Column="0" Text="Group by" Classes="field"
+                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+            <ComboBox Grid.Column="1" Width="150" ItemsSource="{Binding GroupingOptions}"
+                      SelectedItem="{Binding Grouping}"
+                      ToolTip.Tip="Buckets the list so a thousand-operation document is not one flat wall of rows">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OpenApiGroupingOption">
+                        <TextBlock Text="{Binding Label}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <TextBlock Grid.Column="2" Text="{Binding MatchSummary}" Classes="hint"
+                       VerticalAlignment="Center" Margin="12,0,12,0" TextTrimming="CharacterEllipsis"/>
+
+            <Button Grid.Column="3" Content="Select all" Margin="2,0" Classes="ghost"
+                    Command="{Binding SelectAllCommand}"
+                    ToolTip.Tip="Tick every operation the search is showing"/>
+            <Button Grid.Column="4" Content="Select none" Margin="2,0" Classes="ghost"
+                    Command="{Binding SelectNoneCommand}"
+                    ToolTip.Tip="Untick every operation the search is showing"/>
+        </Grid>
+
+        <!-- The two caps, always on screen rather than reported afterwards. A manifest is limited
+             on both count and stored size, and either one alone can trim the import, so both are
+             shown against their limit and both go red on their own. -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,10">
+            <TextBlock Text="{Binding SelectionSummary}" Classes="hint"
+                       VerticalAlignment="Center" Margin="0,0,14,0"/>
+
+            <Border Classes="capChip"
+                    ToolTip.Tip="A manifest may declare at most 64 tools. Anything over that is dropped from the end of the list.">
+                <TextBlock Text="{Binding ToolCountSummary}" Classes="cap"
+                           Classes.over="{Binding IsOverToolCap}"/>
+            </Border>
+
+            <Border Classes="capChip"
+                    ToolTip.Tip="The manifest's stored size. Estimated from the operations ticked — the exact figure depends on the final serialization, so treat it as close rather than precise.">
+                <TextBlock Text="{Binding SizeSummary}" Classes="cap"
+                           Classes.over="{Binding IsOverSizeCap}"/>
+            </Border>
+
+            <TextBlock Text="over the cap — the extra will be dropped" FontSize="11" VerticalAlignment="Center"
+                       Margin="4,0,0,0" Foreground="{StaticResource ErrorBrush}"
+                       IsVisible="{Binding IsOverAnyCap}"/>
+        </StackPanel>
+
+        <TreeView Grid.Row="4" ItemsSource="{Binding Tree}">
+            <TreeView.DataTemplates>
+                <!-- A group: its tick box selects or clears everything beneath it, at whatever
+                     level it sits, and shows a dash while only some of it is ticked. -->
+                <TreeDataTemplate DataType="vm:OpenApiOperationGroupViewModel"
+                                  ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsThreeState="False"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="Select or clear everything in this group"/>
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding CountLabel}" Margin="8,0,0,0" FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                    </StackPanel>
+                </TreeDataTemplate>
+
+                <DataTemplate DataType="vm:OpenApiOperationRowViewModel">
+                    <Grid ColumnDefinitions="Auto,58,Auto,*">
+                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+
+                        <TextBlock Grid.Column="1" Text="{Binding Method}" FontSize="10" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
+
+                        <TextBlock Grid.Column="2" Text="{Binding Path}" FontFamily="Cascadia Code, Consolas"
+                                   FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0" MinWidth="220"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OperationId}"/>
+
+                        <TextBlock Grid.Column="3" Text="{Binding Summary}" FontSize="11"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   ToolTip.Tip="{Binding Summary}"/>
+                    </Grid>
+                </DataTemplate>
+            </TreeView.DataTemplates>
+        </TreeView>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Cancel" Width="90" Margin="0,0,8,0" Classes="ghost"
+                    Command="{Binding CancelCommand}" IsCancel="True"/>
+            <Button Content="Import" Width="90" Command="{Binding ImportCommand}" IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

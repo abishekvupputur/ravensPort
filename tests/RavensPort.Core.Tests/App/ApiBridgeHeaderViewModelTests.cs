@@ -1,4 +1,4 @@
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests.App;
@@ -32,7 +32,8 @@ public class ApiBridgeHeaderViewModelTests
             listenPort: 5559,
             onChanged: (item, message) => changes?.Add((item, message)),
             onStatus: message => invalids?.Add(message),
-            isMtls: false);
+            isMtls: false,
+            clipboard: new NoDesktop());
 
     [Fact]
     public void StartsWithARowPerHeaderAlreadyOnTheBridge()
