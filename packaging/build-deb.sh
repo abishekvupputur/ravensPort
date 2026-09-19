@@ -24,8 +24,18 @@ echo "==> RavensPort ${VERSION} (${ARCH})"
 # --- the 1Password native ------------------------------------------------------------------------
 # c-shared needs cgo, and cgo needs a C compiler. Said plainly here because the failure otherwise
 # arrives as a linker error from inside the Go toolchain.
-echo "==> Building libonepassword.so"
-( cd "$REPO_ROOT/src/OnePasswordNative" && CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go )
+#
+# SKIP_ONEPASSWORD=1 builds without it, for a machine with no Go toolchain. The package then has no
+# 1Password backend — the app reports it unavailable and Proton Pass still works — so the result
+# is for trying the app, not for releasing.
+if [ "${SKIP_ONEPASSWORD:-}" = "1" ]; then
+    echo "==> WARNING: SKIP_ONEPASSWORD=1 — building WITHOUT libonepassword.so; 1Password will be unavailable" >&2
+    rm -f "$REPO_ROOT/src/OnePasswordNative/libonepassword.so"
+else
+    command -v go >/dev/null || { echo "error: 'go' not found. Install Go and a C compiler, or set SKIP_ONEPASSWORD=1 to build without 1Password." >&2; exit 1; }
+    echo "==> Building libonepassword.so"
+    ( cd "$REPO_ROOT/src/OnePasswordNative" && CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go )
+fi
 
 # --- the app -------------------------------------------------------------------------------------
 # Loose files rather than single-file: a .deb is already an archive, and unpacking to /opt means the
