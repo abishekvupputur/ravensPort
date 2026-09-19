@@ -21,6 +21,25 @@ OUT="$REPO_ROOT/packaging/ravensport_${VERSION}_${ARCH}.deb"
 
 echo "==> RavensPort ${VERSION} (${ARCH})"
 
+# --- keep the lock files as they were ------------------------------------------------------------
+# A restore with a runtime identifier (the publish below) writes a linux-x64 section into every
+# packages.lock.json it touches, and CI's locked-mode restore then rejects the files with NU1004:
+# the projects have no runtime identifier, the lock files do. Building a package must not dirty the
+# tree, so they are put back on the way out — including when the build fails.
+# (RestorePackagesWithLockFile=false is not an option: NuGet refuses it while a lock file exists.)
+LOCK_BACKUP="$(mktemp -d)"
+while IFS= read -r -d '' lock; do
+    mkdir -p "$LOCK_BACKUP/$(dirname "$lock")"
+    cp -p "$lock" "$LOCK_BACKUP/$lock"
+done < <(cd "$REPO_ROOT" && find src tests tools -name packages.lock.json -print0)
+restore_locks() {
+    ( cd "$LOCK_BACKUP" && find . -name packages.lock.json -print0 | while IFS= read -r -d '' lock; do
+        cp -p "$lock" "$REPO_ROOT/$lock"
+    done )
+    rm -rf "$LOCK_BACKUP"
+}
+trap restore_locks EXIT
+
 # --- the 1Password native ------------------------------------------------------------------------
 # c-shared needs cgo, and cgo needs a C compiler. Said plainly here because the failure otherwise
 # arrives as a linker error from inside the Go toolchain.
