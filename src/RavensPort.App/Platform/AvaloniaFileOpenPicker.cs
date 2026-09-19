@@ -9,7 +9,7 @@ namespace RavensPort.Platform;
 /// </summary>
 internal sealed class AvaloniaFileOpenPicker : IFileOpenPicker
 {
-    public async Task<PickedFile?> PickFileAsync(string title, string extension, string filterName)
+    public async Task<PickedFile?> PickFileAsync(string title, IReadOnlyList<string> extensions, string filterName)
     {
         var files = await MainWindowAccessor.Required.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -17,7 +17,7 @@ internal sealed class AvaloniaFileOpenPicker : IFileOpenPicker
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType(filterName) { Patterns = [$"*.{extension}"] },
+                new FilePickerFileType(filterName) { Patterns = [.. extensions.Select(extension => $"*.{extension}")] },
                 new FilePickerFileType("All files") { Patterns = ["*"] }
             ]
         });

@@ -1,16 +1,17 @@
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
+using RavensPort.UI.Services;
 
 namespace RavensPort.Core.Tests.App;
 
 /// <summary>
 /// The bridge editor's save path — where a manifest actually reaches
 /// <see cref="ManifestLocalStore"/>, now that it is the manifest's only home. Constructed for real
-/// rather than mocked: every dependency is a plain CLR object with no WPF requirement, so the
+/// rather than mocked: every dependency is a plain CLR object with no UI-framework requirement, so the
 /// interesting failure mode (a local write that fails must abort the save, not silently lose the
 /// manifest) is worth exercising through the actual view model rather than through
 /// <c>ManifestLocalStore</c> alone.
@@ -57,7 +58,9 @@ public sealed class ApiBridgeViewModelTests : IAsyncDisposable
         await _cache.InitializeAsync();
         await _cache.MutateAsync(store => store.Routes.Add(_route));
 
-        return new ApiBridgeViewModel(_cache, _pool, _activityLog, _mtls);
+        return new ApiBridgeViewModel(
+            _cache, _pool, _activityLog, _mtls,
+            new NoDesktop(), new NoDesktop(), new NoDesktop(), new NoDesktop());
     }
 
     private static string SampleManifest(string toolName = SampleTool) => $$"""

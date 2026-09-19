@@ -67,12 +67,11 @@
     <ProjectReference Include="..\..\src\RavensPort.Core\RavensPort.Core.csproj" />
 
     <!--
-      ViewModels only — CommunityToolkit.Mvvm's ObservableObject is a plain CLR class with no WPF
-      runtime dependency, so it instantiates and runs under xunit exactly like anything in Core.
-      Referenced here, rather than a project of its own, because a whole test project for one file
-      is a heavier thing to add than the two view models this actually exercises.
+      View models only — RavensPort.UI references no UI framework, so they instantiate and run
+      under xunit exactly like anything in Core. Referenced here, rather than tested in a project
+      of their own, because a whole test project for a few files is heavier than what they need.
     -->
-    <ProjectReference Include="..\..\src\RavensPort.App\RavensPort.App.csproj" />
+    <ProjectReference Include="..\..\src\RavensPort.UI\RavensPort.UI.csproj" />
   </ItemGroup>
 
   <!--

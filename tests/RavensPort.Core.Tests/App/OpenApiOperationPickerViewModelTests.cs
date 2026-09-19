@@ -1,4 +1,4 @@
-using RavensPort.App.ViewModels;
+using RavensPort.UI.ViewModels;
 using RavensPort.Core.Models;
 
 namespace RavensPort.Core.Tests.App;
