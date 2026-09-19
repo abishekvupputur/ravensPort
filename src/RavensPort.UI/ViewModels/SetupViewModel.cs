@@ -855,7 +855,15 @@ public sealed partial class SetupViewModel(
 
         try
         {
-            var progress = new Progress<string>(message => StatusMessage = message);
+            // Progress<T> posts its callback to the UI thread rather than running it in line, so a
+            // report can arrive after the sign-in has already failed — and overwrite the reason it
+            // failed with "Starting sign-in…". A refusal that throws before the CLI ever starts is
+            // the way to see it: nothing yields, so the error is shown first and the stale report
+            // lands on top of it. Reports that outlive the sign-in are dropped.
+            var progress = new Progress<string>(message =>
+            {
+                if (IsSigningIn) StatusMessage = message;
+            });
 
             await protonAuthenticator.SignInAsync(
                 url => SignInUrl = url,
