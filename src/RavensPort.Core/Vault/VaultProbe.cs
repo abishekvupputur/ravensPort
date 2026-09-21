@@ -117,6 +117,8 @@ public static partial class VaultProbe
             return File.Exists(overridden) ? overridden : null;
         }
 
+        var candidates = new List<string>();
+
         foreach (var directory in SearchDirectories(pathValue))
         {
             string candidate;
@@ -131,10 +133,30 @@ public static partial class VaultProbe
                 continue;
             }
 
-            if (File.Exists(candidate)) return RealBinary(candidate);
+            if (File.Exists(candidate)) candidates.Add(candidate);
         }
 
-        return wellKnownPaths.FirstOrDefault(File.Exists) is { } known ? RealBinary(known) : null;
+        candidates.AddRange(wellKnownPaths.Where(File.Exists));
+
+        if (candidates.Count == 0) return null;
+
+        // Off Windows, the first match is not necessarily the one that can be used. A per-user
+        // ~/.local/bin sits ahead of /usr/local/bin on PATH, so a pass-cli the user dropped there
+        // shadowed the administrator-installed copy they had put in the right place — and was then
+        // refused, so the setup page reported a CLI that could never work while a working one sat
+        // one directory further along. Prefer a copy that will be accepted; if there is none, the
+        // first is still returned, so the refusal names the file the user actually has.
+        if (!OperatingSystem.IsWindows())
+        {
+            foreach (var candidate in candidates)
+            {
+                var real = RealBinary(candidate);
+
+                if (UnixExecutableProvenance.IsAdministratorInstalled(real, out _)) return real;
+            }
+        }
+
+        return RealBinary(candidates[0]);
     }
 
     /// <summary>
