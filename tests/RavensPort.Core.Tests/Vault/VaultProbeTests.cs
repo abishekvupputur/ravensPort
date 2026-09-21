@@ -88,6 +88,48 @@ public class VaultProbeTests : IDisposable
     }
 
     [Fact]
+    public void OffWindowsACopyThatWillBeTrustedBeatsOneThatShadowsIt()
+    {
+        // The Linux shape of a real report: pass-cli in ~/.local/bin comes first on PATH, and the
+        // copy the user then installed into /usr/local/bin — the one that would be accepted — was
+        // never looked at, so the setup page kept reporting a refusal about the wrong file.
+        //
+        // A real system binary stands in for the administrator-installed copy, since a test cannot
+        // write to /usr/bin. Skipped where this machine's own copy would not be trusted either
+        // (a merged-usr layout that resolves it outside the system roots), because then there is
+        // nothing to prefer and the test would be asserting about the machine, not the code.
+        if (OperatingSystem.IsWindows()) return;
+
+        const string SystemSh = "/usr/bin/sh";
+        if (!File.Exists(SystemSh)) return;
+
+        var resolved = ExecutableSignature.ResolveFinalTarget(SystemSh);
+        if (!UnixExecutableProvenance.IsAdministratorInstalled(File.Exists(resolved) ? resolved : SystemSh, out _)) return;
+
+        var shadowing = Stub(_pathDir, "sh");
+        var path = string.Join(Path.PathSeparator, [_pathDir, "/usr/bin"]);
+
+        var found = VaultProbe.Find(Variable, "sh", [], path);
+
+        Assert.NotNull(found);
+        Assert.NotEqual(shadowing, found);
+        Assert.False(found.StartsWith(_pathDir, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OffWindowsWithNothingTrustedTheFirstMatchIsStillReturned()
+    {
+        // So the refusal that follows names the file the user actually has, rather than the setup
+        // page reporting the CLI as missing.
+        if (OperatingSystem.IsWindows()) return;
+
+        var first = Stub(_pathDir, "op");
+        var second = Stub(_wellKnownDir, "op");
+
+        Assert.Equal(first, VaultProbe.Find(Variable, "op", [second], _pathDir));
+    }
+
+    [Fact]
     public void AnOrdinaryBinaryIsReturnedUnchanged()
     {
         // The other half of resolving links: a normal file must come back exactly as found, not

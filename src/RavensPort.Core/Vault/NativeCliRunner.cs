@@ -35,6 +35,54 @@ public sealed class NativeCliRunner : ICliRunner
     private const string IntegrationChannel = @"\\.\pipe\1password-sdk-integrations";
 
     /// <summary>
+    /// The same channel on Linux, where 1Password listens on an abstract Unix socket rather than a
+    /// pipe. The spelling is 1Password's own — "INTERGATIONS" — and has to match it exactly.
+    ///
+    /// An abstract socket is not a file, so <see cref="File.Exists(string)"/> can never see it, which
+    /// is how this check reported "1Password is not running" on a machine where it was. It is listed
+    /// in <c>/proc/net/unix</c> with a leading <c>@</c>, and reading that list connects to nothing:
+    /// connecting to the channel is exactly the kind of contact this guard exists to avoid.
+    /// </summary>
+    private const string LinuxIntegrationSocket = "@1PASSWORD_SDK_INTERGATIONS";
+
+    private const string LinuxUnixSocketTable = "/proc/net/unix";
+
+    /// <summary>
+    /// Whether 1Password's integration channel exists on this machine. Windows and Linux only: on
+    /// anything else there is no known channel to look for, so the answer is no, as it always was.
+    /// </summary>
+    private static bool DefaultIntegrationChannelPresent()
+    {
+        if (OperatingSystem.IsWindows()) return File.Exists(IntegrationChannel);
+
+        if (!OperatingSystem.IsLinux()) return false;
+
+        try
+        {
+            return ListsIntegrationSocket(File.ReadLines(LinuxUnixSocketTable));
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether a <c>/proc/net/unix</c> listing includes 1Password's socket. The name is the last
+    /// column of a row, so it is matched as a whole token rather than as a substring of the line.
+    /// </summary>
+    internal static bool ListsIntegrationSocket(IEnumerable<string> unixSocketTable) =>
+        unixSocketTable.Any(line =>
+            string.Equals(
+                line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).LastOrDefault(),
+                LinuxIntegrationSocket,
+                StringComparison.Ordinal));
+
+    /// <summary>
     /// The flag every item verb carries. Named because the dispatcher below reads it out of the
     /// argument list five times, and a typo in one of those would silently address the default
     /// vault instead of the configured one.
@@ -62,7 +110,7 @@ public sealed class NativeCliRunner : ICliRunner
     {
         _activityLog = activityLog;
         _client = client ?? new OnePasswordNativeClientWrapper();
-        _integrationChannelPresent = integrationChannelPresent ?? (() => File.Exists(IntegrationChannel));
+        _integrationChannelPresent = integrationChannelPresent ?? DefaultIntegrationChannelPresent;
         _session = session;
     }
 
