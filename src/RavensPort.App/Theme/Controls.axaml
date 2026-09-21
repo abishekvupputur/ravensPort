@@ -50,9 +50,22 @@
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}"/>
+        <!-- The selection is painted in the accent colour, and several boxes are themselves accent
+             coloured text (the redirect URI, the connection snippets). Selected text keeps its own
+             foreground unless told otherwise, so it was gold on gold and vanished. Dark on the
+             selection reads for every box, whatever its text colour. -->
+        <Setter Property="SelectionForegroundBrush" Value="{StaticResource BgBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="6,4"/>
+    </Style>
+
+    <!-- Fluent repaints the box's inner border on hover and focus, from its own resources, which
+         overrides the Background a box was given — so the transparent, borderless boxes (the
+         copyable snippets) went black the moment they were clicked. Handing the box's own
+         Background back to that border in those states keeps every box the colour it was set to. -->
+    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement, TextBox:focus /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="{Binding $parent[TextBox].Background}"/>
     </Style>
 
     <Style Selector="ComboBox">
