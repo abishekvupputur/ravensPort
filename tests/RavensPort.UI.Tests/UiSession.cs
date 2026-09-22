@@ -17,7 +17,10 @@ namespace RavensPort.UI.Tests;
 public static class UiSession
 {
     private static readonly Lazy<HeadlessUnitTestSession> Session =
-        new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp)));
+        new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessTestAppBuilder)));
+    // The builder, not the application: StartNew looks for a static BuildAvaloniaApp on the type it
+    // is given, and HeadlessTestApp has none — so it fell back to Avalonia's own defaults and the
+    // options set in HeadlessTestAppBuilder were never read.
 
     /// <summary>
     /// Runs a test body on the UI thread, and — the part that matters — fails the test when the body

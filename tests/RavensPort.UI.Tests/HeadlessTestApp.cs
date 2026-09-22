@@ -51,12 +51,27 @@ public sealed class HeadlessTestApp : Application
 /// <summary>The builder the headless runner starts <see cref="HeadlessTestApp"/> with.</summary>
 public static class HeadlessTestAppBuilder
 {
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<HeadlessTestApp>()
-        .UseHeadless(new AvaloniaHeadlessPlatformOptions
+    /// <summary>
+    /// Set to a directory to make the screen tour render for real and write PNGs there. Unset, which
+    /// is every ordinary run, nothing is drawn.
+    /// </summary>
+    public const string ScreenshotDirectoryVariable = "RAVENSPORT_SCREENSHOT_DIR";
+
+    public static bool IsRenderingForReal =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ScreenshotDirectoryVariable));
+
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure<HeadlessTestApp>();
+
+        // Real drawing, and so real text, only when asked: asking for a font stack is what would
+        // otherwise make this suite need a font on the Linux runner — the one platform difference
+        // Program.BuildAvaloniaApp already warns about. Nothing else here asserts on glyphs.
+        if (IsRenderingForReal) builder = builder.UseSkia();
+
+        return builder.UseHeadless(new AvaloniaHeadlessPlatformOptions
         {
-            // No text rendering. Nothing here asserts on glyphs, and asking for a real font stack
-            // is what would otherwise make this suite need a font on the Linux runner — the one
-            // platform difference Program.BuildAvaloniaApp already warns about.
-            UseHeadlessDrawing = true,
+            UseHeadlessDrawing = !IsRenderingForReal,
         });
+    }
 }
