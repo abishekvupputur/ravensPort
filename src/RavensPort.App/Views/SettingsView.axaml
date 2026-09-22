@@ -158,7 +158,7 @@
                                        IsVisible="{Binding HasIntegrityResult}"/>
 
                             <StackPanel IsVisible="{Binding HasOrphans}">
-                                <TextBlock Text="Items with nothing pointing at them" Classes="section" FontSize="12"/>
+                                <TextBlock Text="Items with nothing pointing at them" Classes="section"/>
                                 <TextBlock Classes="hint" Margin="0,0,0,6"
                                            Text="Left behind by a delete that failed or a save that died part way. Deleting them removes the item from your password manager."/>
                                 <ItemsControl ItemsSource="{Binding Orphans}">
@@ -186,7 +186,7 @@
                             </StackPanel>
 
                             <StackPanel IsVisible="{Binding HasOtherItems}">
-                                <TextBlock Text="Everything else in this vault" Classes="section" FontSize="12"/>
+                                <TextBlock Text="Everything else in this vault" Classes="section"/>
                                 <TextBlock Classes="hint" Margin="0,0,0,6"
                                            Text="Yours, not RavensPort's — never read, written, or deleted by it. Listed so the check accounts for the whole vault, and because a RavensPort item that has been renamed can only be spotted here. Delete is one at a time and never in bulk."/>
                                 <ItemsControl ItemsSource="{Binding OtherItems}">
@@ -205,7 +205,7 @@
                             </StackPanel>
 
                             <StackPanel IsVisible="{Binding HasMissingItems}">
-                                <TextBlock Text="Records whose vault item is missing" Classes="section" FontSize="12"/>
+                                <TextBlock Text="Records whose vault item is missing" Classes="section"/>
                                 <TextBlock Classes="hint" Margin="0,0,0,6"
                                            Text="Two ways out. Writing them to the vault from memory keeps them and touches nothing else — do that while RavensPort is running, because the secret is only in memory. Removing takes the record out of the configuration instead."/>
                                 <Button Content="Write missing items to vault" HorizontalAlignment="Left"
@@ -308,7 +308,7 @@
                              content, so an empty one is a few pixels wide and looks broken. -->
                         <TextBox AutomationProperties.AutomationId="settings.mtls.password"
                                  Text="{Binding NewCertificatePassword}" PasswordChar="●"
-                                 Width="320" HorizontalAlignment="Left" FontSize="13" Padding="8,6" Margin="0,0,0,4"/>
+                                 Width="320" HorizontalAlignment="Left" Padding="8,6" Margin="0,0,0,4"/>
                         <TextBlock Classes="hint" Margin="0,0,0,8"
                                    Text="Every client loading the exported file will need this. Write it down before confirming — it is never shown again, and the only way out of a forgotten one is generating another certificate and reinstalling it everywhere."/>
                         <WrapPanel>
@@ -345,7 +345,7 @@
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="220">
                             <TextBox Text="{Binding RecentActivity, Mode=OneWay}" IsReadOnly="True"
                                      FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                     Background="Transparent" BorderThickness="0" Padding="0"
+                                     Background="Transparent" BorderThickness="0" Padding="0" MinHeight="0"
                                      TextWrapping="NoWrap"/>
                         </ScrollViewer>
                     </Border>

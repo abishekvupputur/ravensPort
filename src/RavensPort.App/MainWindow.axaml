@@ -7,7 +7,7 @@
         Title="RavensPort" Width="892" Height="688" MinWidth="720" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
-        FontFamily="Segoe UI">
+        FontFamily="Segoe UI" FontSize="13">
     <!--
         Two whole-window states rather than a banner over a disabled UI: without a reachable
         password manager there is no configuration at all, so the tabs would be four empty grids

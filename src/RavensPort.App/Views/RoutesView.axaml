@@ -118,7 +118,7 @@ Entries may reuse the same credential in different places, or use different cred
                                                                     </DataTemplate>
                                                                 </ComboBox.ItemTemplate>
                                                             </ComboBox>
-                                                            <TextBlock Text="⚠ credential missing" FontSize="10"
+                                                            <TextBlock Text="⚠ credential missing" FontSize="11"
                                                                        Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
                                                                        IsVisible="{Binding IsMissingCredential}"/>
                                                         </StackPanel>
@@ -159,31 +159,31 @@ Entries may reuse the same credential in different places, or use different cred
                 </DataGrid.RowDetailsTemplate>
                 <DataGrid.Columns>
                     <!-- The full local endpoint, ready to paste into an MCP client config. -->
-                    <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="230">
+                    <DataGridTemplateColumn Header="LOCAL ENDPOINT" Width="*" MinWidth="290">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="vm:RouteItemViewModel">
                                 <StackPanel VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}">
                                     <TextBox Text="{Binding LocalUrl, Mode=OneWay}" IsReadOnly="True"
                                              FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                             Background="Transparent" BorderThickness="0" Padding="0"
+                                             Background="Transparent" BorderThickness="0" Padding="0" MinHeight="0"
                                              Foreground="{StaticResource AccentBrush}"/>
-                                    <TextBlock Text="{Binding PathPrefix}" FontSize="10"
-                                               Foreground="{StaticResource DisabledTextBrush}"/>
+                                    <TextBlock Text="{Binding PathPrefix}" FontSize="11"
+                                               Foreground="{StaticResource MutedTextBrush}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
                     <!-- Where it actually forwards to: upstream name plus its base URL. -->
-                    <DataGridTemplateColumn Header="FORWARDS TO" Width="*" MinWidth="230">
+                    <DataGridTemplateColumn Header="FORWARDS TO" Width="*" MinWidth="170">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="vm:RouteItemViewModel">
                                 <StackPanel VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}">
                                     <TextBlock Text="{Binding UpstreamName}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding UpstreamBaseUrl}" TextWrapping="Wrap" FontSize="10"
+                                    <TextBlock Text="{Binding UpstreamBaseUrl}" TextWrapping="Wrap" FontSize="11"
                                                FontFamily="Cascadia Code, Consolas"
                                                Foreground="{StaticResource MutedTextBrush}"/>
-                                    <TextBlock Text="⚠ upstream missing — this route is not served" FontSize="10"
+                                    <TextBlock Text="⚠ upstream missing — this route is not served" FontSize="11"
                                                Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
                                                IsVisible="{Binding IsBroken}"/>
                                 </StackPanel>
@@ -200,10 +200,9 @@ Entries may reuse the same credential in different places, or use different cred
                                     <!-- A class bound to the flag, where WPF used a DataTrigger.
                                          Avalonia selectors match on pseudo-classes and classes, not
                                          on arbitrary bindings, so the binding moves to the class. -->
-                                    <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
-                                               Foreground="{StaticResource MutedTextBrush}"
+                                    <TextBlock Text="{Binding Key.ExpirySummary}" Classes="hint"
                                                Classes.expired="{Binding Key.IsExpired}"/>
-                                    <TextBlock Text="⚠ expired — this route answers 403" FontSize="10" TextWrapping="Wrap"
+                                    <TextBlock Text="⚠ expired — this route answers 403" FontSize="11" TextWrapping="Wrap"
                                                Foreground="{StaticResource ErrorBrush}"
                                                IsVisible="{Binding Key.IsExpired}"/>
                                 </StackPanel>
@@ -216,7 +215,7 @@ Entries may reuse the same credential in different places, or use different cred
                             <DataTemplate x:DataType="vm:RouteItemViewModel">
                                 <!-- Every attached credential and where it goes, so a route with
                                      two of them (or none) is visible without opening the editor. -->
-                                <TextBlock Text="{Binding CredentialSummary}" TextWrapping="Wrap" FontSize="10"
+                                <TextBlock Text="{Binding CredentialSummary}" TextWrapping="Wrap" FontSize="11"
                                            VerticalAlignment="Center" ToolTip.Tip="{Binding Summary}"
                                            FontFamily="Cascadia Code, Consolas"
                                            Foreground="{StaticResource MutedTextBrush}"/>

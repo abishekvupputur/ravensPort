@@ -48,11 +48,11 @@ Each route and each funnel has its own key. A key issued for one endpoint does n
                           SelectedItem="{Binding SelectedLifetime, Mode=TwoWay}"
                           ToolTip.Tip="{StaticResource ProxyKeyExpiryHelpText}"/>
                 <TextBlock Text="{Binding ExpirySummary}" VerticalAlignment="Center" Margin="10,0,0,0"
-                           FontSize="10" Foreground="{StaticResource MutedTextBrush}"/>
+                           FontSize="11" Foreground="{StaticResource MutedTextBrush}"/>
             </StackPanel>
 
             <TextBlock Text="⚠ this key has expired — the endpoint answers 403 until it is regenerated"
-                       FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
+                       FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
                        Foreground="{StaticResource ErrorBrush}"
                        IsVisible="{Binding IsExpired}"/>
         </StackPanel>

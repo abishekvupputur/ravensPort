@@ -105,7 +105,7 @@
                     <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush0}"
                             BorderThickness="1" Padding="14" CornerRadius="7" Margin="0,0,0,12">
                         <StackPanel>
-                            <TextBlock Text="WHAT YOU ARE APPROVING" FontSize="10" FontWeight="SemiBold"
+                            <TextBlock Text="WHAT YOU ARE APPROVING" FontSize="11" FontWeight="SemiBold"
                                        Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
                             <TextBlock x:Name="DetailText" Classes="hint"/>
                         </StackPanel>
