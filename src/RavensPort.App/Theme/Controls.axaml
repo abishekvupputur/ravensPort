@@ -17,6 +17,22 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://RavensPort/Theme/Palette.axaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!--
+                The type scale is 11 / 12 / 13 / 18, and this is the 13.
+
+                Fluent sizes every control from this one resource — buttons, inputs, combo boxes,
+                check boxes, grid cells — and ships it at 14, while the WPF design this was ported
+                from put them on the same 12–13 as the labels beside them. Left at 14, an input read
+                bigger than its own label and a grid row bigger than its own hint line, which is
+                the mismatch the screens showed.
+
+                  11  hints, captions, sub-lines, monospaced snippets
+                  12  field labels
+                  13  everything else: body text, controls, section headings, tabs
+                  18  a page title
+            -->
+            <x:Double x:Key="ControlContentThemeFontSize">13</x:Double>
         </ResourceDictionary>
     </Styles.Resources>
 
@@ -69,6 +85,11 @@
     </Style>
 
     <Style Selector="ComboBox">
+        <!-- Fill the column, as the text boxes above and below do. Left to Fluent's default a combo
+             box is only as wide as its longest item, so one beside a text box came out 130px wide
+             and one with no items yet came out as a stub — on the same form as full-width ones. -->
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="MinWidth" Value="140"/>
         <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
@@ -204,7 +225,7 @@
         <Setter Property="Background" Value="{StaticResource AccentPressedBrush}"/>
     </Style>
     <Style Selector="Button:disabled">
-        <Setter Property="Background" Value="#555555"/>
+        <Setter Property="Background" Value="{StaticResource BorderBrush0}"/>
         <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
     </Style>
 
@@ -327,7 +348,7 @@
     <!-- Shown when a list has no rows yet. -->
     <Style Selector="TextBlock.empty">
         <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
         <Setter Property="Margin" Value="0,18"/>
     </Style>
@@ -380,12 +401,18 @@
         <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
     </Style>
 
-    <!-- The inverse of .expired, for a line that is red by default and turns quiet when whatever
-         it is reporting comes good — the manifest editor's status, which is an error message far
-         more often than it is a confirmation. Same reason the class carries the binding: a selector
-         matches classes, never an arbitrary condition. -->
-    <Style Selector="TextBlock.ok">
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+    <!-- A status line that is an error until whatever it reports comes good — the manifest
+         editor's, which is an error message far more often than a confirmation. Red by default,
+         green with .ok.
+
+         The colours live in styles, and the element carries no Foreground of its own: a local value
+         beats any style, so a Foreground written on the TextBlock left .ok, and .expired above,
+         with nothing to change — "Valid" was red, and an expired key looked like a healthy one. -->
+    <Style Selector="TextBlock.status">
+        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.status.ok">
+        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
     </Style>
 
     <!-- The same idea for a hint that has become the only warning there is: the mTLS certificate
@@ -465,6 +492,9 @@
     </Style>
 
     <Style Selector="DataGridCell">
+        <!-- Not left to the theme: the grid's own cell style sizes its text itself, at 15, so
+             the resource that sets every other control's size never reached these rows. -->
+        <Setter Property="FontSize" Value="13"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>

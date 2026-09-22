@@ -20,7 +20,7 @@
     <SolidColorBrush x:Key="BorderSubtleBrush" Color="#2E2E2E"/>
     <SolidColorBrush x:Key="TextBrush" Color="#EBEBEB"/>
     <SolidColorBrush x:Key="MutedTextBrush" Color="#888888"/>
-    <SolidColorBrush x:Key="DisabledTextBrush" Color="#555555"/>
+    <SolidColorBrush x:Key="DisabledTextBrush" Color="#6B6B6B"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#EB990A"/>
     <SolidColorBrush x:Key="AccentHoverBrush" Color="#D58508"/>
     <SolidColorBrush x:Key="AccentPressedBrush" Color="#BA6F06"/>

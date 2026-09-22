@@ -55,7 +55,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <TextBlock Text="{Binding Title}" Classes="label"
                                    VerticalAlignment="Center" Margin="6,0,0,0"/>
                         <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Margin="8,0,0,0"
-                                   FontSize="10" Foreground="{StaticResource MutedTextBrush}"/>
+                                   FontSize="11" Foreground="{StaticResource MutedTextBrush}"/>
                     </StackPanel>
                     <ComboBox ItemsSource="{Binding AllModes}" SelectedItem="{Binding Mode, Mode=TwoWay}"
                               AutomationProperties.AutomationId="funnels.group.mode"
@@ -134,10 +134,10 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                              selected and pasted into an agent's config. -->
                                         <TextBox Text="{Binding LocalUrl, Mode=OneWay}" IsReadOnly="True"
                                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                                 Background="Transparent" BorderThickness="0" Padding="0" MinHeight="0"
                                                  Foreground="{StaticResource AccentBrush}"/>
-                                        <TextBlock Text="{Binding Name}" FontSize="10"
-                                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                        <TextBlock Text="{Binding Name}" FontSize="11"
+                                                   Foreground="{StaticResource MutedTextBrush}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -157,10 +157,9 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="vm:McpFunnelItemViewModel">
                                     <StackPanel VerticalAlignment="Center" ToolTip.Tip="{StaticResource ProxyKeyHelpText}">
-                                        <TextBlock Text="{Binding Key.ExpirySummary}" TextWrapping="Wrap" FontSize="10"
-                                                   Foreground="{StaticResource MutedTextBrush}"
+                                        <TextBlock Text="{Binding Key.ExpirySummary}" Classes="hint"
                                                    Classes.expired="{Binding Key.IsExpired}"/>
-                                        <TextBlock Text="⚠ expired — this funnel answers 403" FontSize="10" TextWrapping="Wrap"
+                                        <TextBlock Text="⚠ expired — this funnel answers 403" FontSize="11" TextWrapping="Wrap"
                                                    Foreground="{StaticResource ErrorBrush}"
                                                    IsVisible="{Binding Key.IsExpired}"/>
                                     </StackPanel>
@@ -211,7 +210,7 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                  FontFamily="Cascadia Code, Consolas" FontSize="11"
                                  AcceptsReturn="True" TextWrapping="NoWrap"
                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Background="Transparent" BorderThickness="0" Padding="0" MinHeight="0"
                                  Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Classes="hint" Margin="0,0,0,10"
                                    Text="Press Show above to reveal the key inside this snippet before copying it. A client that cannot set request headers cannot reach a funnel — the key is never read from the URL."/>
@@ -233,12 +232,12 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Name}"/>
                                                         <TextBlock Text="{Binding ToolPrefix, StringFormat='tools appear as {0}…'}"
-                                                                   FontSize="10" FontFamily="Cascadia Code, Consolas"
+                                                                   FontSize="11" FontFamily="Cascadia Code, Consolas"
                                                                    Foreground="{StaticResource MutedTextBrush}"/>
                                                         <!-- What the row is doing, so it can stay
                                                              collapsed and still be readable. -->
-                                                        <TextBlock Text="{Binding Summary}" FontSize="10" TextWrapping="Wrap"
-                                                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                                        <TextBlock Text="{Binding Summary}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource MutedTextBrush}"/>
                                                     </StackPanel>
                                                 </CheckBox>
 
@@ -329,10 +328,10 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                 <DataTemplate x:DataType="vm:McpSourceItemViewModel">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Target}" FontSize="10" TextWrapping="Wrap"
+                                        <TextBlock Text="{Binding Target}" FontSize="11" TextWrapping="Wrap"
                                                    FontFamily="Cascadia Code, Consolas"
                                                    Foreground="{StaticResource MutedTextBrush}"/>
-                                        <TextBlock Text="⚠ route missing — this source cannot be reached" FontSize="10"
+                                        <TextBlock Text="⚠ route missing — this source cannot be reached" FontSize="11"
                                                    Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"
                                                    IsVisible="{Binding IsBroken}"/>
                                     </StackPanel>

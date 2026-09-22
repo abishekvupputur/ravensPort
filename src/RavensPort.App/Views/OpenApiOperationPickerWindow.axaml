@@ -6,7 +6,7 @@
         Title="Select operations to import" Height="640" Width="900" MinHeight="380" MinWidth="620"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
-        FontFamily="Segoe UI">
+        FontFamily="Segoe UI" FontSize="13">
     <Window.Styles>
         <!-- The two caps go red on their own: either one alone can trim the import. -->
         <Style Selector="TextBlock.cap">
@@ -95,7 +95,7 @@
                         <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding CountLabel}" Margin="8,0,0,0" FontSize="11"
                                    VerticalAlignment="Center"
-                                   Foreground="{StaticResource DisabledTextBrush}"/>
+                                   Foreground="{StaticResource MutedTextBrush}"/>
                     </StackPanel>
                 </TreeDataTemplate>
 
@@ -104,7 +104,7 @@
                         <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                   VerticalAlignment="Center"/>
 
-                        <TextBlock Grid.Column="1" Text="{Binding Method}" FontSize="10" FontWeight="SemiBold"
+                        <TextBlock Grid.Column="1" Text="{Binding Method}" FontSize="11" FontWeight="SemiBold"
                                    VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
 
                         <TextBlock Grid.Column="2" Text="{Binding Path}" FontFamily="Cascadia Code, Consolas"
