@@ -61,3 +61,8 @@ libonepassword.h
 # What the .deb build stages and produces; dist/ above already covers the installers.
 /packaging/deb/
 /packaging/*.deb
+
+# Snap build output
+/*.snap
+# snapcraft export-login output: a live Store credential
+creds.txt
