@@ -1,0 +1,132 @@
+name: Snap Store
+
+# Builds snap/snapcraft.yaml and uploads it to the Snap Store.
+#
+# A version tag publishes to edge, beside the Windows release that release.yml cuts from the same
+# tag. A manual run publishes to whichever channel is picked, which is how a build that has been
+# tried on edge is sent to stable -- or how one is sent at all without cutting a release.
+#
+# Classic confinement: until the Store has approved the forum request for it, an upload is held for
+# manual review, and this workflow can report the upload as done while nothing is installable yet.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel to release to
+        type: choice
+        options: [edge, beta, candidate, stable]
+        default: edge
+
+# Third-party actions are pinned to commit SHAs, for the reason given at the top of release.yml.
+permissions:
+  contents: read
+
+jobs:
+  # The Linux half of pr.yml's build-and-test-linux: the Go tests and both suites on the portable
+  # target. release.yml's tests run on Windows, so they say nothing about the build that ships here.
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          # Off for the reason release.yml gives: this run publishes, and a cache shared across refs
+          # is a way into what it publishes.
+          cache: false
+
+      # What Avalonia and SecretServiceStore load; see pr.yml.
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-6 libice6 libsm6 libfontconfig1 libsecret-1-0
+
+      # On a tag, the tag and Directory.Build.props have to agree. The snap takes its version from
+      # the props file, so a mismatch would upload a revision the Store labels with a version that
+      # is not the release it came from.
+      - name: Check the tag matches the version
+        if: github.ref_type == 'tag'
+        run: |
+          props="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -1)"
+          if [ "${GITHUB_REF_NAME#v}" != "$props" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match <Version>$props</Version> in Directory.Build.props" >&2
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore RavensPort.slnx --locked-mode
+
+      - name: Test Go shared library
+        run: |
+          cd src/OnePasswordNative
+          go test
+
+      - name: Build Go shared library
+        run: |
+          cd src/OnePasswordNative
+          CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go
+
+      # DOTNET_USE_POLLING_FILE_WATCHER: the suite stands up more Kestrel hosts than inotify allows
+      # by default; see pr.yml.
+      - name: Test
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: "1"
+        run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
+
+      - name: UI suite
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: "1"
+        run: dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
+
+  # A separate job, so the snap is built from a clean checkout: snapcraft copies the whole tree into
+  # its container, and the bin/ and obj/ the tests leave behind are not something to ship from.
+  snap:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Runs snapcraft in LXD, a clean 24.04 container, as `snapcraft pack` does on a desktop.
+      - name: Build the snap
+        id: build
+        uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
+
+      # The same check pr.yml makes of the .deb: a snap that packs is not a snap that works, and
+      # snapcraft is happy to pack one without the 1Password native or the desktop entry.
+      - name: Check what the snap contains
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+        run: |
+          contents=$(unsquashfs -l "$SNAP_FILE")
+          for path in opt/ravensport/RavensPort \
+                      opt/ravensport/libonepassword.so \
+                      meta/gui/ravensport.desktop \
+                      meta/snap.yaml; do
+            echo "$contents" | grep -q "^squashfs-root/$path\$" || { echo "missing from the snap: $path"; exit 1; }
+          done
+
+      # The credential is `snapcraft export-login --snaps=ravensport --acls=package_access,package_push,package_update,package_release`,
+      # stored as the SNAPCRAFT_STORE_CREDENTIALS repository secret. It can upload and release this
+      # one snap and nothing else, and it expires; when it does, this step fails and a new export
+      # replaces the secret.
+      - name: Upload to the Snap Store
+        uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: ${{ inputs.channel || 'edge' }}

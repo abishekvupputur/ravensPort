@@ -1,0 +1,104 @@
+# The Snap Store package for Linux, x86_64. Build with `snapcraft pack` from the repo root.
+#
+# This is the same build as packaging/build-deb.sh, packed as a snap instead of a .deb: a
+# self-contained .NET publish, loose files rather than single-file, and the 1Password native built
+# from source rather than assumed.
+#
+# Classic confinement, because the app is a broker for things that live on the host: it starts the
+# user's own pass-cli (and checks where that file came from), finds 1Password's abstract socket in
+# /proc/net/unix, and keeps the Proton Pass session key in the login keyring over D-Bus. Strict
+# confinement would block the first two, and no interface covers them. Classic snaps need a manual
+# review in the Store before the first upload is released (see "Publishing" below).
+#
+# Classic also keeps the real $HOME, so a snap install and a .deb install read the same settings
+# and the same vault session.
+#
+# Publishing, once: `snapcraft login`, `snapcraft register ravensport`, then ask for classic on
+# https://forum.snapcraft.io in the "store-requests" category, saying why (the three reasons above).
+# After that: `snapcraft upload --release=edge ravensport_<version>_amd64.snap`, and promote to
+# stable from the dashboard once it has been tried.
+name: ravensport
+title: RavensPort
+summary: Local OAuth2 reverse proxy and MCP funnel
+description: |
+  Gives each AI agent its own MCP endpoint, pooling the servers you choose and
+  exposing only the tools you allow, with OAuth2 handled for you.
+
+  Credentials, tokens, routes and funnels live in a vault in 1Password or Proton
+  Pass. On Linux the Proton Pass session key is kept in the system keyring, which
+  encrypts it at rest but is unlocked for the whole login session — weaker than
+  the Windows build, which binds it to a Windows Hello gesture.
+license: MIT
+website: https://github.com/abishekvupputur/ravensPort
+source-code: https://github.com/abishekvupputur/ravensPort
+issues: https://github.com/abishekvupputur/ravensPort/issues
+contact: https://github.com/abishekvupputur/ravensPort/issues
+icon: src/RavensPort.App/Assets/logo.png
+
+base: core24
+confinement: classic
+grade: stable
+adopt-info: ravensport
+
+platforms:
+  amd64:
+
+# The app links against the host's libraries, as the .deb does: a classic snap runs under the
+# host's dynamic linker, and Avalonia and libsecret dlopen X11, fontconfig and libsecret from there.
+# The linter reports each of those as missing from the snap; they are meant to come from the host.
+lint:
+  ignore:
+    - classic
+    - library
+
+apps:
+  ravensport:
+    # The apphost resolves its runtime relative to its own directory, so it is run where it lies.
+    command: opt/ravensport/RavensPort
+    desktop: usr/share/applications/ravensport.desktop
+
+parts:
+  ravensport:
+    plugin: nil
+    source: .
+    # Go builds the 1Password native, .NET the app. c-shared needs cgo, and cgo needs a C compiler.
+    # go.mod names 1.26, so the 1.26 track is used; latest/stable moves to the next minor release
+    # without asking. The .NET SDK comes from Ubuntu's own archive (noble-updates), not a snap: the
+    # dotnet-sdk snap stopped at 8.0, and this is the SDK build-deb.sh is run with on 24.04.
+    build-snaps:
+      - go/1.26/stable
+    build-packages:
+      - gcc
+      - dotnet-sdk-10.0
+    override-pull: |
+      craftctl default
+      craftctl set version="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -1)"
+    override-build: |
+      # Built into the source tree, where the .csproj picks it up as on every other build.
+      ( cd src/OnePasswordNative && CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go )
+
+      # The framework is named explicitly: the project multi-targets, and publish refuses to guess
+      # (NETSDK1129).
+      dotnet publish src/RavensPort.App/RavensPort.App.csproj \
+          -f net10.0 -c Release -r linux-x64 --self-contained true \
+          -p:PublishSingleFile=false -p:PublishTrimmed=false \
+          -o "$CRAFT_PART_INSTALL/opt/ravensport"
+      chmod 0755 "$CRAFT_PART_INSTALL/opt/ravensport/RavensPort"
+
+      test -f "$CRAFT_PART_INSTALL/opt/ravensport/libonepassword.so" \
+          || { echo "error: libonepassword.so did not make it into the publish output" >&2; exit 1; }
+
+      install -Dm0644 src/RavensPort.App/Assets/logo.png \
+          "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/ravensport.png"
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/applications"
+      cat > "$CRAFT_PART_INSTALL/usr/share/applications/ravensport.desktop" <<'EOF'
+      [Desktop Entry]
+      Type=Application
+      Name=RavensPort
+      Comment=Local OAuth2 reverse proxy and MCP funnel
+      Exec=ravensport
+      Icon=${SNAP}/usr/share/icons/hicolor/256x256/apps/ravensport.png
+      Terminal=false
+      Categories=Utility;Network;
+      StartupWMClass=RavensPort
+      EOF
