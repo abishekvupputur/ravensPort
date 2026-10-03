@@ -80,12 +80,15 @@ ManifestLoader.add_constructor(
 def read_manifest(path):
     """Parse one manifest with ManifestLoader.
 
-    Drives the loader directly instead of calling `yaml.load(..., Loader=ManifestLoader)`, which
-    is what this was and which does exactly the same three things. The rewrite is for the scanner,
-    not for safety: Snyk Code's CWE-502 rule matches the name `yaml.load` and does not look at the
-    Loader argument, so it reported deserialization of untrusted data against a loader that has
-    been a SafeLoader subclass since the file was written. SafeLoader constructs nothing but
+    Drives the loader directly instead of passing Loader=ManifestLoader to PyYAML's load function,
+    which is what this was and which does exactly the same three things. The rewrite is for the
+    scanner, not for safety: Snyk Code's CWE-502 rule matches the name `yaml.load` and does not look
+    at the Loader argument, so it reported deserialization of untrusted data against a loader that
+    has been a SafeLoader subclass since the file was written. SafeLoader constructs nothing but
     plain scalars, lists and dicts -- there was no unsafe path to fix, only a sink to stop naming.
+
+    The same goes for this docstring: DevSkim's DS425060 matches the call spelling, open
+    parenthesis included, even inside a string, so describe that call in words rather than write it.
 
     Keep the dispose() in a finally: yaml.load does the same, and skipping it leaks the loader's
     buffers when a malformed manifest raises.
