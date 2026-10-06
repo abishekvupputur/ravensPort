@@ -206,9 +206,15 @@ internal static class ApprovalSeeding
 
         // Nothing can be ticked until the catalogue exists, and the catalogue comes from asking the
         // servers. This is the button that asks.
+        //
+        // Waited until the refresh has finished, not merely until tools are listed. The refresh ends
+        // by reloading the tab, which rebuilds every source row collapsed. On a second call the
+        // catalogue is already cached from the first, so "tools are listed" is true at once — and
+        // the expansion below then races that reload and loses the rows it just opened.
         await UiDriver.ClickAsync(view, AutomationIds.RefreshAllSources);
         await UiDriver.UntilAsync(
-            () => funnels.FunnelSources.Any(s => s.Name == sourceName && s.Tools.Items.Count > 0),
+            () => !funnels.RefreshAllSourcesCommand.IsRunning
+                  && funnels.FunnelSources.Any(s => s.Name == sourceName && s.Tools.Items.Count > 0),
             $"the tools of '{sourceName}' to be discovered");
 
         // Re-resolved before every interaction rather than held. Expanding a row rebuilds the
