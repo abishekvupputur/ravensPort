@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using RavensPort.Core;
+using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
@@ -31,7 +32,16 @@ internal sealed class ViewModelFixture : IDisposable
     {
         var services = new ServiceCollection();
 
+        // The host supplies logging in the product; the token refresh service behind the
+        // Credentials tab takes an ILogger and cannot be built without one.
+        services.AddLogging();
         services.AddRavensPort();
+
+        // A log of its own, replacing the one AddRavensPort registers. That one writes under the
+        // user's AppData — the developer's real activity log — and the Settings tab's prune and
+        // open-log commands act on whatever directory this names.
+        LogDirectory = Path.Combine(Path.GetTempPath(), $"ravensport-vm-{Guid.NewGuid():n}");
+        services.AddSingleton(new ActivityLog(LogDirectory));
 
         services.AddSingleton<IUiDispatcher, InlineDispatcher>();
         services.AddSingleton<IUiTimerFactory, NoTimers>();
@@ -92,7 +102,25 @@ internal sealed class ViewModelFixture : IDisposable
         throw new TimeoutException($"Waited 10s for {because()} and it never came true.");
     }
 
-    public void Dispose() => _services.Dispose();
+    /// <summary>Where this fixture's activity log writes. Deleted with the fixture.</summary>
+    public string LogDirectory { get; }
+
+    public void Dispose()
+    {
+        // Asynchronously, because some of what the container built can only be released that way
+        // (the MCP connection pool behind the Settings tab), and the synchronous Dispose refuses
+        // the whole container the moment it meets one.
+        _services.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        try
+        {
+            if (Directory.Exists(LogDirectory)) Directory.Delete(LogDirectory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A log file still held open is not a test failure; the temp directory is reclaimed later.
+        }
+    }
 
     /// <summary>Runs UI work where it was posted. There is no other thread to marshal to.</summary>
     private sealed class InlineDispatcher : IUiDispatcher
