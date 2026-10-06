@@ -19,7 +19,7 @@
   <a href="../../releases"><img alt="Latest release"
     src="https://img.shields.io/github/v/release/abishekvupputur/ravensPort?label=release&logo=github&logoColor=white&style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT licence"
-    src="https://img.shields.io/github/license/abishekvupputur/ravensPort?label=licence&color=blue&style=flat-square"></a>
+    src="https://img.shields.io/badge/licence-MIT-blue?style=flat-square"></a>
 </p>
 
 <p align="center">
