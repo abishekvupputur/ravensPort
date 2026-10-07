@@ -64,7 +64,7 @@ jobs:
     # which the rest of this repository deliberately avoids: whoever controls the action's repo can
     # repoint a tag at new code, and this job holds security-events: write.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+      uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
       with:
         languages: ${{ matrix.language }}
         # Autobuild triggers clean-build.bat, which launches the app and hangs, so the two compiled
