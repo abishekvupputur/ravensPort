@@ -240,7 +240,7 @@ public partial class HelloConsentWindow : Window
         ConfirmButton.IsEnabled = false;
         CancelButton.IsEnabled = false;
 
-        Report("Waiting for Windows Hello…", isError: false);
+        Report(SessionKeyWording.ConsentWaiting, isError: false);
 
         try
         {
@@ -258,7 +258,7 @@ public partial class HelloConsentWindow : Window
         }
         catch (Exception ex)
         {
-            Report($"Windows Hello failed: {ex.Message}", isError: true);
+            Report(SessionKeyWording.ConsentFailed(ex.Message), isError: true);
         }
         finally
         {

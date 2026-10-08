@@ -177,7 +177,7 @@ public sealed partial class SetupViewModel(
 
             if (needsGesture && !unlocked)
             {
-                StatusMessage = "Not unlocked. Try Windows Hello again, or discard this session and sign in.";
+                StatusMessage = SessionKeyWording.NotUnlocked;
                 Apply(gate.Status);
                 return;
             }
@@ -724,7 +724,7 @@ public sealed partial class SetupViewModel(
             // IHelloConsentPrompt.
             if (!await helloConsent.RequestUnlockAsync(protonAuthenticator.UnlockWithHelloAsync))
             {
-                StatusMessage = "Not unlocked. Discard this session and sign in again, or try Windows Hello again.";
+                StatusMessage = SessionKeyWording.NotUnlocked;
                 return;
             }
 
@@ -824,9 +824,7 @@ public sealed partial class SetupViewModel(
 
         if (!consented)
         {
-            StatusMessage =
-                "Sign-in cancelled. Nothing was created — RavensPort needs Windows Hello to hold its "
-                + "Proton Pass session key, because the key is never shown to you.";
+            StatusMessage = SessionKeyWording.SignInCancelled;
         }
 
         return consented;

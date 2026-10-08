@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:vault="using:RavensPort.Core.Vault"
              x:Class="RavensPort.Views.SetupView"
              x:DataType="vm:SetupViewModel"
              Background="{StaticResource BgBrush}">
@@ -271,7 +272,7 @@
                                              install other software and does not send anyone to a
                                              page to get it: putting an executable on this PC is
                                              the user's own decision, taken in their own terminal. -->
-                                        <TextBlock Text="Install it, then choose Check again."
+                                        <TextBlock Text="{Binding InstallHint}" TextWrapping="Wrap"
                                                    Classes="hint" Margin="0,0,0,6"/>
                                         <TextBox Text="{Binding InstallCommand, Mode=OneWay}" IsReadOnly="True"
                                                  IsVisible="{Binding HasInstallCommand}"
@@ -325,9 +326,9 @@
                                                 <StackPanel Margin="0,0,0,10"
                                                             IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CanUnlockWithHello}">
                                                     <TextBlock Classes="hint" Margin="0,0,0,6">
-                                                        <Run Classes="emphasis" Text="Unlock with Windows Hello."/><Run Text=" Your session key is held in Windows Credential Manager, encrypted so that only a Hello gesture on this PC can decrypt it. RavensPort cannot read it without you, and it is never shown to you either."/>
+                                                        <Run Classes="emphasis" Text="{x:Static vault:SessionKeyWording.UnlockHeading}"/><Run Text="{x:Static vault:SessionKeyWording.UnlockExplanation}"/>
                                                     </TextBlock>
-                                                    <Button Content="Unlock with Windows Hello" HorizontalAlignment="Left"
+                                                    <Button Content="{x:Static vault:SessionKeyWording.UnlockButton}" HorizontalAlignment="Left"
                                                             IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
                                                             Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UnlockWithHelloCommand}"/>
                                                 </StackPanel>
@@ -371,7 +372,7 @@
                                                      people learn to click through. -->
                                                 <TextBlock Classes="hint" Margin="0,0,0,8"
                                                            IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsHelloAvailable}">
-                                                    <Run Classes="emphasis" Text="Windows Hello will ask before the sign-in starts."/><Run Text=" RavensPort generates a session key, encrypts it so that only a Hello gesture on this PC can decrypt it, and keeps it in Windows Credential Manager. You never see the key, and after a restart a gesture is all it takes to reopen the session. Cancel that prompt and nothing is created."/>
+                                                    <Run Classes="emphasis" Text="{x:Static vault:SessionKeyWording.FirstSignInHeading}"/><Run Text="{x:Static vault:SessionKeyWording.FirstSignInExplanation}"/>
                                                 </TextBlock>
 
                                                 <!-- Says what the session key is NOT, first. Every wrong
@@ -380,7 +381,7 @@
                                                      RavensPort is keeping the user's secrets on
                                                      this PC and locking them with it. -->
                                                 <TextBlock Classes="hint" Margin="0,0,0,8">
-                                                    <Run Classes="emphasis" Text="RavensPort stores none of your data on this PC."/><Run Text=" Every credential, route, funnel and key lives in your Proton Pass vault and nowhere else. The one thing kept here is the Proton Pass sign-in session, and the key that encrypts it never leaves Windows Credential Manager unencrypted. It is not your Proton password, and Proton never receives it."/>
+                                                    <Run Classes="emphasis" Text="RavensPort stores none of your data on this PC."/><Run Text="{x:Static vault:SessionKeyWording.WhatIsKeptHere}"/>
                                                 </TextBlock>
 
                                                 <!-- No Hello, no in-app sign-in. Stated rather than

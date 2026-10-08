@@ -84,6 +84,8 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
 
     public string InstallCommand { get; } = VaultLockGuidance.InstallCommand(status.Kind);
 
+    public string InstallHint { get; } = VaultLockGuidance.InstallHint(status.Kind);
+
     /// <summary>Keeps an empty box off the 1Password card, which has no one-line install command.</summary>
     public bool HasInstallCommand => InstallCommand.Length > 0;
 
@@ -165,9 +167,7 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
             "1Password will ask you to unlock — its desktop app approves each command RavensPort "
             + "runs. Nothing is read from your vaults until you press this.",
 
-        VaultBackendKind.ProtonPass =>
-            "RavensPort will open its own Proton Pass session, which means a Windows Hello gesture "
-            + "if you have signed in here before. Nothing is read from your vaults until you press this.",
+        VaultBackendKind.ProtonPass => SessionKeyWording.ConnectPrompt,
 
         _ => "Nothing is read from your vaults until you press this.",
     };
