@@ -222,3 +222,20 @@ jobs:
                       ./usr/share/applications/ravensport.desktop; do
             echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
           done
+
+      # Installs that package, launches the installed app under Xvfb, runs the single-use UI suite
+      # against the assemblies it installed, and purges it -- what installer/test-install.ps1 does
+      # for the Windows installer. See the script for why the suite is pointed at /opt/ravensport.
+      - name: Install, launch, UI-test and uninstall the .deb
+        env:
+          TEST_DEB_ARTIFACTS: ${{ runner.temp }}/test-deb
+        run: packaging/test-deb.sh packaging/ravensport_0.0.0_amd64.deb 0.0.0
+
+      # The screenshot is the only way to see what the installed app actually drew.
+      - name: Upload the installed app's screenshot
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-deb
+          path: ${{ runner.temp }}/test-deb
+          if-no-files-found: ignore

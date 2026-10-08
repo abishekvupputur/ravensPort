@@ -126,6 +126,24 @@ jobs:
             echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
           done
 
+      # The gate release.yml has in "Install, launch, and uninstall the installer": a package that
+      # does not install, start, pass the single-use UI suite and purge cleanly is never attested,
+      # attached or served.
+      - name: Install, launch, UI-test and uninstall the .deb
+        env:
+          DEB: packaging/${{ steps.version.outputs.deb }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TEST_DEB_ARTIFACTS: ${{ runner.temp }}/test-deb
+        run: packaging/test-deb.sh "$DEB" "$VERSION"
+
+      - name: Upload the installed app's screenshot
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-deb
+          path: ${{ runner.temp }}/test-deb
+          if-no-files-found: ignore
+
       # The .deb counterpart of release.yml's attestation, so a downloaded package can be checked:
       #
       #   gh attestation verify ravensport_<version>_amd64.deb --repo abishekvupputur/ravensPort
