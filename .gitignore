@@ -61,6 +61,7 @@ libonepassword.h
 # What the .deb build stages and produces; dist/ above already covers the installers.
 /packaging/deb/
 /packaging/*.deb
+/packaging/test-deb/
 
 # Snap build output
 /*.snap
