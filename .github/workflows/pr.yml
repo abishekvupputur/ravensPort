@@ -223,10 +223,58 @@ jobs:
             echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
           done
 
-      # Installs that package, launches the installed app under Xvfb, runs the single-use UI suite
-      # against the assemblies it installed, and purges it -- what installer/test-install.ps1 does
-      # for the Windows installer. See the script for why the suite is pointed at /opt/ravensport.
-      - name: Install, launch, UI-test and uninstall the .deb
+      # Handed to install-test-linux below, which installs this exact package rather than building
+      # its own: the check is of what this job produced.
+      - name: Upload the .deb
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb
+          path: packaging/ravensport_0.0.0_amd64.deb
+          if-no-files-found: error
+          retention-days: 3
+
+  # The installed package, as its own check: what installer/test-install.ps1 is to the Windows
+  # installer. packaging/test-deb.sh installs it with apt, launches the installed app under Xvfb,
+  # runs the single-use UI suite against the assemblies it put in /opt/ravensport, and purges it.
+  #
+  # A separate job rather than more steps above, so a red "installed package" says exactly that, and
+  # so it starts on a runner that has never had RavensPort on it -- the clean machine the script
+  # insists on.
+  install-test-linux:
+    name: Install, launch, UI-test and uninstall the .deb
+    needs: build-and-test-linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # What the UI suite loads to start; see build-and-test-linux. The package's own Depends are
+      # left for apt to resolve, which is part of what is being tested.
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libx11-6 libice6 libsm6 libfontconfig1
+
+      - name: Restore
+        run: dotnet restore RavensPort.slnx --locked-mode
+
+      # Built only so its RavensPort assemblies can be replaced by the installed ones. No Go: the
+      # suite runs on the InMemoryVault and never loads the 1Password native.
+      - name: Build the UI suite
+        run: dotnet build tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -f net10.0 -c Release --no-restore
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb
+          path: packaging
+
+      - name: Install, launch, UI-test and uninstall
         env:
           TEST_DEB_ARTIFACTS: ${{ runner.temp }}/test-deb
         run: packaging/test-deb.sh packaging/ravensport_0.0.0_amd64.deb 0.0.0
