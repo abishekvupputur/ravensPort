@@ -28,7 +28,11 @@ internal sealed class ViewModelFixture : IDisposable
 {
     private readonly ServiceProvider _services;
 
-    public ViewModelFixture()
+    /// <param name="consent">
+    /// Whether the person at the consent prompt says yes. Most tests want the path that follows a yes;
+    /// a no is its own outcome, with its own message to assert.
+    /// </param>
+    public ViewModelFixture(bool consent = true)
     {
         var services = new ServiceCollection();
 
@@ -47,7 +51,8 @@ internal sealed class ViewModelFixture : IDisposable
         services.AddSingleton<IUiTimerFactory, NoTimers>();
         services.AddSingleton<IClipboardService, RecordingClipboard>();
         services.AddSingleton<IPlatformLauncher, RecordingLauncher>();
-        services.AddSingleton<IHelloConsentPrompt, ConsentingPrompt>();
+        if (consent) services.AddSingleton<IHelloConsentPrompt, ConsentingPrompt>();
+        else services.AddSingleton<IHelloConsentPrompt, DecliningPrompt>();
         services.AddSingleton<IFileSavePicker, RecordingSavePicker>();
         services.AddSingleton<IFileOpenPicker, RecordingOpenPicker>();
         services.AddSingleton<IOpenApiOperationPicker, CancellingOperationPicker>();
@@ -160,6 +165,18 @@ internal sealed class ViewModelFixture : IDisposable
     /// person: consenting keeps the code under test on the path that follows a yes, which is the
     /// one with something to assert.
     /// </summary>
+    /// <summary>Says no to everything, and so runs nothing — what a declined prompt does.</summary>
+    private sealed class DecliningPrompt : IHelloConsentPrompt
+    {
+        public Task<bool> RequestUnlockAsync(Func<Task> unlockAsync) => Task.FromResult(false);
+
+        public Task<bool> RequestSetupAsync(Func<Task> prepareAsync) => Task.FromResult(false);
+
+        public Task<bool> RequestTokenSaveAsync(Func<Task> protectAsync) => Task.FromResult(false);
+
+        public Task<bool> RequestTokenUnlockAsync(Func<Task> unlockAsync) => Task.FromResult(false);
+    }
+
     private sealed class ConsentingPrompt : IHelloConsentPrompt
     {
         public async Task<bool> RequestUnlockAsync(Func<Task> unlockAsync) => await RunAsync(unlockAsync);

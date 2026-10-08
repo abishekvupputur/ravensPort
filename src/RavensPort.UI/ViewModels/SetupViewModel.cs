@@ -177,7 +177,7 @@ public sealed partial class SetupViewModel(
 
             if (needsGesture && !unlocked)
             {
-                StatusMessage = SessionKeyWording.NotUnlocked;
+                StatusMessage = SessionKeyWording.Current.NotUnlocked;
                 Apply(gate.Status);
                 return;
             }
@@ -724,7 +724,7 @@ public sealed partial class SetupViewModel(
             // IHelloConsentPrompt.
             if (!await helloConsent.RequestUnlockAsync(protonAuthenticator.UnlockWithHelloAsync))
             {
-                StatusMessage = SessionKeyWording.NotUnlocked;
+                StatusMessage = SessionKeyWording.Current.NotUnlocked;
                 return;
             }
 
@@ -824,7 +824,7 @@ public sealed partial class SetupViewModel(
 
         if (!consented)
         {
-            StatusMessage = SessionKeyWording.SignInCancelled;
+            StatusMessage = SessionKeyWording.Current.SignInCancelled;
         }
 
         return consented;

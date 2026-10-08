@@ -86,6 +86,13 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
 
     public string InstallHint { get; } = VaultLockGuidance.InstallHint(status.Kind);
 
+    /// <summary>
+    /// What the card says about where the Proton Pass session key lives — Windows Hello or the
+    /// keyring, whichever this platform actually uses. A get-only auto-property rather than a static,
+    /// because XAML bindings resolve against the DataContext instance.
+    /// </summary>
+    public SessionKeyWording Wording { get; } = SessionKeyWording.Current;
+
     /// <summary>Keeps an empty box off the 1Password card, which has no one-line install command.</summary>
     public bool HasInstallCommand => InstallCommand.Length > 0;
 
@@ -167,7 +174,7 @@ public sealed partial class ManagerCardViewModel(VaultStatus status) : Observabl
             "1Password will ask you to unlock — its desktop app approves each command RavensPort "
             + "runs. Nothing is read from your vaults until you press this.",
 
-        VaultBackendKind.ProtonPass => SessionKeyWording.ConnectPrompt,
+        VaultBackendKind.ProtonPass => SessionKeyWording.Current.ConnectPrompt,
 
         _ => "Nothing is read from your vaults until you press this.",
     };

@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RavensPort.UI.ViewModels"
-             xmlns:vault="using:RavensPort.Core.Vault"
              x:Class="RavensPort.Views.SetupView"
              x:DataType="vm:SetupViewModel"
              Background="{StaticResource BgBrush}">
@@ -326,9 +325,9 @@
                                                 <StackPanel Margin="0,0,0,10"
                                                             IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).CanUnlockWithHello}">
                                                     <TextBlock Classes="hint" Margin="0,0,0,6">
-                                                        <Run Classes="emphasis" Text="{x:Static vault:SessionKeyWording.UnlockHeading}"/><Run Text="{x:Static vault:SessionKeyWording.UnlockExplanation}"/>
+                                                        <Run Classes="emphasis" Text="{Binding Wording.UnlockHeading, Mode=OneTime}"/><Run Text="{Binding Wording.UnlockExplanation, Mode=OneTime}"/>
                                                     </TextBlock>
-                                                    <Button Content="{x:Static vault:SessionKeyWording.UnlockButton}" HorizontalAlignment="Left"
+                                                    <Button Content="{Binding Wording.UnlockButton, Mode=OneTime}" HorizontalAlignment="Left"
                                                             IsEnabled="{Binding !$parent[UserControl].((vm:SetupViewModel)DataContext).IsBusy}"
                                                             Command="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).UnlockWithHelloCommand}"/>
                                                 </StackPanel>
@@ -372,7 +371,7 @@
                                                      people learn to click through. -->
                                                 <TextBlock Classes="hint" Margin="0,0,0,8"
                                                            IsVisible="{Binding $parent[UserControl].((vm:SetupViewModel)DataContext).IsHelloAvailable}">
-                                                    <Run Classes="emphasis" Text="{x:Static vault:SessionKeyWording.FirstSignInHeading}"/><Run Text="{x:Static vault:SessionKeyWording.FirstSignInExplanation}"/>
+                                                    <Run Classes="emphasis" Text="{Binding Wording.FirstSignInHeading, Mode=OneTime}"/><Run Text="{Binding Wording.FirstSignInExplanation, Mode=OneTime}"/>
                                                 </TextBlock>
 
                                                 <!-- Says what the session key is NOT, first. Every wrong
@@ -381,7 +380,7 @@
                                                      RavensPort is keeping the user's secrets on
                                                      this PC and locking them with it. -->
                                                 <TextBlock Classes="hint" Margin="0,0,0,8">
-                                                    <Run Classes="emphasis" Text="RavensPort stores none of your data on this PC."/><Run Text="{x:Static vault:SessionKeyWording.WhatIsKeptHere}"/>
+                                                    <Run Classes="emphasis" Text="RavensPort stores none of your data on this PC."/><Run Text="{Binding Wording.WhatIsKeptHere, Mode=OneTime}"/>
                                                 </TextBlock>
 
                                                 <!-- No Hello, no in-app sign-in. Stated rather than
