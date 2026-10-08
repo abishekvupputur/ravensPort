@@ -52,8 +52,8 @@ public static class SessionKeyWording
     public static string WhatIsKeptHere { get; } = Hello
         ? " Every credential, route, funnel and key lives in your Proton Pass vault and nowhere else. "
           + "The one thing kept here is the Proton Pass sign-in session, and the key that encrypts it "
-          + "never leaves Windows Credential Manager unencrypted. It is not your Proton password, and "
-          + "Proton never receives it."
+          + "never leaves Windows Credential Manager unencrypted. "
+          + "It is not your Proton password, and Proton never receives it."
         : " Every credential, route, funnel and key lives in your Proton Pass vault and nowhere else. "
           + "The one thing kept here is the Proton Pass sign-in session, and the key that encrypts it "
           + "is kept in your keyring. It is not your Proton password, and Proton never receives it.";
