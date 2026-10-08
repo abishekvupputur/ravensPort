@@ -360,7 +360,7 @@ public class McpApiBridgeEndToEndTests : IAsyncLifetime
         await client.CallToolAsync("get_task", new Dictionary<string, object?> { ["id"] = "secret-record-id" });
 
         var lines = _host.ActivityLog.GetRecent(50);
-        var call = Assert.Single(lines.Where(line => line.Contains("MCP bridge", StringComparison.Ordinal)));
+        var call = Assert.Single(lines, line => line.Contains("MCP bridge", StringComparison.Ordinal));
 
         Assert.Contains("get_task", call, StringComparison.Ordinal);
         Assert.Contains("200", call, StringComparison.Ordinal);

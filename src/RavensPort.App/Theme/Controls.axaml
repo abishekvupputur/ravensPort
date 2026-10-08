@@ -33,6 +33,19 @@
                   18  a page title
             -->
             <x:Double x:Key="ControlContentThemeFontSize">13</x:Double>
+
+            <!--
+                The Expander header's hover and press colours. Fluent paints them on a Border inside
+                the header's own template, straight from these resources, so the ToggleButton
+                Background setters further down never reach it — hovering "Vault integrity" lit up
+                a dark box behind the line. Transparent keeps it the flat disclosure it is meant to be.
+            -->
+            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent"/>
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="Transparent"/>
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="Transparent"/>
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="Transparent"/>
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="Transparent"/>
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="Transparent"/>
         </ResourceDictionary>
     </Styles.Resources>
 

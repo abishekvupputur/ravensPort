@@ -451,7 +451,7 @@ public class McpApiBridgeCompatibilityTests : IAsyncLifetime
     [Fact]
     public async Task AgentsOnEveryRevisionShareOneBridgeSimultaneously()
     {
-        var revisions = EveryRevision.Select(row => (string?)row[0]).ToList();
+        var revisions = ((IEnumerable<object?[]>)EveryRevision).Select(row => (string?)row[0]).ToList();
 
         var clients = await Task.WhenAll(revisions.Select(Connect));
 
