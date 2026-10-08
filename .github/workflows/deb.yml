@@ -1,0 +1,260 @@
+name: Debian package
+
+# Builds the .deb, attaches it to the GitHub release for the same tag, and publishes it as a signed
+# apt repository on GitHub Pages, so Debian and Ubuntu users can `apt install ravensport` and get
+# updates through `apt upgrade`.
+#
+# A version tag runs it beside release.yml. A manual run takes a tag that already exists, which is
+# how a release cut before this workflow existed gets its package -- or how one is republished.
+#
+# The repository is flat (`deb <url> ./`) and holds only the latest package: each deploy replaces
+# the whole Pages site, so it never grows, and older versions stay downloadable from Releases.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (e.g. v5.0.0)
+        required: true
+
+# Third-party actions are pinned to commit SHAs, for the reason given at the top of release.yml.
+permissions:
+  contents: read
+
+# Two runs deploying Pages at once would race to decide which package the repository serves.
+concurrency:
+  group: apt-repository
+  cancel-in-progress: false
+
+jobs:
+  # The Linux half of pr.yml's build-and-test-linux, ending in the package that ships. release.yml's
+  # tests run on Windows, so they say nothing about this build.
+  deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token used to sign the build provenance attestation
+      attestations: write # publish that attestation to the repo
+
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      deb: ${{ steps.version.outputs.deb }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/OnePasswordNative/go.mod
+          # Off for the reason release.yml gives: this run publishes, and a cache shared across refs
+          # is a way into what it publishes.
+          cache: false
+
+      # What Avalonia and SecretServiceStore load; see pr.yml.
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-6 libice6 libsm6 libfontconfig1 libsecret-1-0
+
+      # The tag and Directory.Build.props have to agree: build-deb.sh is given the tag's version, and
+      # a package labelled with a version its own binary does not report is worse than no package.
+      - name: Check the tag matches the version
+        id: version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          props="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -1)"
+          if [ "${TAG#v}" != "$props" ]; then
+            echo "Tag $TAG does not match <Version>$props</Version> in Directory.Build.props" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$props" >> "$GITHUB_OUTPUT"
+          echo "deb=ravensport_${props}_amd64.deb" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore RavensPort.slnx --locked-mode
+
+      - name: Test Go shared library
+        run: |
+          cd src/OnePasswordNative
+          go test
+
+      - name: Build Go shared library
+        run: |
+          cd src/OnePasswordNative
+          CGO_ENABLED=1 go build -buildmode=c-shared -o libonepassword.so main.go
+
+      # DOTNET_USE_POLLING_FILE_WATCHER: the suite stands up more Kestrel hosts than inotify allows
+      # by default; see pr.yml.
+      - name: Test
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: "1"
+        run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
+
+      - name: UI suite
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: "1"
+        run: dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
+
+      - name: Build the .deb
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: packaging/build-deb.sh "$VERSION"
+
+      # The same check pr.yml makes: dpkg-deb --build is happy to produce a package missing any of
+      # the four paths an install needs to start and be launchable.
+      - name: Check what the package contains
+        env:
+          DEB: packaging/${{ steps.version.outputs.deb }}
+        run: |
+          dpkg-deb -I "$DEB"
+          contents=$(dpkg-deb -c "$DEB")
+          for path in ./opt/ravensport/RavensPort \
+                      ./opt/ravensport/libonepassword.so \
+                      ./usr/bin/ravensport \
+                      ./usr/share/applications/ravensport.desktop; do
+            echo "$contents" | grep -q " $path\$" || { echo "missing from the package: $path"; exit 1; }
+          done
+
+      # The .deb counterpart of release.yml's attestation, so a downloaded package can be checked:
+      #
+      #   gh attestation verify ravensport_<version>_amd64.deb --repo abishekvupputur/ravensPort
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: packaging/${{ steps.version.outputs.deb }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb
+          path: packaging/${{ steps.version.outputs.deb }}
+          if-no-files-found: error
+
+  # Attaches the package to the release. On a tag push, release.yml is creating that release on a
+  # Windows runner at the same time and usually finishes later, so this waits for it rather than
+  # creating one itself: two workflows racing to `gh release create` would leave one of them failing
+  # and the release notes decided by whichever won.
+  release-asset:
+    needs: deb
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # upload the release asset
+
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb
+
+      - name: Wait for the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.deb.outputs.tag }}
+        run: |
+          for _ in $(seq 1 100); do
+            gh release view "$TAG" >/dev/null 2>&1 && exit 0
+            echo "Release $TAG does not exist yet; waiting for release.yml"
+            sleep 30
+          done
+          echo "Release $TAG never appeared. Did release.yml fail?" >&2
+          exit 1
+
+      # --clobber, so a manual rerun replaces the asset rather than failing on it.
+      - name: Upload the .deb
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.deb.outputs.tag }}
+          DEB: ${{ needs.deb.outputs.deb }}
+        run: gh release upload "$TAG" "$DEB" --clobber
+
+  # Publishes the apt repository. After release-asset, so apt never offers a version whose release
+  # failed to appear.
+  #
+  # The signing key is the APT_SIGNING_KEY secret: an ASCII-armoured private key with no passphrase,
+  # used for this repository and nothing else. Absent, the job stops rather than failing, as the
+  # winget job in release.yml does -- the release and its .deb are already published.
+  apt-repository:
+    needs: [deb, release-asset]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write # deploy the site
+      id-token: write # deploy-pages proves the deployment came from this run
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      # `secrets` cannot be read from a job-level `if`, which is why this is a step.
+      - name: Check for the signing key
+        id: key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          if [ -n "$APT_SIGNING_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### apt repository not published"
+              echo
+              echo 'No `APT_SIGNING_KEY` secret is set, so the apt repository was not updated.'
+              echo 'The .deb is attached to the release as normal.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.key.outputs.present == 'true'
+        with:
+          name: deb
+          path: site/apt
+
+      # A flat repository: Packages and a signed Release beside the package, no dists/ tree. InRelease
+      # is what current apt reads; Release.gpg is for anything old enough to want the detached form.
+      # The public key is published beside them, which is what the install instructions fetch.
+      - name: Build the repository
+        if: steps.key.outputs.present == 'true'
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          export GNUPGHOME="$(mktemp -d)"
+          echo "$APT_SIGNING_KEY" | gpg --batch --import
+          fpr=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')
+
+          cd site/apt
+          apt-ftparchive packages . > Packages
+          gzip -9kn Packages
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin=RavensPort \
+            -o APT::FTPArchive::Release::Label=RavensPort \
+            -o APT::FTPArchive::Release::Architectures=amd64 \
+            release . > Release
+          gpg --batch --yes --local-user "$fpr" --clearsign -o InRelease Release
+          gpg --batch --yes --local-user "$fpr" --armor --detach-sign -o Release.gpg Release
+          gpg --batch --armor --export "$fpr" > ravensport.asc
+
+          gpgconf --kill all
+          rm -rf "$GNUPGHOME"
+          ls -l
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.key.outputs.present == 'true'
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: steps.key.outputs.present == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

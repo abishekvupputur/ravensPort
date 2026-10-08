@@ -2,15 +2,16 @@ name: Snap Store
 
 # Builds snap/snapcraft.yaml and uploads it to the Snap Store.
 #
-# A version tag publishes to edge, beside the Windows release that release.yml cuts from the same
-# tag. A manual run publishes to whichever channel is picked, which is how a build that has been
-# tried on edge is sent to stable -- or how one is sent at all without cutting a release.
+# A manual run publishes to whichever channel is picked, which is how a build that has been tried on
+# edge is sent to stable.
 #
-# Classic confinement: until the Store has approved the forum request for it, an upload is held for
-# manual review, and this workflow can report the upload as done while nothing is installable yet.
+# Classic confinement: until the Store has approved the forum request for it, every upload is
+# rejected with "confinement 'classic' not allowed". So this runs by hand only for now; tags publish
+# Linux through deb.yml instead. Put the tag trigger back once classic is granted:
+#
+#   push:
+#     tags: ["v*"]
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       channel:
@@ -56,7 +57,7 @@ jobs:
       # the props file, so a mismatch would upload a revision the Store labels with a version that
       # is not the release it came from.
       - name: Check the tag matches the version
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' # a manual run started from a tag
         run: |
           props="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -1)"
           if [ "${GITHUB_REF_NAME#v}" != "$props" ]; then

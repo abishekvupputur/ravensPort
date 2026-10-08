@@ -201,8 +201,8 @@ jobs:
       # above touches — and it is the only check on build-deb.sh, which is run by hand and would
       # otherwise break silently between releases.
       #
-      # Version 0.0.0 because this package exists to be thrown away. Nothing consumes it; the
-      # release still cuts Windows-only. See #23.
+      # Version 0.0.0 because this package exists to be thrown away. Nothing consumes it; the one
+      # that ships is built by deb.yml from the release tag.
       - name: Build the .deb
         run: packaging/build-deb.sh 0.0.0
 

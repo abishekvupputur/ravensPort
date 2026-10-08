@@ -70,15 +70,23 @@ Or take the installer from [Releases](../../releases), or the
 instructions, including building from source, are in
 [Installation](https://github.com/abishekvupputur/ravensPort/wiki/Installation).
 
-### Debian / Ubuntu <sub>experimental · upcoming in v5.0.0</sub>
+### Debian / Ubuntu <sub>experimental</sub>
 
-v5.0.0 moves the interface to Avalonia and adds a `.deb` for Debian and Ubuntu (x86-64). It is
-built from a checkout for now — there is no package on the Releases page yet:
+v5.0.0 moves the interface to Avalonia and adds a `.deb` for Debian and Ubuntu (x86-64). Install it
+from the RavensPort apt repository, and `apt upgrade` keeps it current:
 
 ```bash
-packaging/build-deb.sh
-sudo apt install ./packaging/ravensport_5.0.0_amd64.deb
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://abishekvupputur.github.io/ravensPort/apt/ravensport.asc \
+  | sudo tee /etc/apt/keyrings/ravensport.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/ravensport.asc] https://abishekvupputur.github.io/ravensPort/apt ./" \
+  | sudo tee /etc/apt/sources.list.d/ravensport.list
+sudo apt update
+sudo apt install ravensport
 ```
+
+Or take the `.deb` from [Releases](../../releases) and `sudo apt install ./ravensport_<version>_amd64.deb`,
+or build one from a checkout with `packaging/build-deb.sh`.
 
 It has had far less use than the Windows build, and a few things differ by necessity — the Proton
 Pass session key lives in the desktop keyring rather than behind Windows Hello, and `pass-cli` must
