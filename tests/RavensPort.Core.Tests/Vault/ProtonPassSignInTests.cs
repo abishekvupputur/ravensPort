@@ -261,15 +261,57 @@ public class ProtonPassSignInTests : IDisposable
     /// <summary>
     /// RavensPort used to fetch and unpack pass-cli itself, and the setup page offered to open
     /// Proton's download page. Both are gone: the app installs no software and links to none, so
-    /// the only thing left to get right is telling the user what to run. The winget command has to
-    /// survive here, and a URL must not creep back in.
+    /// the only thing left to get right is telling the user what to run. The platform's command has
+    /// to survive here -- winget on Windows, the install into /usr/local/bin elsewhere -- and a URL
+    /// must not creep back in.
     /// </summary>
     [Fact]
     public void AMissingCli_IsReportedWithTheCommandThatInstallsIt()
     {
-        Assert.Contains("winget install Proton.PassCLI", ProtonPassAuthenticator.CliMissing);
+        Assert.Contains(
+            OperatingSystem.IsWindows()
+                ? "winget install Proton.PassCLI"
+                : "sudo install -m 0755 pass-cli /usr/local/bin/pass-cli",
+            ProtonPassAuthenticator.CliMissing);
         Assert.DoesNotContain(
             "http", ProtonPassAuthenticator.CliMissing, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The guarantee differs by platform, so the words must: telling a Linux user a Windows Hello
+    /// gesture protects their key promises something the keyring does not deliver.
+    /// </summary>
+    [Fact]
+    public void SessionKeyWording_NamesOnlyTheMechanismInUse()
+    {
+        string[] all =
+        [
+            SessionKeyWording.UnlockButton, SessionKeyWording.UnlockHeading,
+            SessionKeyWording.UnlockExplanation, SessionKeyWording.FirstSignInHeading,
+            SessionKeyWording.FirstSignInExplanation, SessionKeyWording.WhatIsKeptHere,
+            SessionKeyWording.ConnectPrompt, SessionKeyWording.NotUnlocked,
+            SessionKeyWording.SignInCancelled, SessionKeyWording.Required,
+            SessionKeyWording.NoKeySaved, SessionKeyWording.SessionKeyUnreachable,
+            SessionKeyWording.ConsentSecurityCheck, SessionKeyWording.ConsentWaiting,
+            SessionKeyWording.ConsentFailed("x"),
+            ProtonPassAuthenticator.CliMissing,
+            VaultLockGuidance.InstallCommand(VaultBackendKind.ProtonPass),
+            VaultLockGuidance.StayingUnlockedSteps(VaultBackendKind.ProtonPass),
+        ];
+
+        foreach (var text in all)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.DoesNotContain("keyring", text, StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                Assert.DoesNotContain("Hello", text);
+                Assert.DoesNotContain("Credential Manager", text);
+                Assert.DoesNotContain("winget", text);
+            }
+        }
     }
 
     // ---- Helpers -----------------------------------------------------------------------------
