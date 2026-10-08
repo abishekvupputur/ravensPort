@@ -142,4 +142,21 @@ public class SetupViewModelUnitTests
         Assert.True(fixture.Gate.IsSingleUse);
         Assert.False(setup.IsBusy);
     }
+
+    /// <summary>
+    /// Declining the unlock leaves the page saying what to do next, in this platform's words — the
+    /// keyring on Linux, Windows Hello on Windows — and touches nothing.
+    /// </summary>
+    [Fact]
+    public async Task DecliningTheUnlockSaysHowToTryAgain()
+    {
+        using var fixture = new ViewModelFixture(consent: false);
+
+        var setup = fixture.Get<SetupViewModel>();
+
+        await setup.UnlockWithHelloCommand.ExecuteAsync(null);
+
+        Assert.Equal(SessionKeyWording.Current.NotUnlocked, setup.StatusMessage);
+        Assert.False(setup.IsBusy);
+    }
 }

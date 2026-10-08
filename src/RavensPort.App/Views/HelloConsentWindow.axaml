@@ -1,6 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vault="using:RavensPort.Core.Vault"
         x:Class="RavensPort.Views.HelloConsentWindow"
         Title="RavensPort access request"
         SizeToContent="Height" Width="480" CanResize="False"
@@ -114,8 +113,7 @@
 
                     <Border Background="#272218" BorderBrush="#5A461B" BorderThickness="1" Padding="11,9"
                             CornerRadius="6" Margin="0,0,0,16">
-                        <TextBlock Classes="hint"
-                                   Text="{x:Static vault:SessionKeyWording.ConsentSecurityCheck}"/>
+                        <TextBlock x:Name="SecurityCheckText" Classes="hint"/>
                     </Border>
 
                     <TextBlock x:Name="StatusText" Classes="hint"

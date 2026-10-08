@@ -24,28 +24,17 @@ public static class VaultLockGuidance
     };
 
     /// <summary>
-    /// The one line that installs the CLI. On Linux there is no package to name, so it is the line
-    /// that puts a downloaded pass-cli where <see cref="UnixExecutableProvenance"/> will accept it --
-    /// a system location only an administrator can write to. Anywhere else, ~/.local/bin included,
-    /// the probe refuses to run it.
+    /// The one line that installs the CLI — winget on Windows, and on Linux the line that puts a
+    /// downloaded pass-cli where the provenance check will accept it. See <see cref="SessionKeyWording"/>.
     /// </summary>
-    public static string InstallCommand(VaultBackendKind kind) => kind switch
-    {
-        VaultBackendKind.OnePassword => "",
-        VaultBackendKind.ProtonPass when OperatingSystem.IsWindows() => "winget install Proton.PassCLI",
-        VaultBackendKind.ProtonPass => "sudo install -m 0755 pass-cli /usr/local/bin/pass-cli",
-        _ => "",
-    };
+    public static string InstallCommand(VaultBackendKind kind) =>
+        kind == VaultBackendKind.ProtonPass ? SessionKeyWording.Current.PassCliInstallCommand : "";
 
     /// <summary>The sentence above that command on the setup page.</summary>
-    public static string InstallHint(VaultBackendKind kind) => kind switch
-    {
-        VaultBackendKind.ProtonPass when !OperatingSystem.IsWindows() =>
-            "Download pass-cli from Proton, then install it where only an administrator can write — "
-            + "RavensPort will not run a copy from your home folder. Then choose Check again.",
-
-        _ => "Install it, then choose Check again.",
-    };
+    public static string InstallHint(VaultBackendKind kind) =>
+        kind == VaultBackendKind.ProtonPass
+            ? SessionKeyWording.Current.PassCliInstallHint
+            : "Install it, then choose Check again.";
 
     // There is deliberately no download URL here, and no in-app installer anywhere. Getting a
     // password manager onto this PC is the user's own business: the line above is the whole of
@@ -95,29 +84,8 @@ public static class VaultLockGuidance
             + "There is also a way to keep the vault reachable without leaving anything unlocked — "
             + "see \"Running unattended\" on the Settings tab.",
 
-        // The keyring version of the paragraph below. No gesture to describe, and no "cannot read it
-        // without you" either: an unlocked keyring hands the key to anything running as this user.
-        VaultBackendKind.ProtonPass when !OperatingSystem.IsWindows() =>
-            "RavensPort's Proton Pass session lasts until you sign out. The key that opens it lives "
-            + "in your desktop's keyring, so after RavensPort restarts the session reopens from there "
-            + "— usually without a prompt, because the keyring is unlocked when you log in. The key is "
-            + "never displayed to you.\n\n"
-            + "If the key is lost — a reset keyring, or a new computer — the setup page offers to "
-            + "discard the locked session so you can sign in again. That costs you the session and "
-            + "nothing else: every credential, route and key lives in Proton Pass, not in RavensPort.\n\n"
-            + "There is also a way to keep the vault reachable with no session at all — "
-            + "see \"Running unattended\" on the Settings tab.",
-
-        VaultBackendKind.ProtonPass =>
-            "RavensPort's Proton Pass session lasts until you sign out. The key that opens it lives "
-            + "in Windows Credential Manager, encrypted so that only a Windows Hello gesture on this "
-            + "PC can decrypt it — so after RavensPort restarts, a gesture unlocks the session. The "
-            + "key is never displayed to you, and RavensPort cannot read it without you.\n\n"
-            + "If a gesture stops working — Hello reset, or a new PC — the setup page offers to "
-            + "discard the locked session so you can sign in again. That costs you the session and "
-            + "nothing else: every credential, route and key lives in Proton Pass, not in RavensPort.\n\n"
-            + "There is also a way to keep the vault reachable with no gesture at all — "
-            + "see \"Running unattended\" on the Settings tab.",
+        // Per platform, because the guarantee is: a Hello gesture on Windows, the keyring elsewhere.
+        VaultBackendKind.ProtonPass => SessionKeyWording.Current.StayingUnlocked,
 
         _ => "",
     };

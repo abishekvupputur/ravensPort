@@ -277,41 +277,105 @@ public class ProtonPassSignInTests : IDisposable
             "http", ProtonPassAuthenticator.CliMissing, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ---- Saying the mechanism actually in use ------------------------------------------------
+
+    /// <summary>Every string in a wording set, ConsentFailed included, so none is missed.</summary>
+    private static IEnumerable<string> AllText(SessionKeyWording wording) =>
+        typeof(SessionKeyWording).GetProperties()
+            .Where(p => p.PropertyType == typeof(string))
+            .Select(p => (string)p.GetValue(wording)!)
+            .Append(wording.ConsentFailed("x"));
+
     /// <summary>
     /// The guarantee differs by platform, so the words must: telling a Linux user a Windows Hello
-    /// gesture protects their key promises something the keyring does not deliver.
+    /// gesture protects their key promises something the keyring does not deliver. Both sets are
+    /// checked on every platform, since both are built on every platform.
     /// </summary>
     [Fact]
-    public void SessionKeyWording_NamesOnlyTheMechanismInUse()
+    public void TheKeyringWording_NeverMentionsHelloOrWindows()
     {
-        string[] all =
-        [
-            SessionKeyWording.UnlockButton, SessionKeyWording.UnlockHeading,
-            SessionKeyWording.UnlockExplanation, SessionKeyWording.FirstSignInHeading,
-            SessionKeyWording.FirstSignInExplanation, SessionKeyWording.WhatIsKeptHere,
-            SessionKeyWording.ConnectPrompt, SessionKeyWording.NotUnlocked,
-            SessionKeyWording.SignInCancelled, SessionKeyWording.Required,
-            SessionKeyWording.NoKeySaved, SessionKeyWording.SessionKeyUnreachable,
-            SessionKeyWording.ConsentSecurityCheck, SessionKeyWording.ConsentWaiting,
-            SessionKeyWording.ConsentFailed("x"),
-            ProtonPassAuthenticator.CliMissing,
-            VaultLockGuidance.InstallCommand(VaultBackendKind.ProtonPass),
-            VaultLockGuidance.StayingUnlockedSteps(VaultBackendKind.ProtonPass),
-        ];
-
-        foreach (var text in all)
+        foreach (var text in AllText(SessionKeyWording.Keyring))
         {
-            if (OperatingSystem.IsWindows())
-            {
-                Assert.DoesNotContain("keyring", text, StringComparison.OrdinalIgnoreCase);
-            }
-            else
-            {
-                Assert.DoesNotContain("Hello", text);
-                Assert.DoesNotContain("Credential Manager", text);
-                Assert.DoesNotContain("winget", text);
-            }
+            Assert.False(string.IsNullOrWhiteSpace(text));
+            Assert.DoesNotContain("Hello", text);
+            Assert.DoesNotContain("Credential Manager", text);
+            Assert.DoesNotContain("winget", text);
         }
+    }
+
+    [Fact]
+    public void TheWindowsWording_NeverMentionsTheKeyring()
+    {
+        foreach (var text in AllText(SessionKeyWording.WindowsHello))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(text));
+            Assert.DoesNotContain("keyring", text, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void TheWordingInUse_IsThisPlatforms()
+    {
+        var expected = OperatingSystem.IsWindows() ? SessionKeyWording.WindowsHello : SessionKeyWording.Keyring;
+
+        Assert.Same(expected, SessionKeyWording.Current);
+        Assert.Equal(expected.Required, ProtonPassAuthenticator.HelloRequired);
+        Assert.Equal(expected.PassCliInstallCommand, VaultLockGuidance.InstallCommand(VaultBackendKind.ProtonPass));
+        Assert.Equal(expected.PassCliInstallHint, VaultLockGuidance.InstallHint(VaultBackendKind.ProtonPass));
+        Assert.Equal(expected.StayingUnlocked, VaultLockGuidance.StayingUnlockedSteps(VaultBackendKind.ProtonPass));
+        Assert.Equal("Windows Hello failed: boom", SessionKeyWording.WindowsHello.ConsentFailed("boom"));
+    }
+
+    /// <summary>1Password has no one-line install, so its card gets the generic sentence and no box.</summary>
+    [Fact]
+    public void OnePassword_HasNoInstallCommand_AndTheGenericHint()
+    {
+        Assert.Equal("", VaultLockGuidance.InstallCommand(VaultBackendKind.OnePassword));
+        Assert.Equal("Install it, then choose Check again.", VaultLockGuidance.InstallHint(VaultBackendKind.OnePassword));
+    }
+
+    // ---- The session key, against a protector that does what it is told ----------------------
+
+    [Fact]
+    public async Task UnlockWithHello_SaysThereIsNoKey_WhenNothingIsStored()
+    {
+        var authenticator = NewAuthenticator(new FakeCliRunner(), NewSession(unlocked: false), new MemoryProtector());
+
+        var ex = await Assert.ThrowsAsync<VaultCliException>(authenticator.UnlockWithHelloAsync);
+
+        Assert.Equal(SessionKeyWording.Current.NoKeySaved, ex.Message);
+    }
+
+    /// <summary>
+    /// A new key would make the session already on disk unopenable, so preparing one is refused
+    /// outright rather than warned about.
+    /// </summary>
+    [Fact]
+    public async Task PrepareSessionKey_Refuses_WhenASessionItCannotOpenIsOnDisk()
+    {
+        var session = NewSession(unlocked: false);
+        Directory.CreateDirectory(Path.Combine(SessionDir, ".session"));
+        var protector = new MemoryProtector();
+
+        var ex = await Assert.ThrowsAsync<VaultCliException>(
+            NewAuthenticator(new FakeCliRunner(), session, protector).PrepareSessionKeyAsync);
+
+        Assert.Equal(SessionKeyWording.Current.SessionKeyUnreachable, ex.Message);
+        Assert.Empty(protector.Stored);
+    }
+
+    [Fact]
+    public async Task PrepareSessionKey_StoresTheKeyBeforeUnlocking_AndSaysWhere()
+    {
+        var session = NewSession(unlocked: false);
+        var protector = new MemoryProtector();
+        var log = Log();
+
+        await NewAuthenticator(new FakeCliRunner(), session, protector, log).PrepareSessionKeyAsync();
+
+        Assert.True(session.HasKey);
+        Assert.True(protector.HasProtectedKey(SessionDir));
+        Assert.Contains(log.GetRecent(100), line => line.Contains(SessionKeyWording.Current.KeyCreatedLog));
     }
 
     // ---- Helpers -----------------------------------------------------------------------------
@@ -320,9 +384,13 @@ public class ProtonPassSignInTests : IDisposable
     /// An authenticator wired to fakes. Both providers are pointed at paths that do not exist, so
     /// nothing here can reach a real password manager on the machine running the tests.
     /// </summary>
-    private ProtonPassAuthenticator NewAuthenticator(ICliRunner runner, ProtonPassSession session)
+    private ProtonPassAuthenticator NewAuthenticator(
+        ICliRunner runner,
+        ProtonPassSession session,
+        ISessionKeyProtector? protector = null,
+        ActivityLog? log = null)
     {
-        var log = Log();
+        log ??= Log();
         var missing = Path.Combine(_root, "not-installed.exe");
 
         var gate = new VaultGateService(
@@ -330,7 +398,35 @@ public class ProtonPassSignInTests : IDisposable
             new ProtonPassVaultProvider(runner, log, missing, session),
             log);
 
-        return new ProtonPassAuthenticator(runner, session, new HelloKeyProtector(log), gate, log);
+        return new ProtonPassAuthenticator(runner, session, protector ?? new HelloKeyProtector(log), gate, log);
+    }
+
+    /// <summary>
+    /// Keeps keys in a dictionary: the platform stores are tested on their own, and what these tests
+    /// ask is what the authenticator does with the answers.
+    /// </summary>
+    private sealed class MemoryProtector : ISessionKeyProtector
+    {
+        public Dictionary<string, string> Stored { get; } = [];
+
+        public Task<bool> IsAvailableAsync() => Task.FromResult(true);
+
+        public bool HasProtectedKey(string sessionDirectory) => Stored.ContainsKey(sessionDirectory);
+
+        public Task ProtectAsync(string sessionDirectory, string sessionKey)
+        {
+            Stored[sessionDirectory] = sessionKey;
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> UnprotectAsync(string sessionDirectory) =>
+            Task.FromResult(Stored.TryGetValue(sessionDirectory, out var key) ? key : null);
+
+        public Task ForgetAsync(string sessionDirectory)
+        {
+            Stored.Remove(sessionDirectory);
+            return Task.CompletedTask;
+        }
     }
 
     private ProtonPassVaultProvider NewProvider(ICliRunner runner, ProtonPassSession session)

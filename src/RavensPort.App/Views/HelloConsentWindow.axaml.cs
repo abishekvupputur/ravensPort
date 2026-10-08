@@ -30,6 +30,10 @@ public partial class HelloConsentWindow : Window
     {
         InitializeComponent();
 
+        // The standing rule, in this platform's words: "use Windows Hello" means nothing on a
+        // machine where the key lives in the keyring and no gesture is ever asked for.
+        SecurityCheckText.Text = SessionKeyWording.Current.ConsentSecurityCheck;
+
         // Re-anchored on every size change, not just once at load. The window is SizeToContent, so
         // it grows when Report() reveals the status line — anchored only at startup, the bottom
         // edge would then push down past the taskbar and take the buttons with it.
@@ -240,7 +244,7 @@ public partial class HelloConsentWindow : Window
         ConfirmButton.IsEnabled = false;
         CancelButton.IsEnabled = false;
 
-        Report(SessionKeyWording.ConsentWaiting, isError: false);
+        Report(SessionKeyWording.Current.ConsentWaiting, isError: false);
 
         try
         {
@@ -258,7 +262,7 @@ public partial class HelloConsentWindow : Window
         }
         catch (Exception ex)
         {
-            Report(SessionKeyWording.ConsentFailed(ex.Message), isError: true);
+            Report(SessionKeyWording.Current.ConsentFailed(ex.Message), isError: true);
         }
         finally
         {

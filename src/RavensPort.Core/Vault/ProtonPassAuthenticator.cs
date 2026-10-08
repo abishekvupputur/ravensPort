@@ -45,7 +45,7 @@ public sealed partial class ProtonPassAuthenticator(
     {
         if (await helloKeyProtector.UnprotectAsync(session.SessionDirectory) is not { Length: > 0 } key)
         {
-            throw new VaultCliException(SessionKeyWording.NoKeySaved);
+            throw new VaultCliException(SessionKeyWording.Current.NoKeySaved);
         }
 
         session.Unlock(key);
@@ -86,7 +86,7 @@ public sealed partial class ProtonPassAuthenticator(
         // confirmation dialog here would be one careless click away from the same damage.
         if (session.HasSessionOnDisk)
         {
-            throw new VaultCliException(SessionKeyWording.SessionKeyUnreachable);
+            throw new VaultCliException(SessionKeyWording.Current.SessionKeyUnreachable);
         }
 
         if (!await helloKeyProtector.IsAvailableAsync())
@@ -104,14 +104,14 @@ public sealed partial class ProtonPassAuthenticator(
         // app holds a key it could sign in with but could never recover.
         session.Unlock(key);
 
-        activityLog.Log(SessionKeyWording.KeyCreatedLog);
+        activityLog.Log(SessionKeyWording.Current.KeyCreatedLog);
     }
 
     /// <summary>
     /// What the setup page says when in-app sign-in cannot be offered. Public so the message is
     /// written once — the rule it states is a security decision, not UI copy.
     /// </summary>
-    public static string HelloRequired => SessionKeyWording.Required;
+    public static string HelloRequired => SessionKeyWording.Current.Required;
 
     /// <summary>
     /// What to say when the machine has no pass-cli. RavensPort installs nothing.
@@ -120,12 +120,7 @@ public sealed partial class ProtonPassAuthenticator(
     /// anywhere else is refused by <see cref="UnixExecutableProvenance"/>, and someone told only
     /// "install it" would reasonably drop it in ~/.local/bin and be refused with no idea why.
     /// </summary>
-    public static string CliMissing { get; } = OperatingSystem.IsWindows()
-        ? "The Proton Pass CLI is not installed on this PC. Install it with "
-          + "\"winget install Proton.PassCLI\", then choose Check again."
-        : "The Proton Pass CLI is not installed on this computer. Download pass-cli from Proton and "
-          + "install it with \"" + VaultLockGuidance.InstallCommand(VaultBackendKind.ProtonPass) + "\", "
-          + "then choose Check again.";
+    public static string CliMissing => SessionKeyWording.Current.PassCliMissing;
 
     /// <summary>
     /// Finds the pass-cli the user installed. Throws if there is none.
