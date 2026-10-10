@@ -74,7 +74,7 @@ so all of the following are redistributed with the binary even though none appea
 
 | Component | Version | License |
 |---|---|---|
-| Go runtime and standard library | 1.26.6 | BSD-3-Clause |
+| Go runtime and standard library | 1.26.9 | BSD-3-Clause |
 | github.com/1password/onepassword-sdk-go | v0.4.1 | MIT |
 | github.com/extism/go-sdk | v1.7.1 | BSD-3-Clause |
 | github.com/tetratelabs/wazero | v1.11.0 | Apache-2.0 |
@@ -83,7 +83,7 @@ so all of the following are redistributed with the binary even though none appea
 | github.com/gobwas/glob | v0.2.3 | MIT |
 | github.com/ianlancetaylor/demangle | v0.0.0-20251118225945-96ee0021ea0f | BSD-3-Clause |
 | go.opentelemetry.io/proto/otlp | v1.9.0 | Apache-2.0 |
-| golang.org/x/sys | v0.45.0 | BSD-3-Clause |
+| golang.org/x/sys | v0.48.0 | BSD-3-Clause |
 | google.golang.org/protobuf | v1.36.11 | BSD-3-Clause |
 
 The table is shorter than `go.mod`'s require block, and deliberately so. Everything else in there
