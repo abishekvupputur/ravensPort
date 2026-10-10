@@ -93,6 +93,27 @@ public class ReadOnlyVaultTests : IDisposable
         Assert.IsNotType<ReadOnlyConfigVault>(gate.Selected);
     }
 
+    [Fact]
+    public async Task EverythingThatOnlyReadsIsPassedThrough()
+    {
+        var inner = new InMemoryVault().WithLoadWarning("heads up");
+        var vault = new ReadOnlyConfigVault(inner);
+
+        await vault.LoadAsync();
+
+        Assert.Same(inner, vault.Inner);
+        Assert.Equal(inner.Kind, vault.Kind);
+        Assert.Equal(inner.VaultName, vault.VaultName);
+        Assert.Equal("heads up", vault.LastLoadWarning);
+        Assert.Empty(vault.LastLoadRemovals);
+        Assert.Equal((await inner.ProbeAsync()).Availability, (await vault.ProbeAsync()).Availability);
+        Assert.Equal((await inner.ProbeAsync(VaultProbeDepth.Discovery)).Availability,
+            (await vault.ProbeAsync(VaultProbeDepth.Discovery)).Availability);
+        Assert.Equal((await inner.ListLiveItemsAsync()).Count, (await vault.ListLiveItemsAsync()).Count);
+
+        vault.Forget();
+    }
+
     private static bool IsWrite(IReadOnlyList<string> args) =>
         args.Count >= 2 && args[0] is "item" or "vault" && args[1] is "create" or "edit" or "delete";
 

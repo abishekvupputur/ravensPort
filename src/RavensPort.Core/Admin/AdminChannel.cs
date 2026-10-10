@@ -77,8 +77,16 @@ public static class AdminChannel
             },
         };
 
+        // Plain HTTP framing over the socket above. No network is involved — ConnectCallback ignores
+        // the host and dials the socket file — so TLS would protect nothing that the socket's
+        // owner-only permissions do not already.
+        //
         // Sign-in waits on a person, so no client-side timeout; the server bounds its own flows.
-        return new HttpClient(handler) { BaseAddress = new Uri("http://ravensport/admin/"), Timeout = Timeout.InfiniteTimeSpan };
+        return new HttpClient(handler)
+        {
+            BaseAddress = new UriBuilder(Uri.UriSchemeHttp, "ravensport") { Path = "/admin/" }.Uri,
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
     }
 
     /// <summary>

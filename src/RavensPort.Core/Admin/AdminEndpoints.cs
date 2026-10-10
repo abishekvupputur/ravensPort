@@ -144,10 +144,11 @@ internal static class AdminEndpoints
                 return Bad($"A credential named '{record.Name}' already exists. Names must be unique so commands can address them.");
             }
 
-            if (CredentialValidation.Validate(record) is { } error) return Bad(error);
-            if (record.Kind == CredentialKind.OAuth2 && CredentialValidation.ValidateOAuth2(record) is { } oauthError)
+            // Both, always: which checks apply is decided inside the validators from the kind, never
+            // by a branch here that a request could steer around.
+            if ((CredentialValidation.Validate(record) ?? CredentialValidation.ValidateProviderFields(record)) is { } error)
             {
-                return Bad(oauthError);
+                return Bad(error);
             }
 
             await c.Cache.MutateAsync(s => s.Credentials.Add(record));
@@ -210,20 +211,22 @@ internal static class AdminEndpoints
         if (FindCredential(c.Store, key) is not { } cred)
         {
             http.Response.StatusCode = StatusCodes.Status404NotFound;
-            await http.Response.WriteAsJsonAsync(new AdminMessage($"No credential '{key}'."), AdminChannel.JsonOptions);
+            await http.Response.WriteAsJsonAsync(
+                new AdminMessage($"No credential '{key}'."), AdminChannel.JsonOptions, http.RequestAborted);
             return;
         }
 
         http.Response.ContentType = "text/plain; charset=utf-8";
         var writeLock = new SemaphoreSlim(1, 1);
+        var aborted = http.RequestAborted;
 
         async Task Line(string text)
         {
-            await writeLock.WaitAsync();
+            await writeLock.WaitAsync(aborted);
             try
             {
-                await http.Response.WriteAsync(text + "\n");
-                await http.Response.Body.FlushAsync();
+                await http.Response.WriteAsync(text + "\n", aborted);
+                await http.Response.Body.FlushAsync(aborted);
             }
             finally
             {
@@ -267,7 +270,9 @@ internal static class AdminEndpoints
 
             if (outcome.Success)
             {
-                await c.Cache.SaveAsync();
+                // Not cancellable on purpose: the token has been issued, and a terminal closed a
+                // moment too soon must not cost the person the sign-in they just completed.
+                await c.Cache.SaveAsync(CancellationToken.None);
                 c.Changed();
                 c.Log?.Log($"CONNECT '{cred.Name}' OK via the admin API — token stored");
                 await Line($"DONE: '{cred.Name}' connected."
@@ -618,10 +623,12 @@ internal static class AdminEndpoints
             if (FindFunnel(c.Store, key) is not { } funnel) return NotFound("funnel", key);
             if (FindSource(c.Store, source) is not { } record) return NotFound("source", source);
 
-            var removed = 0;
-            await c.Cache.MutateAsync(_ => removed = funnel.Sources.RemoveAll(l => l.SourceId == record.Id));
-            if (removed == 0) return Bad($"'{record.Alias}' is not in funnel '{funnel.Name}'.");
+            if (!funnel.Sources.Any(l => l.SourceId == record.Id))
+            {
+                return Bad($"'{record.Alias}' is not in funnel '{funnel.Name}'.");
+            }
 
+            await c.Cache.MutateAsync(_ => funnel.Sources.RemoveAll(l => l.SourceId == record.Id));
             c.Changed();
             return Ok(c, $"Removed '{record.Alias}' from funnel '{funnel.Name}'.");
         });

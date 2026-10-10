@@ -117,6 +117,25 @@ public class ProtonPassPatSessionTests : IDisposable
         Assert.False(Directory.Exists(session.SessionDirectory));
     }
 
+    [Fact]
+    public async Task LoggingInWithNoTokenIsRefusedWithoutRunningAnything()
+    {
+        var runner = new FakeCliRunner();
+        var (pat, _, _) = NewSession(runner);
+
+        await Assert.ThrowsAsync<VaultCliException>(() => pat.LoginAsync());
+        Assert.Empty(runner.Invocations);
+    }
+
+    [Fact]
+    public void TheDefaultSessionDirectoryIsPerProcessAndNotTheDesktops()
+    {
+        var directory = ProtonPassPatSession.DefaultDirectory();
+
+        Assert.EndsWith($"pass-pat-{Environment.ProcessId}", directory);
+        Assert.NotEqual(ProtonPassSession.DefaultDirectory, directory);
+    }
+
     private (ProtonPassPatSession Pat, ProtonPassSession Session, ActivityLog Log) NewSession(FakeCliRunner runner)
     {
         var log = new ActivityLog(Path.Combine(_root, "logs"));
