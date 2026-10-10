@@ -197,6 +197,18 @@ public static class CredentialValidation
     }
 
     /// <summary>
+    /// The browser-login fields the Credentials tab checks before saving: a client id, and https
+    /// endpoints — they receive the client secret and the refresh token, and a mistyped "http://"
+    /// would put both on the wire in cleartext.
+    /// </summary>
+    public static string? ValidateOAuth2(CredentialRecord credential) =>
+        string.IsNullOrWhiteSpace(credential.ClientId)
+            ? "Client ID is required."
+            : UrlValidation.ValidateEndpoint(credential.Authority, "Authority")
+              ?? UrlValidation.ValidateEndpoint(credential.AuthorizationEndpoint, "Authorization endpoint")
+              ?? UrlValidation.ValidateEndpoint(credential.TokenEndpoint, "Token endpoint");
+
+    /// <summary>
     /// Validates everything about a credential that does not depend on which provider it is:
     /// its name, the secret it holds, where that secret goes, and the optional test endpoint.
     /// </summary>

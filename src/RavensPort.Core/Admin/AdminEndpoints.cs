@@ -145,6 +145,10 @@ internal static class AdminEndpoints
             }
 
             if (CredentialValidation.Validate(record) is { } error) return Bad(error);
+            if (record.Kind == CredentialKind.OAuth2 && CredentialValidation.ValidateOAuth2(record) is { } oauthError)
+            {
+                return Bad(oauthError);
+            }
 
             await c.Cache.MutateAsync(s => s.Credentials.Add(record));
             c.Changed();
