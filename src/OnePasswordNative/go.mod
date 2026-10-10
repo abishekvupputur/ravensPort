@@ -1,6 +1,6 @@
 module onepasswordnative
 
-go 1.26.6
+go 1.26.9
 
 require github.com/1password/onepassword-sdk-go v0.4.1
 
@@ -69,6 +69,16 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // go-logr to v1.4.4 with it; as before, only the two named at the top are pins, and the rest are
 // carried entries that are not linked either.
 //
+// And x/net once more, for five advisories against its http2 package: CVE-2026-78669 (a flood of
+// SETTINGS frames), CVE-2026-78663 (a flow-control limit bypassed by refunding the same window
+// twice), CVE-2026-97032 (concurrent use of the HPACK encoder), CVE-2026-78659 (GO-2026-6603, memory
+// exhaustion through Trailer headers) and CVE-2026-78660 (GO-2026-6610). All fixed in v0.60.0, and as
+// every time before, raising it carried x/crypto to v0.57.0, x/sys to v0.48.0 and x/text to v0.42.0
+// on its own. The standard library carries its own copy of that http2 code, and that copy *is*
+// linked -- the SDK makes HTTPS requests through net/http -- which is why the `go` line above moved
+// to 1.26.9 at the same time: govulncheck traced GO-2026-6603, -6611, -6612, -6613 and -6617 from
+// onepassword.init into net/http, all fixed in go1.26.9.
+//
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
 // unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
 // statement about the package existing, not about a release. No version of x/crypto clears it, and
@@ -79,7 +89,7 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.58.0 golang.org/x/text@v0.41.0 google.golang.org/grpc@v1.83.2 go.opentelemetry.io/otel/sdk@v1.45.0 golang.org/x/crypto@v0.56.0 go.opentelemetry.io/otel@v1.45.0
+//	go get golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 google.golang.org/grpc@v1.83.2 go.opentelemetry.io/otel/sdk@v1.45.0 golang.org/x/crypto@v0.57.0 go.opentelemetry.io/otel@v1.45.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -96,10 +106,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
