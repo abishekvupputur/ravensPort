@@ -95,6 +95,21 @@ Pass session key lives in the desktop keyring rather than behind Windows Hello, 
 be installed in a system location. Everything is on the wiki:
 **[Linux build](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build)**.
 
+### Headless <sub>experimental</sub>
+
+`ravensport-cli` runs RavensPort on a machine with no display, and manages a running RavensPort
+from the command line. It is in the `.deb`, and attached to each release for Windows.
+
+```bash
+systemd-creds cat op-token | ravensport-cli serve           # 1Password service account token on stdin
+ravensport-cli serve --backend protonpass < pass-pat        # Proton Pass personal access token, read-only
+ravensport-cli routes add /github --upstream github-api --credential github
+```
+
+The vault secret is read from stdin only. A Proton Pass session is read-only: changes are kept in
+memory and discarded on exit. Everything else — systemd units, signing in without a browser, every
+command — is in **[docs/HEADLESS.md](docs/HEADLESS.md)**.
+
 ## Documentation
 
 Everything lives in the **[wiki](https://github.com/abishekvupputur/ravensPort/wiki)**.
