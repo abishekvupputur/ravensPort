@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Builds a .deb for Debian and Ubuntu, x86_64.
+# Builds a .deb for Debian and Ubuntu, for the architecture of the machine it runs on: amd64, or
+# arm64 (64-bit Raspberry Pi OS among them). Native rather than cross-compiled, because the
+# 1Password native below needs cgo, and cgo for another architecture needs a cross C toolchain.
 #
 # Self-contained, like the Windows installer: the .NET runtime travels inside the package. That is
 # the same reasoning as win-x64-selfcontained.pubxml — a user installing a proxy should not also be
@@ -15,14 +17,19 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-$(grep -oP '(?<=<Version>)[^<]+' "$REPO_ROOT/Directory.Build.props" | head -1)}"
-ARCH="amd64"
+ARCH="$(dpkg --print-architecture)"
+case "$ARCH" in
+    amd64) RID="linux-x64" ;;
+    arm64) RID="linux-arm64" ;;
+    *) echo "error: no self-contained .NET runtime for $ARCH; build on amd64 or arm64." >&2; exit 1 ;;
+esac
 STAGE="$REPO_ROOT/packaging/deb/ravensport_${VERSION}_${ARCH}"
 OUT="$REPO_ROOT/packaging/ravensport_${VERSION}_${ARCH}.deb"
 
 echo "==> RavensPort ${VERSION} (${ARCH})"
 
 # --- keep the lock files as they were ------------------------------------------------------------
-# A restore with a runtime identifier (the publish below) writes a linux-x64 section into every
+# A restore with a runtime identifier (the publish below) writes a linux-x64 or linux-arm64 section into every
 # packages.lock.json it touches, and CI's locked-mode restore then rejects the files with NU1004:
 # the projects have no runtime identifier, the lock files do. Building a package must not dirty the
 # tree, so they are put back on the way out — including when the build fails.
@@ -62,9 +69,9 @@ fi
 #
 # The framework is named explicitly. The project multi-targets, and publish refuses to guess
 # (NETSDK1129) — the same reason the Windows workflows pass -p:TargetFramework beside their profile.
-echo "==> Publishing linux-x64"
+echo "==> Publishing $RID"
 dotnet publish "$REPO_ROOT/src/RavensPort.App/RavensPort.App.csproj" \
-    -f net10.0 -c Release -r linux-x64 --self-contained true \
+    -f net10.0 -c Release -r "$RID" --self-contained true \
     -p:PublishSingleFile=false -p:PublishTrimmed=false \
     -o "$STAGE/opt/ravensport"
 

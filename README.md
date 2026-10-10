@@ -42,7 +42,7 @@
 A tray-resident desktop app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
 flow and token lifecycle for upstream APIs and MCP servers, then lets you compose those servers
 into filtered, per-agent MCP endpoints. Windows is the supported platform; an experimental
-Debian/Ubuntu build is coming in v5.0.0.
+Debian/Ubuntu build is available for x86-64 and arm64.
 
 [![MCP Funnel tab](media/mcpFunnelScreen.png)](media/mcpFunnelScreen.png)
 
@@ -72,8 +72,10 @@ instructions, including building from source, are in
 
 ### Debian / Ubuntu <sub>experimental</sub>
 
-v5.0.0 moves the interface to Avalonia and adds a `.deb` for Debian and Ubuntu (x86-64). Install it
-from the RavensPort apt repository, and `apt upgrade` keeps it current:
+v5.0.0 moved the interface to Avalonia and added a `.deb` for Debian and Ubuntu. Since v5.0.1 there
+is one for x86-64 (`amd64`) and one for 64-bit Arm (`arm64`, which covers a Raspberry Pi running
+64-bit Raspberry Pi OS), and apt picks the right one. Install it from the RavensPort apt
+repository, and `apt upgrade` keeps it current:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -85,13 +87,13 @@ sudo apt update
 sudo apt install ravensport
 ```
 
-Or take the `.deb` from [Releases](../../releases) and `sudo apt install ./ravensport_<version>_amd64.deb`,
+Or take the `.deb` from [Releases](../../releases) and `sudo apt install ./ravensport_<version>_<amd64|arm64>.deb`,
 or build one from a checkout with `packaging/build-deb.sh`.
 
 It has had far less use than the Windows build, and a few things differ by necessity — the Proton
 Pass session key lives in the desktop keyring rather than behind Windows Hello, and `pass-cli` must
 be installed in a system location. Everything is on the wiki:
-**[Linux build (Upcoming in v5.0.0)](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build-%28Upcoming-in-v5.0.0%29)**.
+**[Linux build](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build)**.
 
 ## Documentation
 
@@ -110,7 +112,7 @@ Everything lives in the **[wiki](https://github.com/abishekvupputur/ravensPort/w
 | [Logs](https://github.com/abishekvupputur/ravensPort/wiki/Logs) | What is recorded, what is redacted, and where it goes |
 | [Troubleshooting](https://github.com/abishekvupputur/ravensPort/wiki/Troubleshooting) | When something does not work |
 | [Building](https://github.com/abishekvupputur/ravensPort/wiki/Building) | Building, testing and packaging from source |
-| [Linux build (Upcoming in v5.0.0)](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build-%28Upcoming-in-v5.0.0%29) | Building, installing and running the experimental Debian/Ubuntu package |
+| [Linux build](https://github.com/abishekvupputur/ravensPort/wiki/Linux-build) | Building, installing and running the experimental Debian/Ubuntu package |
 
 Manifests ready to use are in [`templates/api-mcp/`](templates/api-mcp/), and the format is
 documented in [AUTHORING.md](templates/api-mcp/AUTHORING.md).

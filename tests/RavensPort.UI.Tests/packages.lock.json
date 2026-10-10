@@ -537,8 +537,8 @@
           "Avalonia.Controls.DataGrid": "[12.1.2, )",
           "Avalonia.Desktop": "[12.1.1, )",
           "Avalonia.Themes.Fluent": "[12.1.1, )",
-          "RavensPort.Core": "[5.0.0, )",
-          "RavensPort.UI": "[5.0.0, )"
+          "RavensPort.Core": "[5.0.1, )",
+          "RavensPort.UI": "[5.0.1, )"
         }
       },
       "ravensport.core": {
@@ -556,7 +556,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.0, )",
-          "RavensPort.Core": "[5.0.0, )"
+          "RavensPort.Core": "[5.0.1, )"
         }
       }
     },
@@ -1084,8 +1084,8 @@
           "Avalonia.Controls.DataGrid": "[12.1.2, )",
           "Avalonia.Desktop": "[12.1.1, )",
           "Avalonia.Themes.Fluent": "[12.1.1, )",
-          "RavensPort.Core": "[5.0.0, )",
-          "RavensPort.UI": "[5.0.0, )"
+          "RavensPort.Core": "[5.0.1, )",
+          "RavensPort.UI": "[5.0.1, )"
         }
       },
       "ravensport.core": {
@@ -1103,7 +1103,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.0, )",
-          "RavensPort.Core": "[5.0.0, )"
+          "RavensPort.Core": "[5.0.1, )"
         }
       }
     }
