@@ -459,6 +459,11 @@
         "resolved": "7.0.0",
         "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
       },
+      "System.CommandLine": {
+        "type": "Transitive",
+        "resolved": "2.0.12",
+        "contentHash": "FpW672e6qqrTd1EfKqsvUtFZaJWlTlszUR1o8tdakXhkzKbnEZVndtpfd4K3fUPCFcIs9UmcswMyYGJP1zp/rg=="
+      },
       "System.IO.Hashing": {
         "type": "Transitive",
         "resolved": "8.0.0",
@@ -538,7 +543,8 @@
           "Avalonia.Desktop": "[12.1.1, )",
           "Avalonia.Themes.Fluent": "[12.1.1, )",
           "RavensPort.Core": "[5.0.1, )",
-          "RavensPort.UI": "[5.0.1, )"
+          "RavensPort.UI": "[5.0.1, )",
+          "System.CommandLine": "[2.0.12, )"
         }
       },
       "ravensport.core": {
@@ -1006,6 +1012,11 @@
         "resolved": "7.0.0",
         "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
       },
+      "System.CommandLine": {
+        "type": "Transitive",
+        "resolved": "2.0.12",
+        "contentHash": "FpW672e6qqrTd1EfKqsvUtFZaJWlTlszUR1o8tdakXhkzKbnEZVndtpfd4K3fUPCFcIs9UmcswMyYGJP1zp/rg=="
+      },
       "System.IO.Hashing": {
         "type": "Transitive",
         "resolved": "8.0.0",
@@ -1085,7 +1096,8 @@
           "Avalonia.Desktop": "[12.1.1, )",
           "Avalonia.Themes.Fluent": "[12.1.1, )",
           "RavensPort.Core": "[5.0.1, )",
-          "RavensPort.UI": "[5.0.1, )"
+          "RavensPort.UI": "[5.0.1, )",
+          "System.CommandLine": "[2.0.12, )"
         }
       },
       "ravensport.core": {

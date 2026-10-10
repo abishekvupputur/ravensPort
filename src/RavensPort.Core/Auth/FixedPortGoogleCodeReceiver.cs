@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Requests;
@@ -58,7 +57,7 @@ internal sealed class FixedPortGoogleCodeReceiver(int port) : ICodeReceiver
             }
 
             // The parsed form rather than the string, so what is launched is what was checked.
-            Process.Start(new ProcessStartInfo(authorizationUri.AbsoluteUri) { UseShellExecute = true });
+            BrowserLauncher.Open(authorizationUri);
 
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(taskCancellationToken, timeoutCts.Token);

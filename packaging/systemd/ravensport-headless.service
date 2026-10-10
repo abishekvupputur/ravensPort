@@ -1,0 +1,38 @@
+# RavensPort, headless, reading its configuration from 1Password with a service account token.
+#
+# An example, not enabled by the package. To use it:
+#
+#   sudo useradd --system --create-home --home-dir /var/lib/ravensport ravensport
+#   sudo install -d -m 0700 /etc/ravensport
+#   # paste the token, then Ctrl+D; it is encrypted with this machine's TPM or host key
+#   sudo systemd-creds encrypt --name=op-token - /etc/ravensport/op-token.cred
+#   sudo cp /usr/share/doc/ravensport/examples/ravensport-headless.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ravensport-headless
+#
+# The token only ever reaches RavensPort on stdin, decrypted by systemd into a private credentials
+# directory for the life of the service — never on a command line, never in the environment.
+#
+# Manage it as the service user, through the admin socket:
+#
+#   sudo -u ravensport ravensport --socket /run/ravensport/admin.sock status
+
+[Unit]
+Description=RavensPort headless proxy (1Password)
+Documentation=https://github.com/abishekvupputur/ravensPort/wiki/Headless
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=ravensport
+LoadCredentialEncrypted=op-token:/etc/ravensport/op-token.cred
+RuntimeDirectory=ravensport
+RuntimeDirectoryMode=0700
+Environment=RAVENSPORT_ADMIN_SOCKET=/run/ravensport/admin.sock
+ExecStart=/bin/sh -c 'exec /usr/bin/ravensport serve --vault RavensPort < "%d/op-token"'
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using IdentityModel.OidcClient.Browser;
 using RavensPort.Core.Models;
@@ -73,7 +72,7 @@ public sealed class LoopbackBrowser : IBrowser
 
             // The parsed form, not options.StartUrl: what gets launched is then exactly what the
             // scheme check inspected.
-            Process.Start(new ProcessStartInfo(startUri.AbsoluteUri) { UseShellExecute = true });
+            BrowserLauncher.Open(startUri);
 
             var timeout = options.Timeout > TimeSpan.Zero ? options.Timeout : TimeSpan.FromMinutes(5);
             using var timeoutCts = new CancellationTokenSource(timeout);

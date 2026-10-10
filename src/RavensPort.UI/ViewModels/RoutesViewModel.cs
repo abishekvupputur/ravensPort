@@ -295,12 +295,9 @@ public sealed partial class RoutesViewModel : ObservableObject
         // Two routes with the same prefix produce two ASP.NET endpoints with identical match
         // patterns. That loads without complaint but throws AmbiguousMatchException on every
         // request, so the whole prefix 500s. Reject it here rather than let it fail silently.
-        var normalized = prefix.TrimEnd('/');
-        if (_configStoreCache.Current.Routes.Any(r =>
-                string.Equals(r.PathPrefix.TrimEnd('/'), normalized, StringComparison.OrdinalIgnoreCase)))
+        if (ConfigStoreEdits.ValidateUniquePrefix(_configStoreCache.Current, prefix) is { } duplicateError)
         {
-            StatusMessage = $"A route for '{prefix}' already exists. Path prefixes must be unique — " +
-                            "duplicates make every request to that prefix fail with an ambiguous-match error.";
+            StatusMessage = duplicateError;
             return;
         }
 

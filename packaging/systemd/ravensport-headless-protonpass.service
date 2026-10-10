@@ -1,0 +1,37 @@
+# RavensPort, headless and READ-ONLY, reading its configuration from Proton Pass with a personal
+# access token. Edits made while it runs are kept in memory and discarded when it stops; set the
+# configuration up from the desktop app or a 1Password `serve` instead.
+#
+# An example, not enabled by the package. pass-cli must be installed in a system location
+# (/usr/bin or /usr/local/bin). To use it:
+#
+#   pass-cli pat create --name ravensport-server        # then grant it the RavensPort vault
+#   sudo useradd --system --create-home --home-dir /var/lib/ravensport ravensport
+#   sudo install -d -m 0700 /etc/ravensport
+#   sudo systemd-creds encrypt --name=pass-pat - /etc/ravensport/pass-pat.cred
+#   sudo cp /usr/share/doc/ravensport/examples/ravensport-headless-protonpass.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ravensport-headless-protonpass
+#
+# Personal access token sessions last two hours; RavensPort logs in again with the token, which it
+# holds in memory for that, before the next vault read.
+
+[Unit]
+Description=RavensPort headless proxy (Proton Pass, read-only)
+Documentation=https://github.com/abishekvupputur/ravensPort/wiki/Headless
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=ravensport
+LoadCredentialEncrypted=pass-pat:/etc/ravensport/pass-pat.cred
+RuntimeDirectory=ravensport
+RuntimeDirectoryMode=0700
+Environment=RAVENSPORT_ADMIN_SOCKET=/run/ravensport/admin.sock
+ExecStart=/bin/sh -c 'exec /usr/bin/ravensport serve --backend protonpass < "%d/pass-pat"'
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

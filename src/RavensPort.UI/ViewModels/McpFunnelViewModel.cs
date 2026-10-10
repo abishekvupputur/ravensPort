@@ -236,7 +236,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         // Default the alias from the name so the common case needs no thought, but keep it a
         // real field: it ends up in every tool name the agent sees.
         var alias = string.IsNullOrWhiteSpace(NewSourceAlias)
-            ? new string([.. NewSourceName.Trim().ToLowerInvariant().Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')])
+            ? ConfigStoreEdits.DefaultAlias(NewSourceName)
             : NewSourceAlias.Trim();
 
         if (McpFunnelValidation.ValidateAlias(alias, store.McpSources) is { } aliasError)
@@ -284,17 +284,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
 
         var affected = _configStoreCache.Current.McpFunnels.Count(f => f.Sources.Any(s => s.SourceId == item.Source.Id));
 
-        await PersistAsync(store =>
-        {
-            store.McpSources.RemoveAll(s => s.Id == item.Source.Id);
-
-            // Otherwise the funnel keeps a membership row pointing at nothing, which serves fine
-            // but leaves the UI unable to show or remove it.
-            foreach (var funnel in store.McpFunnels)
-            {
-                funnel.Sources.RemoveAll(s => s.SourceId == item.Source.Id);
-            }
-        }, affected == 0
+        await PersistAsync(store => ConfigStoreEdits.RemoveSource(store, item.Source.Id), affected == 0
             ? $"Source '{item.Name}' deleted."
             : $"Source '{item.Name}' deleted and removed from {affected} funnel(s).");
 
@@ -425,18 +415,7 @@ public sealed partial class McpFunnelViewModel : ObservableObject
     }
 
     /// <summary>Turns a display name into something usable as a path segment.</summary>
-    private static string Slugify(string name)
-    {
-        var slug = new string([.. name.Trim().ToLowerInvariant()
-            .Select(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) ? c : '-')]);
-
-        while (slug.Contains("--", StringComparison.Ordinal))
-        {
-            slug = slug.Replace("--", "-", StringComparison.Ordinal);
-        }
-
-        return slug.Trim('-');
-    }
+    private static string Slugify(string name) => ConfigStoreEdits.Slugify(name);
 
     // ---- persistence -----------------------------------------------------------------------
 

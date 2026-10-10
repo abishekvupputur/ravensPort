@@ -98,6 +98,10 @@ DisableDirPage=auto
 RestartIfNeededByRun=no
 CloseApplications=no
 
+; Broadcasts the environment change when the PATH task edits it, so a terminal opened afterwards
+; finds RavensPort without signing out first.
+ChangesEnvironment=yes
+
 ; A running copy is detected in [Code] rather than by AppMutex here. Both notice the same mutex and
 ; both refuse to overwrite a locked exe; the difference is the exit code. AppMutex checks before
 ; Setup has properly started and aborts with 1, "Setup failed to initialize" -- which is also what a
@@ -113,6 +117,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; The same exe is also RavensPort's command line -- `RavensPort serve`, `RavensPort status` -- and
+; this is what lets a terminal find it. Off by default, and per-user like everything else here: it
+; edits HKCU\Environment, and the uninstaller takes the entry out again. See [Code].
+Name: "addtopath"; Description: "Add RavensPort to PATH, to use it from a terminal"; GroupDescription: "Command line:"; Flags: unchecked
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -169,6 +177,74 @@ begin
     Result := RunningMessage
   else
     Result := '';
+end;
+
+// The PATH task. Appended to the user's own Path rather than written as a [Registry] value, because
+// a value-level write would replace whatever else is in it, and a value-level uninsdeletevalue would
+// delete all of it on uninstall. Compared case-insensitively and without a trailing backslash, so a
+// reinstall does not add a second copy.
+const
+  EnvironmentKey = 'Environment';
+
+function PathContains(Paths, Dir: String): Boolean;
+begin
+  Result := Pos(';' + Uppercase(RemoveBackslashUnlessRoot(Dir)) + ';',
+                ';' + Uppercase(Paths) + ';') > 0;
+end;
+
+procedure AddToPath(Dir: String);
+var
+  Paths: String;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths) then
+    Paths := '';
+  if PathContains(Paths, Dir) then
+    Exit;
+  if (Paths <> '') and (Copy(Paths, Length(Paths), 1) <> ';') then
+    Paths := Paths + ';';
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths + RemoveBackslashUnlessRoot(Dir));
+end;
+
+procedure RemoveFromPath(Dir: String);
+var
+  Paths, Entry, Kept: String;
+  Separator: Integer;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths) then
+    Exit;
+  if not PathContains(Paths, Dir) then
+    Exit;
+
+  Kept := '';
+  Paths := Paths + ';';
+  while Paths <> '' do
+  begin
+    Separator := Pos(';', Paths);
+    Entry := Copy(Paths, 1, Separator - 1);
+    Delete(Paths, 1, Separator);
+    if (Entry <> '') and (Uppercase(RemoveBackslashUnlessRoot(Entry)) <> Uppercase(RemoveBackslashUnlessRoot(Dir))) then
+    begin
+      if Kept <> '' then
+        Kept := Kept + ';';
+      Kept := Kept + Entry;
+    end;
+  end;
+
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Kept);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('addtopath') then
+    AddToPath(ExpandConstant('{app}'));
+end;
+
+// Unconditional: the uninstaller does not know which tasks were chosen, and removing an entry that
+// is not there is a no-op.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RemoveFromPath(ExpandConstant('{app}'));
 end;
 
 // AppMutex covered the uninstaller too, so this keeps that half. Suppressible, because a silent

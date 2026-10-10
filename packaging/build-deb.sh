@@ -77,7 +77,7 @@ dotnet publish "$REPO_ROOT/src/RavensPort.App/RavensPort.App.csproj" \
 
 rm -rf "$STAGE/DEBIAN" "$STAGE/usr"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/share/applications" \
-         "$STAGE/usr/share/icons/hicolor/256x256/apps"
+         "$STAGE/usr/share/icons/hicolor/256x256/apps" "$STAGE/usr/share/doc/ravensport/examples"
 
 INSTALLED_KB=$(du -sk "$STAGE/opt" | cut -f1)
 
@@ -102,6 +102,9 @@ Description: Local OAuth2 reverse proxy and MCP funnel
  Pass. On Linux the Proton Pass session key is kept in the system keyring, which
  encrypts it at rest but is unlocked for the whole login session — weaker than
  the Windows build, which binds it to a Windows Hello gesture.
+ .
+ The same binary runs headless: `ravensport serve` serves the proxy on a machine
+ with no display, and `ravensport <command>` manages a running RavensPort.
 EOF
 
 # A wrapper rather than a symlink: the apphost resolves its runtime relative to its own directory,
@@ -111,6 +114,11 @@ cat > "$STAGE/usr/bin/ravensport" <<'EOF'
 exec /opt/ravensport/RavensPort "$@"
 EOF
 chmod 0755 "$STAGE/usr/bin/ravensport"
+
+# Examples for running headless under systemd. Shipped, never enabled: each needs a service user
+# and an encrypted token that only the administrator can provide.
+cp "$REPO_ROOT"/packaging/systemd/*.service "$STAGE/usr/share/doc/ravensport/examples/"
+chmod 0644 "$STAGE"/usr/share/doc/ravensport/examples/*.service
 
 cat > "$STAGE/usr/share/applications/ravensport.desktop" <<EOF
 [Desktop Entry]

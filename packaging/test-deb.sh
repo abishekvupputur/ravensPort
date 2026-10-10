@@ -64,6 +64,8 @@ ok "dpkg reports ravensport $VERSION"
 for path in /opt/ravensport/RavensPort \
             /opt/ravensport/libonepassword.so \
             /usr/bin/ravensport \
+            /usr/share/doc/ravensport/examples/ravensport-headless.service \
+            /usr/share/doc/ravensport/examples/ravensport-headless-protonpass.service \
             /usr/share/applications/ravensport.desktop \
             /usr/share/icons/hicolor/256x256/apps/ravensport.png; do
     [ -e "$path" ] || fail "$path was not installed"
@@ -71,6 +73,25 @@ for path in /opt/ravensport/RavensPort \
 done
 [ "$(command -v ravensport)" = /usr/bin/ravensport ] || fail "ravensport is not the one on PATH"
 ok "ravensport on PATH is /usr/bin/ravensport"
+
+# --- headless -----------------------------------------------------------------------------------
+# The same binary, given a command, with no display at all — the machine headless use exists for.
+# It must not start Avalonia or need X, and with nothing running it must say so with its own exit
+# code rather than crash.
+echo "==> Headless commands"
+# Not compared with the package version: a pull-request build packages as 0.0.0 while the binary
+# carries the assembly version, so the two legitimately differ. Running at all is the check.
+cli_version="$(env -u DISPLAY -u WAYLAND_DISPLAY ravensport --version)" \
+    || fail "ravensport --version failed without a display"
+[ -n "$cli_version" ] || fail "ravensport --version printed nothing"
+ok "ravensport --version runs without a display ($cli_version)"
+
+set +e
+env -u DISPLAY -u WAYLAND_DISPLAY ravensport status > "$ARTIFACTS/cli-status.log" 2>&1
+status_exit=$?
+set -e
+[ "$status_exit" -eq 3 ] || fail "ravensport status exited $status_exit with nothing running, expected 3 (see $ARTIFACTS/cli-status.log)"
+ok "ravensport status reports that nothing is running"
 
 # --- launch -------------------------------------------------------------------------------------
 # Through the PATH wrapper, as the desktop entry and a terminal both reach it. dbus-run-session

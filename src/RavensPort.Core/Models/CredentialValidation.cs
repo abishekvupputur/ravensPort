@@ -197,6 +197,24 @@ public static class CredentialValidation
     }
 
     /// <summary>
+    /// The provider fields <see cref="Validate"/> deliberately leaves alone, for callers that have
+    /// no form of their own to check them — the headless admin API. Today that is the browser
+    /// login: a client id, and https endpoints, as the Credentials tab requires before saving —
+    /// they receive the client secret and the refresh token, and a mistyped "http://" would put
+    /// both on the wire in cleartext. Every other kind's provider fields are already covered by
+    /// <see cref="Validate"/>, so it answers null for them.
+    /// </summary>
+    public static string? ValidateProviderFields(CredentialRecord credential) => credential.Kind switch
+    {
+        CredentialKind.OAuth2 => string.IsNullOrWhiteSpace(credential.ClientId)
+            ? "Client ID is required."
+            : UrlValidation.ValidateEndpoint(credential.Authority, "Authority")
+              ?? UrlValidation.ValidateEndpoint(credential.AuthorizationEndpoint, "Authorization endpoint")
+              ?? UrlValidation.ValidateEndpoint(credential.TokenEndpoint, "Token endpoint"),
+        _ => null,
+    };
+
+    /// <summary>
     /// Validates everything about a credential that does not depend on which provider it is:
     /// its name, the secret it holds, where that secret goes, and the optional test endpoint.
     /// </summary>

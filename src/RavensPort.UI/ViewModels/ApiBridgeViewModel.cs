@@ -549,27 +549,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
         var affected = _configStoreCache.Current.McpSources
             .Count(s => s.Kind == McpSourceKind.ApiBridge && s.BridgeId == item.Bridge.Id);
 
-        await PersistAsync(store =>
-        {
-            store.McpApiBridges.RemoveAll(b => b.Id == item.Bridge.Id);
-
-            // A source left pointing at it would name a bridge that no longer exists and fail on
-            // every connect, with nothing in the funnel tab able to explain why.
-            var stranded = store.McpSources
-                .Where(s => s.Kind == McpSourceKind.ApiBridge && s.BridgeId == item.Bridge.Id)
-                .Select(s => s.Id)
-                .ToList();
-
-            foreach (var sourceId in stranded)
-            {
-                store.McpSources.RemoveAll(s => s.Id == sourceId);
-
-                foreach (var funnel in store.McpFunnels)
-                {
-                    funnel.Sources.RemoveAll(link => link.SourceId == sourceId);
-                }
-            }
-        }, affected == 0
+        await PersistAsync(store => ConfigStoreEdits.RemoveBridge(store, item.Bridge.Id), affected == 0
             ? $"API bridge '{item.Name}' deleted — clients pointed at {McpApiBridgeEndpoints.BasePath}/{item.Slug} will now get 404."
             : $"API bridge '{item.Name}' deleted, along with {affected} funnel source(s) that exposed it.");
 
@@ -584,18 +564,7 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
     }
 
     /// <summary>Turns a display name into something usable as a path segment.</summary>
-    private static string Slugify(string name)
-    {
-        var slug = new string([.. name.Trim().ToLowerInvariant()
-            .Select(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) ? c : '-')]);
-
-        while (slug.Contains("--", StringComparison.Ordinal))
-        {
-            slug = slug.Replace("--", "-", StringComparison.Ordinal);
-        }
-
-        return slug.Trim('-');
-    }
+    private static string Slugify(string name) => ConfigStoreEdits.Slugify(name);
 
     // ---- persistence -----------------------------------------------------------------------------
 
