@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using RavensPort.Core.Admin;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Proxy;
@@ -49,6 +50,7 @@ public partial class App : Application
 
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private WebApplication? _webApp;
+    private AdminServer? _adminServer;
     private ITrayIcon? _trayIconManager;
     private EventWaitHandle? _showWindowSignal;
 
@@ -298,6 +300,8 @@ public partial class App : Application
 
         ListenForSecondLaunch(mainWindow);
 
+        _ = StartAdminServerAsync();
+
         // Shown, not left hidden. The app used to start straight to the tray with no window at all,
         // which meant a launch produced no visible response — and once the tray menu's Exit had been
         // used there was no way back in short of finding the exe on disk. That is also what the
@@ -353,6 +357,32 @@ public partial class App : Application
         };
 
         listener.Start();
+    }
+
+    /// <summary>
+    /// Answers <c>ravensport-cli</c> while the window is open, so commands reach this process
+    /// rather than opening the vault a second time — two writers on one vault corrupt its index.
+    ///
+    /// Edits made from the terminal rebuild the tabs, the same way dropping records does: their
+    /// rows hold references to records the edit may have replaced. Losing the socket costs the
+    /// CLI and nothing else, so a failure is logged and the app carries on.
+    /// </summary>
+    private async Task StartAdminServerAsync()
+    {
+        if (_webApp is not { } app) return;
+
+        try
+        {
+            _adminServer = await Task.Run(() => AdminServer.StartAsync(
+                app.Services,
+                "RavensPort desktop app",
+                changesApplied: () => Dispatcher.UIThread.Post(() =>
+                    app.Services.GetRequiredService<AppTabs>().ReloadAll())));
+        }
+        catch (Exception ex)
+        {
+            LogError("Could not open the admin socket for ravensport-cli", ex);
+        }
     }
 
     /// <summary>
@@ -741,6 +771,8 @@ public partial class App : Application
                 // Wait() with its own timeout is the actual backstop.
                 Task.Run(async () =>
                 {
+                    if (_adminServer is not null) await _adminServer.DisposeAsync();
+
                     // Belt and braces. The tray's Exit already flushed and asked, but this method
                     // also runs on paths that never went through it — a Windows shutdown, or the
                     // startup-failure path — and it ends in Environment.Exit, which would
