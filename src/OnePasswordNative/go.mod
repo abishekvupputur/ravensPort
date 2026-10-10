@@ -1,6 +1,14 @@
 module onepasswordnative
 
-go 1.26.9
+// The language minimum, and the toolchain that builds what ships, are two different numbers on
+// purpose. setup-go installs the toolchain line in every workflow, so CI and the release are built
+// with go1.26.9 and its net/http fixes (see the x/net note below). The go line stays at what the
+// code needs: a go line of 1.26.9 made every tool running an older Go refuse the file outright --
+// Snyk's own import of this module failed with "Failed to process go.mod" -- while a toolchain line
+// is only a preference that an older Go with GOTOOLCHAIN=local reads past.
+go 1.26.6
+
+toolchain go1.26.9
 
 require github.com/1password/onepassword-sdk-go v0.4.1
 
@@ -75,8 +83,8 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // exhaustion through Trailer headers) and CVE-2026-78660 (GO-2026-6610). All fixed in v0.60.0, and as
 // every time before, raising it carried x/crypto to v0.57.0, x/sys to v0.48.0 and x/text to v0.42.0
 // on its own. The standard library carries its own copy of that http2 code, and that copy *is*
-// linked -- the SDK makes HTTPS requests through net/http -- which is why the `go` line above moved
-// to 1.26.9 at the same time: govulncheck traced GO-2026-6603, -6611, -6612, -6613 and -6617 from
+// linked -- the SDK makes HTTPS requests through net/http -- which is why the toolchain line above moved
+// to go1.26.9 at the same time: govulncheck traced GO-2026-6603, -6611, -6612, -6613 and -6617 from
 // onepassword.init into net/http, all fixed in go1.26.9.
 //
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
