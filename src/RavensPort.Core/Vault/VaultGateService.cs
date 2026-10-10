@@ -70,6 +70,14 @@ public sealed class VaultGateService
     /// <summary>True while the app is running on memory alone — see <see cref="UseSingleUse"/>.</summary>
     public bool IsSingleUse => _singleUse is not null;
 
+    /// <summary>
+    /// True while the selected backend was connected read-only — see
+    /// <see cref="ConnectAsync(VaultBackendKind, bool, CancellationToken)"/>. Nothing is written to
+    /// the vault while it holds: <see cref="Selected"/> is wrapped in <see cref="ReadOnlyConfigVault"/>
+    /// and <see cref="VaultSyncQueue"/> keeps every change in memory.
+    /// </summary>
+    public bool IsReadOnly { get; private set; }
+
     /// <summary>The active backend. Never null so callers do not have to special-case startup.</summary>
     public IConfigVault Selected { get; private set; } = new InMemoryVault();
 
@@ -171,9 +179,22 @@ public sealed class VaultGateService
     /// for the one manager named, at the moment the user asked for it. Probing the other one as
     /// well would put back exactly the second prompt this exists to remove.
     /// </summary>
-    public async Task<VaultGateStatus> ConnectAsync(VaultBackendKind kind, CancellationToken ct = default)
+    public Task<VaultGateStatus> ConnectAsync(VaultBackendKind kind, CancellationToken ct = default) =>
+        ConnectAsync(kind, readOnly: false, ct);
+
+    /// <summary>
+    /// As <see cref="ConnectAsync(VaultBackendKind, CancellationToken)"/>, optionally read-only.
+    ///
+    /// Read-only is for the headless host. The configuration is read from the vault, and from then
+    /// on everything — edits, key rotations, refreshed tokens — lives in memory and is discarded on
+    /// exit. Nothing is adopted either: a vault that has lost its Config stamp stays unready rather
+    /// than being stamped, because stamping is a write.
+    /// </summary>
+    public async Task<VaultGateStatus> ConnectAsync(VaultBackendKind kind, bool readOnly, CancellationToken ct = default)
     {
         EnsureBackendIsInThisBuild(kind);
+
+        IsReadOnly = readOnly;
 
         // The attempt is the un-disconnecting, whether or not it succeeds. Leaving the flag set
         // would have the next evaluation report the user as still disconnected while they are
@@ -194,7 +215,7 @@ public sealed class VaultGateService
         // read its configuration perfectly, reported itself connected, and refused every save with
         // "RavensPort is not connected to a 1Password vault. Choose a vault on the setup page
         // first", pointing the user at a page they had just successfully used.
-        if (probe.IsReady) AllowWrites(kind);
+        if (probe.IsReady && !readOnly) AllowWrites(kind);
 
         // Only this manager's entry moves. The other card keeps whatever the last probe said about
         // it — which is the honest answer, since nothing has asked it anything since.
@@ -220,6 +241,7 @@ public sealed class VaultGateService
     public VaultGateStatus UseSingleUse()
     {
         _disconnected = false;
+        IsReadOnly = false;
 
         // A fresh instance every time, so an earlier single-use session cannot leak into a later
         // one through a store that was never emptied.
@@ -240,6 +262,7 @@ public sealed class VaultGateService
 
         _disconnected = false;
         _singleUse = null;
+        IsReadOnly = false;
 
         var status = Status with { Selected = kind, NeedsAChoice = false };
         return Publish(status, kind);
@@ -308,6 +331,7 @@ public sealed class VaultGateService
         var wasSingleUse = _singleUse is not null;
 
         _disconnected = true;
+        IsReadOnly = false;
 
         // The single-use store is dropped, not emptied. It was the only copy of that configuration
         // — there is no vault behind it — so releasing the object is what makes the purge complete
@@ -405,7 +429,13 @@ public sealed class VaultGateService
     {
         Status = status;
 
-        if (selected is { } kind && kind != VaultBackendKind.None) Selected = ProviderFor(kind);
+        if (selected is { } kind && kind != VaultBackendKind.None)
+        {
+            var provider = ProviderFor(kind);
+            Selected = IsReadOnly && kind is not VaultBackendKind.SingleUse
+                ? new ReadOnlyConfigVault(provider)
+                : provider;
+        }
 
         StatusChanged?.Invoke(status);
         return status;

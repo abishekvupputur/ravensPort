@@ -28,6 +28,12 @@ public enum VaultSyncState
     /// retrying one is the app asking the same question every few seconds.
     /// </summary>
     AuthorizationDeclined,
+
+    /// <summary>
+    /// The backend was connected read-only, so nothing is ever written. Changes stay in memory and
+    /// are discarded on exit — the headless Proton Pass session.
+    /// </summary>
+    ReadOnly,
 }
 
 /// <summary>
@@ -129,8 +135,9 @@ public sealed class VaultSyncQueue : BackgroundService
             {
                 // Wait for something to do, but wake anyway on the retry timer so a lock that
                 // lifts with no further edits still gets the pending change written. Not after a
-                // decline: there the timer's only effect would be to ask again.
-                var idleFor = _configStoreCache.HasPendingChanges && !_authorizationDeclined
+                // decline: there the timer's only effect would be to ask again. Nor while read-only,
+                // where nothing is ever going to be written however long this waits.
+                var idleFor = _configStoreCache.HasPendingChanges && !_authorizationDeclined && !_gate.IsReadOnly
                     ? _retryDelay
                     : Timeout.InfiniteTimeSpan;
                 await _wakeUp.WaitAsync(idleFor, stoppingToken).ConfigureAwait(false);
@@ -165,6 +172,10 @@ public sealed class VaultSyncQueue : BackgroundService
         // Before the gate has settled on a backend there is nowhere to write. Staying pending is
         // right — the changes are still good, and the first thing a chosen backend does is drain.
         if (_gate.Status.Selected == VaultBackendKind.None) return false;
+
+        // Read-only is a promise made to the user, not a state to recover from: pending stays
+        // pending, nothing is attempted, and so nothing fails or gets logged as failing.
+        if (IsReadOnly()) return false;
 
         // Never write a store into a vault it did not come from. Choosing another password manager,
         // or another vault in the same one, repoints the gate immediately — and until the reload
@@ -263,6 +274,7 @@ public sealed class VaultSyncQueue : BackgroundService
     private async Task<bool> WriteAsync(bool rewriteEverything, TimeSpan timeout)
     {
         if (_gate.Status.Selected == VaultBackendKind.None) return false;
+        if (IsReadOnly()) return false;
 
         // Both entry points are a button on the Settings tab, so this is the user asking. Same
         // reasoning as FlushAsync.
@@ -443,6 +455,14 @@ public sealed class VaultSyncQueue : BackgroundService
             $"VAULT {VaultLockGuidance.DisplayName(_gate.Status.Selected)} is locked — "
             + "changes are being kept in memory and will be saved when it is unlocked. "
             + "They are lost if RavensPort exits first.");
+    }
+
+    private bool IsReadOnly()
+    {
+        if (!_gate.IsReadOnly) return false;
+
+        SetState(VaultSyncState.ReadOnly);
+        return true;
     }
 
     private void Backoff() =>
