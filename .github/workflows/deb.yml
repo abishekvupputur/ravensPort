@@ -6,17 +6,24 @@ name: Debian package
 #
 # A version tag runs it beside release.yml. A manual run takes a tag that already exists, which is
 # how a release cut before this workflow existed gets its package -- or how one is republished.
+# It can also take a ref to build from instead of the tag, for a tag whose commit cannot build its
+# package (v5.0.1 was tagged with Directory.Build.props still at 5.0.0); the version check below
+# still has to pass against that ref.
 #
-# The repository is flat (`deb <url> ./`) and holds only the latest package: each deploy replaces
-# the whole Pages site, so it never grows, and older versions stay downloadable from Releases.
+# The repository is flat (`deb <url> ./`) and holds only the latest version, one package per
+# architecture: each deploy replaces the whole Pages site, so it never grows, and older versions
+# stay downloadable from Releases.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build and publish (e.g. v5.0.0)
+        description: Existing release tag to build and publish (e.g. v5.0.1)
         required: true
+      ref:
+        description: Branch, tag or commit to build from, if not the tag itself
+        required: false
 
 # Third-party actions are pinned to commit SHAs, for the reason given at the top of release.yml.
 permissions:
@@ -30,21 +37,27 @@ concurrency:
 jobs:
   # The Linux half of pr.yml's build-and-test-linux, ending in the package that ships. release.yml's
   # tests run on Windows, so they say nothing about this build.
+  #
+  # Once per architecture, each on a runner of that architecture: build-deb.sh builds for the machine
+  # it runs on, because the 1Password native needs cgo. arm64 is what a 64-bit Raspberry Pi installs.
   deb:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write # OIDC token used to sign the build provenance attestation
       attestations: write # publish that attestation to the repo
 
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      deb: ${{ steps.version.outputs.deb }}
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
           persist-credentials: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -79,7 +92,7 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$props" >> "$GITHUB_OUTPUT"
-          echo "deb=ravensport_${props}_amd64.deb" >> "$GITHUB_OUTPUT"
+          echo "deb=ravensport_${props}_${{ matrix.arch }}.deb" >> "$GITHUB_OUTPUT"
 
       - name: Restore
         run: dotnet restore RavensPort.slnx --locked-mode
@@ -140,13 +153,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: installed-deb
+          name: installed-deb-${{ matrix.arch }}
           path: ${{ runner.temp }}/test-deb
           if-no-files-found: ignore
 
       # The .deb counterpart of release.yml's attestation, so a downloaded package can be checked:
       #
-      #   gh attestation verify ravensport_<version>_amd64.deb --repo abishekvupputur/ravensPort
+      #   gh attestation verify ravensport_<version>_<arch>.deb --repo abishekvupputur/ravensPort
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -154,7 +167,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: deb
+          name: deb-${{ matrix.arch }}
           path: packaging/${{ steps.version.outputs.deb }}
           if-no-files-found: error
 
@@ -172,13 +185,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: deb
+          pattern: deb-*
+          merge-multiple: true
 
       - name: Wait for the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.deb.outputs.tag }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           for _ in $(seq 1 100); do
             gh release view "$TAG" >/dev/null 2>&1 && exit 0
@@ -189,13 +203,12 @@ jobs:
           exit 1
 
       # --clobber, so a manual rerun replaces the asset rather than failing on it.
-      - name: Upload the .deb
+      - name: Upload the .debs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.deb.outputs.tag }}
-          DEB: ${{ needs.deb.outputs.deb }}
-        run: gh release upload "$TAG" "$DEB" --clobber
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" ./*.deb --clobber
 
   # Publishes the apt repository. After release-asset, so apt never offers a version whose release
   # failed to appear.
@@ -236,7 +249,8 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.key.outputs.present == 'true'
         with:
-          name: deb
+          pattern: deb-*
+          merge-multiple: true
           path: site/apt
 
       # A flat repository: Packages and a signed Release beside the package, no dists/ tree. InRelease
@@ -257,7 +271,7 @@ jobs:
           apt-ftparchive \
             -o APT::FTPArchive::Release::Origin=RavensPort \
             -o APT::FTPArchive::Release::Label=RavensPort \
-            -o APT::FTPArchive::Release::Architectures=amd64 \
+            -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
             release . > Release
           gpg --batch --yes --local-user "$fpr" --clearsign -o InRelease Release
           gpg --batch --yes --local-user "$fpr" --armor --detach-sign -o Release.gpg Release
