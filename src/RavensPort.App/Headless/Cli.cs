@@ -1,19 +1,35 @@
 using System.CommandLine;
 using System.Reflection;
 
-namespace RavensPort.Cli;
-
-internal static class Program
-{
-    public static Task<int> Main(string[] args) => Cli.Build(Console.Out, Console.Error).Parse(args).InvokeAsync();
-}
+namespace RavensPort.Headless;
 
 /// <summary>
-/// The command tree. Built by a function rather than at the top of Main so the tests can parse
-/// arguments against exactly what ships, with their own output writers.
+/// RavensPort's command line: what the same executable does when it is given a command instead of
+/// being launched to open its window. Built by a function so the tests can parse arguments against
+/// exactly what ships, with their own output writers.
 /// </summary>
 internal static class Cli
 {
+    /// <summary>
+    /// Whether these arguments are for the command line rather than the window. Any argument at
+    /// all: the desktop app takes none, so there is nothing to mistake one for, and an unknown
+    /// command is better answered with the command line's own error than by opening a window.
+    /// </summary>
+    public static bool Wants(string[] args) => args.Length > 0;
+
+    public static int Run(string[] args)
+    {
+        WindowsConsole.Attach();
+
+        // The messages carry em dashes and the like; a Windows console defaults to a legacy code
+        // page that renders them as boxes. UTF-8 is what Windows Terminal, a pipe and Linux all expect.
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+        // Synchronously, on Main's thread: there is no UI and no synchronization context here,
+        // so nothing can try to post back onto a blocked thread.
+        return Build(Console.Out, Console.Error).Parse(args).InvokeAsync().GetAwaiter().GetResult();
+    }
+
     public static RootCommand Build(TextWriter output, TextWriter error)
     {
         var json = new Option<bool>("--json") { Description = "Print the server's JSON reply instead of a table.", Recursive = true };
@@ -24,8 +40,9 @@ internal static class Cli
         };
 
         var root = new RootCommand(
-            "RavensPort without a window. `serve` runs the proxy headless; every other command manages the "
-            + "RavensPort that is running — this one or the desktop app — through its admin socket.")
+            "RavensPort. With no command it opens the desktop app. `serve` runs the proxy headless, with no "
+            + "window; every other command manages the RavensPort that is running — the desktop app or "
+            + "`serve` — through its admin socket, using the vault it has already unlocked.")
         {
             json,
             socket,

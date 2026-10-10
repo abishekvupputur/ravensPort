@@ -8,8 +8,9 @@ using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
+using RavensPort.Headless;
 
-namespace RavensPort.Cli.Tests;
+namespace RavensPort.UI.Tests;
 
 /// <summary>
 /// The commands as they ship — the same command tree Main builds — run against a real admin socket
@@ -104,7 +105,7 @@ public sealed class CliTests : IAsyncLifetime
         var (code, _, error) = await RunAsync(["status", "--socket", Path.Combine(_root, "nobody.sock")], useDefaultSocket: false);
 
         Assert.Equal(ExitCodes.NotRunning, code);
-        Assert.Contains("ravensport-cli serve", error);
+        Assert.Contains("ravensport serve", error);
     }
 
     [Fact]

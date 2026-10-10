@@ -1,4 +1,4 @@
-namespace RavensPort.Cli;
+namespace RavensPort.Headless;
 
 /// <summary>Plain columns for a terminal. Nothing clever: padded text, a header, and a blank-state line.</summary>
 internal static class Table

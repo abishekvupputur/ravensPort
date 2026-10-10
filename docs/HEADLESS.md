@@ -1,14 +1,18 @@
 # Running RavensPort headless
 
-`ravensport-cli` is RavensPort without a window. It does two jobs:
+RavensPort is one program with two ways in. Launched plainly, it is the desktop app. Given a
+command, it is a command line, and no window is opened:
 
-- **`ravensport-cli serve`** runs the proxy, MCP funnels and API bridges on a machine with no
-  display: a server, a Raspberry Pi, a VM.
-- **Every other command** manages whichever RavensPort is running on this machine, whether that is
-  `serve` or the desktop app.
+- **`ravensport serve`** runs the proxy, MCP funnels and API bridges with no window, on a machine
+  with no display: a server, a Raspberry Pi, a VM.
+- **Every other command** manages whichever RavensPort is running on this machine, using the vault
+  it has already unlocked. That can be `serve`, or the desktop app you are sitting in front of:
+  unlock the vault in the window once, and `ravensport routes list` works from any terminal without
+  asking for anything again. Changes made from the terminal show up in the window straight away.
 
-It is in the Debian/Ubuntu package (`/usr/bin/ravensport-cli`) and is attached to every release
-for Windows as `ravensport-cli-<version>-win-x64.exe`.
+On Linux it is `/usr/bin/ravensport`, from the Debian/Ubuntu package. On Windows it is
+`RavensPort.exe` from the installer; tick **Add RavensPort to PATH** during setup to run it from any
+terminal (the command is not case-sensitive there).
 
 ## Where the configuration comes from
 
@@ -27,9 +31,9 @@ history) and never read from an environment variable. It is not written anywhere
 ### Proton Pass is read-only
 
 A Proton Pass session reads the configuration from the vault and never writes back. You can still
-make changes with `ravensport-cli`, and they take effect immediately, but they are held in memory
+make changes with `ravensport`, and they take effect immediately, but they are held in memory
 and **discarded when `serve` stops**. Every command that changes something says so, and
-`ravensport-cli status` shows how much is unsaved.
+`ravensport status` shows how much is unsaved.
 
 Personal-access-token sessions last two hours. RavensPort keeps the token in memory so that it can
 log in again before its next vault read. It uses its own temporary session folder, which is deleted
@@ -46,20 +50,27 @@ Device-code, client-credentials and service-account credentials are not affected
 
 ```bash
 # 1Password, with the token piped in
-systemd-creds cat op-token | ravensport-cli serve
+systemd-creds cat op-token | ravensport serve
 
 # or typed at a prompt that does not echo
-ravensport-cli serve
+ravensport serve
 
 # Proton Pass, read-only
-ravensport-cli serve --backend protonpass < ~/.config/ravensport/pass-pat
+ravensport serve --backend protonpass < ~/.config/ravensport/pass-pat
 ```
 
 On Windows:
 
 ```powershell
-Get-Content $env:USERPROFILE\op-token.txt | .\ravensport-cli.exe serve
+Get-Content $env:USERPROFILE\op-token.txt | RavensPort serve
+RavensPort status | Out-Host
 ```
+
+RavensPort.exe is a windowed program, so that the Start menu never flashes a console, and given a
+command it borrows the terminal it was started from. One consequence: cmd and PowerShell do not
+wait for a windowed program unless its output is piped or redirected, so a bare `RavensPort status`
+can print after the prompt has already come back. Piping makes the shell wait: pipe the token into
+`serve`, and add `| Out-Host` to other commands (or use `start /wait RavensPort …` in cmd).
 
 Options:
 
@@ -103,7 +114,7 @@ socket that only your user can open:
 
 No proxy key is needed; the operating system has already decided who may connect. Point at another
 socket with `--socket` (the example units use `/run/ravensport/admin.sock`, so run commands as the
-service user: `sudo -u ravensport ravensport-cli --socket /run/ravensport/admin.sock status`).
+service user: `sudo -u ravensport ravensport --socket /run/ravensport/admin.sock status`).
 
 Management goes through the running process, rather than opening the vault itself, because two
 processes writing one vault would corrupt its index. The desktop app answers on the same socket,
@@ -112,34 +123,34 @@ and its tabs update when a command changes something.
 Add `--json` to any command for machine-readable output.
 
 ```bash
-ravensport-cli status
-ravensport-cli reload [--force]                   # re-read the vault after edits made elsewhere
+ravensport status
+ravensport reload [--force]                   # re-read the vault after edits made elsewhere
 
-ravensport-cli credentials list
-ravensport-cli credentials add github --kind device-code --preset github --client-id Iv1.abc --scopes "repo read:org"
-ravensport-cli credentials signin github          # prints the device code and waits
-echo "$KEY" | ravensport-cli credentials add weather --kind api-key
-ravensport-cli credentials test github
-ravensport-cli credentials remove github
+ravensport credentials list
+ravensport credentials add github --kind device-code --preset github --client-id Iv1.abc --scopes "repo read:org"
+ravensport credentials signin github          # prints the device code and waits
+echo "$KEY" | ravensport credentials add weather --kind api-key
+ravensport credentials test github
+ravensport credentials remove github
 
-ravensport-cli upstreams add github-api https://api.github.com
-ravensport-cli routes add /github --upstream github-api --credential github [--key-days 30]
-ravensport-cli routes key show /github            # the route's proxy key, for your client
-ravensport-cli routes key rotate /github
-ravensport-cli routes disable /github
+ravensport upstreams add github-api https://api.github.com
+ravensport routes add /github --upstream github-api --credential github [--key-days 30]
+ravensport routes key show /github            # the route's proxy key, for your client
+ravensport routes key rotate /github
+ravensport routes disable /github
 
-ravensport-cli sources add "GitHub MCP" --url https://api.githubcopilot.com/mcp/
-ravensport-cli sources refresh
-ravensport-cli funnels add "Coding agent"
-ravensport-cli funnels source add coding-agent githubmcp --only search_code get_file_contents
-ravensport-cli funnels key show coding-agent
+ravensport sources add "GitHub MCP" --url https://api.githubcopilot.com/mcp/
+ravensport sources refresh
+ravensport funnels add "Coding agent"
+ravensport funnels source add coding-agent githubmcp --only search_code get_file_contents
+ravensport funnels key show coding-agent
 
-ravensport-cli bridges operations openapi.yaml
-ravensport-cli bridges import Weather openapi.yaml --openapi --route /weather --operation "GET /forecast"
+ravensport bridges operations openapi.yaml
+ravensport bridges import Weather openapi.yaml --openapi --route /weather --operation "GET /forecast"
 
-ravensport-cli settings get
-ravensport-cli settings set funnel on
-ravensport-cli settings mtls generate --output client.pfx   # password from stdin
+ravensport settings get
+ravensport settings set funnel on
+ravensport settings mtls generate --output client.pfx   # password from stdin
 ```
 
 Secrets for `credentials add` (an API key, a client secret, a token-exchange key) are read from

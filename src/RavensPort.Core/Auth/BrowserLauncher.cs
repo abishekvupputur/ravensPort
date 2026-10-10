@@ -7,7 +7,7 @@ namespace RavensPort.Core.Auth;
 /// instead.
 ///
 /// The override is for the headless host, which has no browser to open. A sign-in started from
-/// <c>ravensport-cli credentials signin</c> sets it for the duration of that one request, and the
+/// <c>ravensport credentials signin</c> sets it for the duration of that one request, and the
 /// URL is printed to the person at the terminal instead; the redirect still lands on this
 /// machine's loopback port, which is what the SSH forward in the docs is for.
 ///

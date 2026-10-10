@@ -27,7 +27,7 @@ LoadCredentialEncrypted=pass-pat:/etc/ravensport/pass-pat.cred
 RuntimeDirectory=ravensport
 RuntimeDirectoryMode=0700
 Environment=RAVENSPORT_ADMIN_SOCKET=/run/ravensport/admin.sock
-ExecStart=/bin/sh -c 'exec /usr/bin/ravensport-cli serve --backend protonpass < "%d/pass-pat"'
+ExecStart=/bin/sh -c 'exec /usr/bin/ravensport serve --backend protonpass < "%d/pass-pat"'
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=yes

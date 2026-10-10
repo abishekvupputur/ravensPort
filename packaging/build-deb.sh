@@ -75,14 +75,6 @@ dotnet publish "$REPO_ROOT/src/RavensPort.App/RavensPort.App.csproj" \
     -p:PublishSingleFile=false -p:PublishTrimmed=false \
     -o "$STAGE/opt/ravensport"
 
-# The headless CLI, into the same directory. Both are self-contained against the same runtime, so
-# the files they share are identical and the second publish only adds ravensport-cli's own.
-echo "==> Publishing ravensport-cli $RID"
-dotnet publish "$REPO_ROOT/src/RavensPort.Cli/RavensPort.Cli.csproj" \
-    -f net10.0 -c Release -r "$RID" --self-contained true \
-    -p:PublishSingleFile=false -p:PublishTrimmed=false \
-    -o "$STAGE/opt/ravensport"
-
 rm -rf "$STAGE/DEBIAN" "$STAGE/usr"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/share/applications" \
          "$STAGE/usr/share/icons/hicolor/256x256/apps" "$STAGE/usr/share/doc/ravensport/examples"
@@ -111,8 +103,8 @@ Description: Local OAuth2 reverse proxy and MCP funnel
  encrypts it at rest but is unlocked for the whole login session — weaker than
  the Windows build, which binds it to a Windows Hello gesture.
  .
- Includes ravensport-cli, which runs the proxy headless on a server with no
- display and manages a running RavensPort from the command line.
+ The same binary runs headless: `ravensport serve` serves the proxy on a machine
+ with no display, and `ravensport <command>` manages a running RavensPort.
 EOF
 
 # A wrapper rather than a symlink: the apphost resolves its runtime relative to its own directory,
@@ -122,12 +114,6 @@ cat > "$STAGE/usr/bin/ravensport" <<'EOF'
 exec /opt/ravensport/RavensPort "$@"
 EOF
 chmod 0755 "$STAGE/usr/bin/ravensport"
-
-cat > "$STAGE/usr/bin/ravensport-cli" <<'EOF'
-#!/bin/sh
-exec /opt/ravensport/ravensport-cli "$@"
-EOF
-chmod 0755 "$STAGE/usr/bin/ravensport-cli"
 
 # Examples for running headless under systemd. Shipped, never enabled: each needs a service user
 # and an encrypted token that only the administrator can provide.
@@ -149,7 +135,7 @@ EOF
 cp "$REPO_ROOT/src/RavensPort.App/Assets/logo.png" \
    "$STAGE/usr/share/icons/hicolor/256x256/apps/ravensport.png"
 
-chmod 0755 "$STAGE/opt/ravensport/RavensPort" "$STAGE/opt/ravensport/ravensport-cli"
+chmod 0755 "$STAGE/opt/ravensport/RavensPort"
 
 # --- build ---------------------------------------------------------------------------------------
 # root:root ownership, because the files land under /opt and /usr. Without --root-owner-group they

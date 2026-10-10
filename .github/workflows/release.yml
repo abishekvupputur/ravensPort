@@ -146,36 +146,6 @@ jobs:
           $version = $env:GITHUB_REF_NAME
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      # ravensport-cli, for running RavensPort headless and managing it from a terminal. A release
-      # asset of its own rather than part of the installer: it is a second self-contained runtime,
-      # about 70 MB compressed, and inside the installer it would push it past the 100 MB GitHub
-      # allows for the copy committed to dist/ for the Store submission.
-      - name: Publish ravensport-cli
-        id: cli
-        shell: pwsh
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          dotnet publish src/RavensPort.Cli/RavensPort.Cli.csproj `
-            -f net10.0-windows10.0.19041.0 -c Release -r win-x64 --self-contained true `
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
-            -o src/RavensPort.Cli/bin/Release/publish/win-x64
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          New-Item -ItemType Directory -Force dist | Out-Null
-          $cliPath = "dist/ravensport-cli-$env:VERSION-win-x64.exe"
-          Copy-Item src/RavensPort.Cli/bin/Release/publish/win-x64/ravensport-cli.exe $cliPath
-
-          # Runs, and says nothing is running, without anything installed — the cheapest proof the
-          # single-file bundle unpacks and its runtime starts.
-          & $cliPath --version
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          & $cliPath status
-          if ($LASTEXITCODE -ne 3) { Write-Host "status exited $LASTEXITCODE, expected 3"; exit 1 }
-
-          echo "cliPath=$cliPath" >> $env:GITHUB_OUTPUT
-
       # The Microsoft Store submission needs an installer, not the application: it runs this
       # unattended and then looks for the product on the machine. The bare exe installed nothing,
       # which is what failed certification under 10.1.2.10, 10.2.7 and 10.3.4 — see
@@ -303,7 +273,6 @@ jobs:
           subject-path: |
             ${{ steps.installer.outputs.setupPath }}
             ${{ steps.msix.outputs.packagePath }}
-            ${{ steps.cli.outputs.cliPath }}
 
       # `gh release create` rather than a release action, which is what zizmor's superfluous-actions
       # rule was pointing at: the GitHub CLI is preinstalled on the runner, so the action was a
@@ -322,18 +291,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.version.outputs.version }}
-          # Three assets: the installer for people installing outside the Store, the MSIX to
-          # upload to Partner Center, and ravensport-cli for headless use.
+          # Two assets: the installer for people installing outside the Store, and the MSIX to
+          # upload to Partner Center.
           SETUP_PATH: ${{ steps.installer.outputs.setupPath }}
           MSIX_PATH: ${{ steps.msix.outputs.packagePath }}
-          CLI_PATH: ${{ steps.cli.outputs.cliPath }}
         run: |
           gh release create $env:VERSION `
             --title $env:VERSION `
             --generate-notes `
             $env:SETUP_PATH `
-            $env:MSIX_PATH `
-            $env:CLI_PATH
+            $env:MSIX_PATH
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
   # --- winget ---------------------------------------------------------------------------------

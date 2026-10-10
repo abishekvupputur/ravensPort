@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace RavensPort.Cli;
+namespace RavensPort.Headless;
 
 /// <summary>
 /// Reads a secret from standard input: one line when it is piped or redirected, otherwise a prompt
@@ -9,7 +9,7 @@ namespace RavensPort.Cli;
 /// Stdin and nothing else. Never a command-line argument, because a command line is readable by
 /// every process on the machine and lands in shell history; never an environment variable read
 /// behind the user's back, because one survives restarts in a place every process they run can
-/// read. Piping keeps the secret out of both: <c>systemd-creds cat … | ravensport-cli serve</c>,
+/// read. Piping keeps the secret out of both: <c>systemd-creds cat … | ravensport serve</c>,
 /// or systemd's own <c>LoadCredentialEncrypted=</c> redirected onto stdin.
 /// </summary>
 internal static class SecretInput

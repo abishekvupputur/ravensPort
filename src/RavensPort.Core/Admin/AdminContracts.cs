@@ -3,7 +3,7 @@ using RavensPort.Core.Models;
 namespace RavensPort.Core.Admin;
 
 // The shapes that cross the admin socket. Shared by the server, in whichever RavensPort process is
-// running, and by ravensport-cli, which references this assembly — so the two ends cannot disagree
+// running, and by its command line (`ravensport routes list` and the rest) — so the two ends cannot disagree
 // about a field name.
 
 /// <summary>The reply to anything that changes the store, or the reason it was refused.</summary>

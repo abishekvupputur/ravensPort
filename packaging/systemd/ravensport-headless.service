@@ -14,7 +14,7 @@
 #
 # Manage it as the service user, through the admin socket:
 #
-#   sudo -u ravensport ravensport-cli --socket /run/ravensport/admin.sock status
+#   sudo -u ravensport ravensport --socket /run/ravensport/admin.sock status
 
 [Unit]
 Description=RavensPort headless proxy (1Password)
@@ -28,7 +28,7 @@ LoadCredentialEncrypted=op-token:/etc/ravensport/op-token.cred
 RuntimeDirectory=ravensport
 RuntimeDirectoryMode=0700
 Environment=RAVENSPORT_ADMIN_SOCKET=/run/ravensport/admin.sock
-ExecStart=/bin/sh -c 'exec /usr/bin/ravensport-cli serve --vault RavensPort < "%d/op-token"'
+ExecStart=/bin/sh -c 'exec /usr/bin/ravensport serve --vault RavensPort < "%d/op-token"'
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=yes

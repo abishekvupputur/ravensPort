@@ -11,7 +11,7 @@ using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
 
-namespace RavensPort.Cli;
+namespace RavensPort.Headless;
 
 internal enum Backend
 {
@@ -22,7 +22,7 @@ internal enum Backend
 internal sealed record ServeOptions(Backend Backend, string? Vault, string? CreateVault, bool ReadOnly);
 
 /// <summary>
-/// <c>ravensport-cli serve</c>: the proxy, the funnels and the bridges, with no window.
+/// <c>ravensport serve</c>: the proxy, the funnels and the bridges, with no window.
 ///
 /// The same pipeline the desktop app runs — <see cref="RavensPortHost"/> is shared — with the
 /// vault unlocked by a token read from stdin instead of the setup page:
@@ -63,7 +63,7 @@ internal static class ServeCommand
         if (!isNewInstance)
         {
             error.WriteLine("error: RavensPort is already running on this machine — the desktop app or another `serve`.");
-            error.WriteLine("Manage it with the other ravensport-cli commands instead.");
+            error.WriteLine("Manage it with the other ravensport commands instead.");
             return ExitCodes.StartFailed;
         }
 
@@ -108,14 +108,14 @@ internal static class ServeCommand
             }
 
             admin = await AdminServer.StartAsync(app.Services, readOnly
-                ? $"ravensport-cli serve ({VaultLockGuidance.DisplayName(kind)}, read-only)"
-                : $"ravensport-cli serve ({VaultLockGuidance.DisplayName(kind)})");
+                ? $"ravensport serve ({VaultLockGuidance.DisplayName(kind)}, read-only)"
+                : $"ravensport serve ({VaultLockGuidance.DisplayName(kind)})");
 
             var scheme = app.Services.GetRequiredService<KestrelMtlsState>().Scheme;
             output.WriteLine($"RavensPort is serving on {scheme}://127.0.0.1:{port}");
             output.WriteLine($"  vault:    {VaultLockGuidance.DisplayName(kind)} — {app.Services.GetRequiredService<VaultGateService>().Selected.VaultName}");
             output.WriteLine($"  store:    {Describe(cache)}");
-            output.WriteLine($"  manage:   ravensport-cli status   (admin socket {admin.SocketPath})");
+            output.WriteLine($"  manage:   ravensport status   (admin socket {admin.SocketPath})");
             output.WriteLine($"  log:      {activityLog.CurrentLogPath}");
             if (readOnly)
             {

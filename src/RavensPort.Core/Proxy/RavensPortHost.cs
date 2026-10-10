@@ -9,7 +9,7 @@ namespace RavensPort.Core.Proxy;
 
 /// <summary>
 /// The parts of starting the proxy that every host shares — the desktop app and the headless
-/// <c>ravensport-cli serve</c>. They used to live in the desktop app's startup, which is where they
+/// <c>ravensport serve</c>. They used to live in the desktop app's startup, which is where they
 /// were first needed; a second host copying them would be two answers to "how does RavensPort
 /// listen", and the order of the middleware below is load-bearing enough that two copies would
 /// drift into a security bug.

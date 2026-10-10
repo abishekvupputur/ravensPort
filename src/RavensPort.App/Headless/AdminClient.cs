@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using RavensPort.Core.Admin;
 
-namespace RavensPort.Cli;
+namespace RavensPort.Headless;
 
 /// <summary>Exit codes, shared by every command so scripts can tell the cases apart.</summary>
 internal static class ExitCodes
@@ -44,7 +44,7 @@ internal sealed class AdminClient(string? socketPath, bool json, TextWriter outp
         catch (HttpRequestException ex) when (IsNotListening(ex))
         {
             error.WriteLine($"No running RavensPort answered at {SocketPath}.");
-            error.WriteLine("Start one with `ravensport-cli serve`, or open the RavensPort desktop app.");
+            error.WriteLine("Start one with `ravensport serve`, or open the RavensPort desktop app.");
             return ExitCodes.NotRunning;
         }
     }

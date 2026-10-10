@@ -8,10 +8,20 @@ internal static class Program
     /// Avalonia needs a real entry point, where WPF generated one. Everything that used to live in
     /// App.OnStartup is in <see cref="App.OnFrameworkInitializationCompleted"/> instead — this must
     /// stay free of anything that touches the UI or the host, because none of it exists yet.
+    ///
+    /// One executable, two ways in. Launched plainly it is the desktop app. Given a command —
+    /// <c>RavensPort serve</c>, <c>RavensPort routes list</c> — it is the command line, and Avalonia
+    /// is never started: no window, no display needed, so the same binary runs on a headless
+    /// server. The decision is made here, before anything touches the UI, for exactly that reason.
     /// </summary>
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp()
-        .StartWithClassicDesktopLifetime(args);
+    public static int Main(string[] args)
+    {
+        if (Headless.Cli.Wants(args)) return Headless.Cli.Run(args);
+
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return 0;
+    }
 
     /// <summary>Also used by the XAML previewer and designer tooling, which is why it is public.</summary>
     ///

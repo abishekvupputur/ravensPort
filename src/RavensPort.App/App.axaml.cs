@@ -360,7 +360,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Answers <c>ravensport-cli</c> while the window is open, so commands reach this process
+    /// Answers the command line (<c>ravensport status</c> and the rest) while the window is open, so commands reach this process
     /// rather than opening the vault a second time — two writers on one vault corrupt its index.
     ///
     /// Edits made from the terminal rebuild the tabs, the same way dropping records does: their
@@ -381,7 +381,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            LogError("Could not open the admin socket for ravensport-cli", ex);
+            LogError("Could not open the admin socket for the command line", ex);
         }
     }
 

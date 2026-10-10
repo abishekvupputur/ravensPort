@@ -2,7 +2,7 @@ using System.CommandLine;
 using RavensPort.Core.Admin;
 using RavensPort.Core.Models;
 
-namespace RavensPort.Cli;
+namespace RavensPort.Headless;
 
 /// <summary>
 /// Every command that manages a running RavensPort. Each is a thin translation from arguments to

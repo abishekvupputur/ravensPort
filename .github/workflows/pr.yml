@@ -53,9 +53,6 @@ jobs:
       - name: Test
         run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -c Release --no-restore --verbosity normal
 
-      - name: Test ravensport-cli
-        run: dotnet test tests/RavensPort.Cli.Tests/RavensPort.Cli.Tests.csproj -c Release --no-restore --verbosity normal
-
       # Every manifest in templates/api-mcp has to be servable. They are starting points people
       # copy — one of them is what the app's own Load sample button inserts — so a broken template
       # teaches the wrong shape to everything that reads it, agents included.
@@ -196,13 +193,6 @@ jobs:
         env:
           DOTNET_USE_POLLING_FILE_WATCHER: "1"
         run: dotnet test tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
-
-      # Headless is what the Linux build is most likely to be used for, so the CLI's suite runs
-      # here as well as on Windows — the admin socket is a Unix domain socket on both.
-      - name: Test ravensport-cli
-        env:
-          DOTNET_USE_POLLING_FILE_WATCHER: "1"
-        run: dotnet test tests/RavensPort.Cli.Tests/RavensPort.Cli.Tests.csproj -f net10.0 -c Release --no-restore --verbosity normal
 
       # The same UI suite the Windows job runs, on the portable target. -f net10.0 for the same
       # reason the step above carries it: the suite multi-targets, and the Windows half of it

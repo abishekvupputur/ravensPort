@@ -14,7 +14,7 @@ using RavensPort.Core.Vault;
 namespace RavensPort.Core.Admin;
 
 /// <summary>
-/// The admin API: everything <c>ravensport-cli</c> can ask of a running RavensPort.
+/// The admin API: everything the command line can ask of a running RavensPort.
 ///
 /// Each edit goes through <see cref="ConfigStoreCache.MutateAsync"/> and the same validators and
 /// <see cref="ConfigStoreEdits"/> rules the tabs use, so a change made here is indistinguishable
@@ -155,7 +155,7 @@ internal static class AdminEndpoints
 
             return Ok(c, record.IsSelfIssuing || record.Kind == CredentialKind.ApiKey
                 ? $"Credential '{record.Name}' added."
-                : $"Credential '{record.Name}' added — run `ravensport-cli credentials signin \"{record.Name}\"` to connect it.");
+                : $"Credential '{record.Name}' added — run `ravensport credentials signin \"{record.Name}\"` to connect it.");
         });
 
         g.MapDelete("/credentials/{key}", async (string key) =>
@@ -394,7 +394,7 @@ internal static class AdminEndpoints
             c.Changed();
 
             return Ok(c, $"Route '{prefix}' added with its own proxy key ({route.Key.DescribeExpiry(DateTimeOffset.UtcNow)}) — "
-                         + $"show it with `ravensport-cli routes key show {prefix}`.");
+                         + $"show it with `ravensport routes key show {prefix}`.");
         });
 
         // Addressed by id in practice: a prefix is a path, and its slashes do not survive as one
@@ -566,8 +566,8 @@ internal static class AdminEndpoints
 
             return Ok(c, $"Funnel '{name}' added at {McpFunnelEndpoints.BasePath}/{slug} with its own proxy key "
                          + $"({funnel.Key.DescribeExpiry(DateTimeOffset.UtcNow)}) — add sources with "
-                         + $"`ravensport-cli funnels source add {slug} <source>`."
-                         + (c.Store.Settings.McpFunnelEnabled ? "" : " The MCP funnel is switched off: `ravensport-cli settings set funnel on`."));
+                         + $"`ravensport funnels source add {slug} <source>`."
+                         + (c.Store.Settings.McpFunnelEnabled ? "" : " The MCP funnel is switched off: `ravensport settings set funnel on`."));
         });
 
         g.MapDelete("/funnels/{key}", async (string key) =>
@@ -688,7 +688,7 @@ internal static class AdminEndpoints
 
             return Ok(c, $"API bridge '{bridge.Name}' added at {McpApiBridgeEndpoints.BasePath}/{slug} with "
                          + $"{bridge.Manifest.Tools.Count} tool(s) and its own proxy key ({bridge.Key.DescribeExpiry(DateTimeOffset.UtcNow)})."
-                         + (c.Store.Settings.McpApiBridgeEnabled ? "" : " API bridges are switched off: `ravensport-cli settings set bridge on`."));
+                         + (c.Store.Settings.McpApiBridgeEnabled ? "" : " API bridges are switched off: `ravensport settings set bridge on`."));
         });
 
         g.MapDelete("/bridges/{key}", async (string key) =>
@@ -746,7 +746,7 @@ internal static class AdminEndpoints
             if (patch.MtlsEnabled is true
                 && (string.IsNullOrWhiteSpace(settings.MtlsClientCertificatePfx) || string.IsNullOrEmpty(settings.MtlsClientCertificatePassword)))
             {
-                return Bad("Generate a client certificate first, with `ravensport-cli settings mtls generate`. mTLS cannot be enabled until one exists.");
+                return Bad("Generate a client certificate first, with `ravensport settings mtls generate`. mTLS cannot be enabled until one exists.");
             }
 
 #if STORE_BUILD

@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/RavensPort.App/RavensPort.App.csproj" />
-    <Project Path="src/RavensPort.Cli/RavensPort.Cli.csproj" />
     <Project Path="src/RavensPort.Core/RavensPort.Core.csproj" />
     <Project Path="src/RavensPort.UI/RavensPort.UI.csproj" />
   </Folder>
@@ -9,7 +8,6 @@
     <Project Path="tools/RavensPort.ManifestCheck/RavensPort.ManifestCheck.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/RavensPort.Cli.Tests/RavensPort.Cli.Tests.csproj" />
     <Project Path="tests/RavensPort.Core.Tests/RavensPort.Core.Tests.csproj" />
     <Project Path="tests/RavensPort.SystemTests/RavensPort.SystemTests.csproj" />
     <Project Path="tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj" />
