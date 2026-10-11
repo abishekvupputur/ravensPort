@@ -25,7 +25,7 @@ namespace RavensPort.UI.Tests;
 /// </summary>
 public class DocsScreenshotsUiTests
 {
-    private const int Width = 980;
+    private const int Width = 1100;
     private const int Height = 1040;
 
     private static string? Directory =>
@@ -61,14 +61,8 @@ public class DocsScreenshotsUiTests
         Dispatcher.UIThread.RunJobs();
     }
 
-    [Fact]
-    public Task TheSetupPage() => UiSession.RunAsync(async () =>
-    {
-        if (Directory is null) return;
-
-        await using var harness = await SingleUseHarness.StartAsync();
-        Snap(Open(harness), "setupPage");
-    });
+    // No setup page: rendered here it can only offer single use, because a test machine has no
+    // password manager to find. media/setupPage.png is a capture from a real machine and stays one.
 
     [Fact]
     public Task EveryTab() => UiSession.RunAsync(async () =>
@@ -77,12 +71,42 @@ public class DocsScreenshotsUiTests
 
         await using var harness = await SingleUseHarness.StartAsync();
         await harness.StartSingleUseThroughTheUiAsync();
-        await SeedAsync(harness);
+        var bridgeIds = await SeedAsync(harness);
 
+        try
+        {
+            await CaptureEveryTabAsync(harness);
+        }
+        finally
+        {
+            foreach (var id in bridgeIds) ManifestLocalStore.Delete(id);
+        }
+    });
+
+    private static async Task CaptureEveryTabAsync(SingleUseHarness harness)
+    {
+        var store = harness.Services.GetRequiredService<ConfigStoreCache>();
         var window = Open(harness);
         var shell = harness.Services.GetRequiredService<MainWindowViewModel>();
         shell.EnterNormalMode();
         await UiDriver.UntilAsync(() => !shell.IsGated, "the shell to leave the setup page");
+
+        // Every source asks its bridge for a catalogue first, while the store still names the port
+        // the harness really listens on — the funnel reaches its sources through that port.
+        var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
+        funnels.RefreshCommand.Execute(null);
+        await funnels.RefreshAllSourcesCommand.ExecuteAsync(null);
+        var unreachable = funnels.Sources.Where(s => s.Source.Kind == McpSourceKind.ApiBridge && s.Catalog is null).ToList();
+        if (unreachable.Count > 0)
+            throw new InvalidOperationException(
+                $"sources not reached: {string.Join("; ", unreachable.Select(s => $"{s.Name}: {s.Status}"))} — {funnels.StatusMessage}");
+
+        // Then the port everyone actually sees, so no screenshot shows the harness's random one.
+        // Only the text changes: nothing is listening there, and nothing below calls it.
+        await store.MutateAsync(s => s.Settings.ListenPort = 5559);
+        harness.Services.GetRequiredService<RoutesViewModel>().RefreshCommand.Execute(null);
+        harness.Services.GetRequiredService<ApiBridgeViewModel>().RefreshCommand.Execute(null);
+        funnels.RefreshCommand.Execute(null);
 
         SelectTab(window, 0);
         Snap(window, "credentialsScreen");
@@ -101,12 +125,8 @@ public class DocsScreenshotsUiTests
         bridges.EditManifestCommand.Execute(bridges.Bridges.First(b => b.Bridge.Slug == "weather"));
         Snap(window, "apiMcpBridgeScreen");
 
-        // The sources asked for their catalogues, one funnel selected, one source opened to show
-        // the tools it was cut down to.
+        // One funnel selected, one source opened to show the tools it was cut down to.
         SelectTab(window, 3);
-        var funnels = harness.Services.GetRequiredService<McpFunnelViewModel>();
-        funnels.RefreshCommand.Execute(null);
-        await funnels.RefreshAllSourcesCommand.ExecuteAsync(null);
         funnels.SelectedFunnel = funnels.Funnels.First(f => f.Slug == "assistant");
         await UiDriver.UntilAsync(
             () => funnels.FunnelSources.Any(s => s.Name == "Google Drive" && s.Tools.Items.Count > 0),
@@ -118,7 +138,7 @@ public class DocsScreenshotsUiTests
 
         SelectTab(window, 4);
         Snap(window, "settingsScreen");
-    });
+    }
 
     [Fact]
     public Task TheOperationPicker() => UiSession.RunAsync(() =>
@@ -154,7 +174,8 @@ public class DocsScreenshotsUiTests
     /// Writes the configuration straight into the store, as the approval suite does: the forms are
     /// what the other tests here are for, and this is only about what the result looks like.
     /// </summary>
-    private static async Task SeedAsync(SingleUseHarness harness)
+    /// <returns>The bridges whose manifests were written to disk, for the caller to delete.</returns>
+    private static async Task<List<Guid>> SeedAsync(SingleUseHarness harness)
     {
         var now = DateTimeOffset.UtcNow;
         TokenSet Token(TimeSpan left, string? refresh = "refresh-placeholder") => // gitleaks:allow
@@ -261,6 +282,12 @@ public class DocsScreenshotsUiTests
                 ManifestOrigin = file,
                 Key = ProxyKey.Generate(),
             };
+
+            // Where the app keeps a manifest. The store strips it on the way to the vault and reads
+            // it back from here, so a bridge whose manifest is only in the record comes back empty.
+            if (ManifestLocalStore.Save(bridge.Id, manifest!) is { } saveError)
+                throw new InvalidOperationException($"{file}: {saveError}");
+
             bridges.Add(bridge);
             sources.Add(new McpSourceRecord
             {
@@ -322,6 +349,8 @@ public class DocsScreenshotsUiTests
             s.Settings.McpFunnelEnabled = true;
             s.Settings.McpApiBridgeEnabled = true;
         });
+
+        return [.. bridges.Select(b => b.Id)];
     }
 
     private static string FindTemplates()
