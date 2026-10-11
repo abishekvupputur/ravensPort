@@ -1,0 +1,46 @@
+name: Docs screenshots
+
+# Renders every view the README and the wiki show, filled with sample data, through
+# tests/RavensPort.UI.Tests/DocsScreenshotsUiTests.cs, and attaches the PNGs to the run under the
+# names media/ uses. Refreshing the screenshots is then a download and a copy into media/.
+#
+# Windows, for the fonts the app is normally seen in; the same test draws on Linux too.
+# Nothing here is committed or published automatically: a screenshot is worth a look before it
+# replaces the one people already know.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "tests/RavensPort.UI.Tests/DocsScreenshotsUiTests.cs"
+      - ".github/workflows/docs-screenshots.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore RavensPort.slnx --locked-mode
+
+      - name: Render
+        env:
+          RAVENSPORT_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
+        run: dotnet test tests/RavensPort.UI.Tests/RavensPort.UI.Tests.csproj -f net10.0-windows10.0.19041.0 -c Release --no-restore --filter DocsScreenshots
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: error
