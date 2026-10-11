@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RavensPort</title>
+  <meta name="description" content="Give each AI agent its own MCP endpoint, pooling the servers you choose and exposing only the tools you allow, with OAuth handled for you.">
+  <meta property="og:title" content="RavensPort">
+  <meta property="og:description" content="Give each AI agent its own MCP endpoint, pooling the servers you choose and exposing only the tools you allow, with OAuth handled for you.">
+  <meta property="og:image" content="https://abishekvupputur.github.io/ravensPort/media/logo.png">
+  <link rel="icon" href="media/logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><img src="media/logo.png" alt="" width="28" height="28">RavensPort</a>
+    <nav>
+      <a href="docs/">Docs</a>
+      <a href="https://github.com/abishekvupputur/ravensPort/releases">Releases</a>
+      <a href="https://github.com/abishekvupputur/ravensPort">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <img class="logo" src="media/logo.png" alt="RavensPort logo">
+      <h1>RavensPort</h1>
+      <p class="tagline">Give each AI agent its own MCP endpoint, pooling the servers you choose and
+        exposing only the tools you allow, with OAuth handled for you.</p>
+
+      <div class="install">
+        <span class="prompt">&gt;</span>
+        <code id="cmd">winget install RavensPort</code>
+        <button class="btn" type="button" id="copy">Copy</button>
+      </div>
+
+      <div class="actions">
+        <a class="btn primary" href="docs/">Read the docs</a>
+        <a class="btn" href="https://apps.microsoft.com/detail/9PBNQH53L61D">Microsoft Store</a>
+        <a class="btn" href="https://github.com/abishekvupputur/ravensPort/releases">Download installer</a>
+      </div>
+      <p class="note">Windows 10 and 11. Free and open source under the MIT licence.</p>
+
+      <div class="shot">
+        <img src="media/mcpFunnelScreen.png" alt="The MCP Funnel tab, listing sources pooled behind one endpoint" width="979" height="1032">
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
+        <h2>The problem</h2>
+        <p class="lead">MCP servers are increasingly behind OAuth2, but most MCP clients expect a bare
+          HTTP endpoint with no auth story. Connect three servers and your agent sees all ninety of their
+          tools, with no way to say "this agent gets these six". And the system you actually wanted it to
+          reach often has no MCP server at all, just the REST API it has always had.</p>
+        <div class="cards">
+          <div class="card">
+            <h3>Routes</h3>
+            <p>Attach a live OAuth token to every request forwarded to an upstream. Your client never
+              handles auth. <a href="docs/Routes.html">Routes →</a></p>
+          </div>
+          <div class="card">
+            <h3>Funnels</h3>
+            <p>Pool several MCP servers behind one local endpoint and expose only the tools, resources and
+              prompts you pick. <a href="docs/MCP-Funnel.html">MCP Funnel →</a></p>
+          </div>
+          <div class="card">
+            <h3>API bridges</h3>
+            <p>Turn an API you already proxy into an MCP endpoint of your own, from a JSON manifest or an
+              OpenAPI document. <a href="docs/API-to-MCP.html">API to MCP →</a></p>
+          </div>
+        </div>
+        <div class="endpoint">http://127.0.0.1:5559/mcp/<b>&lt;agent&gt;</b></div>
+        <p class="note">Point each agent at its own endpoint, and it sees exactly the toolset you granted
+          it, drawn from as many upstreams as you like.</p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
+        <h2>What it handles</h2>
+        <p class="lead">A tray app that runs a local reverse proxy on 127.0.0.1 and owns the whole
+          credential lifecycle.</p>
+        <div class="cards">
+          <div class="card">
+            <h3>Any OAuth2 provider</h3>
+            <p>Google, GitHub, Nextcloud or a custom provider, with device code sign-in for providers that
+              won't register a loopback callback.</p>
+          </div>
+          <div class="card">
+            <h3>App logins</h3>
+            <p>Client credentials and Google service accounts mint their own tokens, so a route keeps
+              working with nobody at the keyboard.</p>
+          </div>
+          <div class="card">
+            <h3>Automatic refresh</h3>
+            <p>Tokens refresh in the background ten minutes before they expire. Static API keys are
+              supported too.</p>
+          </div>
+          <div class="card">
+            <h3>Secrets in your vault</h3>
+            <p>1Password or Proton Pass holds every secret. Nothing is written to the PC.</p>
+          </div>
+          <div class="card">
+            <h3>A key per endpoint</h3>
+            <p>Every route, funnel and bridge has its own proxy key and expiry, and you can also require
+              client certificates (mTLS).</p>
+          </div>
+          <div class="card">
+            <h3>Verifiable releases</h3>
+            <p>Every installer carries a build provenance attestation you can check with
+              <code>gh attestation verify</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
+        <h2>A look inside</h2>
+        <div class="gallery">
+          <figure><img src="media/credentialsScreen.png" alt="Credentials tab" loading="lazy"><figcaption>Credentials</figcaption></figure>
+          <figure><img src="media/routesScreen.png" alt="Routes tab" loading="lazy"><figcaption>Routes</figcaption></figure>
+          <figure><img src="media/apiMcpBridgeScreen.png" alt="API to MCP tab" loading="lazy"><figcaption>API to MCP</figcaption></figure>
+          <figure><img src="media/openAPIPicker.png" alt="OpenAPI operation picker" loading="lazy"><figcaption>OpenAPI import</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
+        <h2>Install</h2>
+        <p class="lead">winget and the installer give you the full app. The Store build is signed by
+          Microsoft but leaves out two features that Store certification rejected.
+          <a href="docs/Installation.html#from-the-microsoft-store">Why</a></p>
+        <table class="compare">
+          <thead><tr><th></th><th>winget / installer</th><th>Microsoft Store</th></tr></thead>
+          <tbody>
+            <tr><td>Routes, funnels, API bridges, OAuth2, 1Password</td><td>Yes</td><td>Yes</td></tr>
+            <tr><td>Proton Pass vault</td><td>Yes</td><td>No</td></tr>
+            <tr><td>mTLS client certificates</td><td>Yes</td><td>No</td></tr>
+            <tr><td>Updates</td><td><code>winget upgrade</code></td><td>Automatic</td></tr>
+          </tbody>
+        </table>
+        <div class="actions" style="justify-content:flex-start">
+          <a class="btn primary" href="docs/Installation.html">Installation guide</a>
+          <a class="btn" href="docs/Linux-build.html">Linux build</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <span>RavensPort · MIT licence · © 2026 Abishek Narasimhan</span>
+      <span>
+        <a href="https://github.com/abishekvupputur/ravensPort">Source</a> ·
+        <a href="https://github.com/abishekvupputur/ravensPort/wiki">Wiki</a> ·
+        <a href="https://github.com/abishekvupputur/ravensPort/blob/main/PRIVACY.md">Privacy</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("copy").addEventListener("click", async (e) => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById("cmd").textContent);
+        e.target.textContent = "Copied";
+        setTimeout(() => (e.target.textContent = "Copy"), 1500);
+      } catch { /* clipboard blocked; the command is still selectable */ }
+    });
+  </script>
+</body>
+</html>
