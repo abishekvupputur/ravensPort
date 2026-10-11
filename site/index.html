@@ -168,13 +168,15 @@
   </footer>
 
   <script>
-    document.getElementById("copy").addEventListener("click", async (e) => {
+    const copy = document.getElementById("copy");
+    copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(document.getElementById("cmd").textContent);
-        e.target.textContent = "Copied";
-        setTimeout(() => (e.target.textContent = "Copy"), 1500);
+        copy.textContent = "Copied";
       } catch { /* clipboard blocked; the command is still selectable */ }
     });
+    // Reset on leaving rather than on a timer, as site.js does.
+    for (const type of ["mouseleave", "blur"]) copy.addEventListener(type, () => (copy.textContent = "Copy"));
   </script>
 </body>
 </html>

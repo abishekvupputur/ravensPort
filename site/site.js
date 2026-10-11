@@ -147,8 +147,12 @@
         } catch {
           button.textContent = "Select and copy";
         }
-        setTimeout(() => (button.textContent = "Copy"), 1500);
       });
+      // Reset on leaving rather than on a timer: the label says what the last press did for as
+      // long as anyone is looking at it.
+      const reset = () => (button.textContent = "Copy");
+      button.addEventListener("mouseleave", reset);
+      button.addEventListener("blur", reset);
       block.appendChild(button);
     });
   }
