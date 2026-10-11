@@ -85,9 +85,66 @@ jobs:
         with:
           path: _site
 
+  # The install instructions on the Linux build page, run as written in a clean Ubuntu, on both
+  # architectures the repository serves — once against the live site and once against the site this
+  # run is about to deploy, served at the same path. Only the host differs between the two. The
+  # second is the one that gates the deploy: a site whose apt/ cannot be installed from never
+  # replaces one that can.
+  apt-install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ ubuntu-latest, ubuntu-24.04-arm ]
+        site: [ live, this-build ]
+    runs-on: ${{ matrix.runner }}
+    # The live check reports; it does not block. If the live site is broken, this deploy is the fix.
+    continue-on-error: ${{ matrix.site == 'live' }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.site == 'this-build'
+        with:
+          name: github-pages
+
+      - name: Serve this build at /ravensPort/
+        if: matrix.site == 'this-build'
+        run: |
+          mkdir -p srv/ravensPort
+          tar -xf artifact.tar -C srv/ravensPort
+          python3 -m http.server 8000 --bind 127.0.0.1 --directory srv > /dev/null 2>&1 &
+          curl -fsS --retry 10 --retry-connrefused -o /dev/null http://127.0.0.1:8000/ravensPort/apt/InRelease
+
+      - name: Install as the docs say
+        env:
+          BASE: ${{ matrix.site == 'live' && 'https://abishekvupputur.github.io/ravensPort' || 'http://127.0.0.1:8000/ravensPort' }}
+        run: |
+          docker run --rm --network host -e BASE ubuntu:24.04 bash -euo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq sudo curl ca-certificates > /dev/null
+
+            sudo install -d -m 0755 /etc/apt/keyrings
+            curl -fsSL "$BASE/apt/ravensport.asc" \
+              | sudo tee /etc/apt/keyrings/ravensport.asc > /dev/null
+            echo "deb [signed-by=/etc/apt/keyrings/ravensport.asc] $BASE/apt ./" \
+              | sudo tee /etc/apt/sources.list.d/ravensport.list
+            sudo apt update 2>&1 | tee update.log
+
+            # apt update reports a bad signature or an unreadable index as a warning and carries on,
+            # so its exit code proves nothing about this repository.
+            if grep -iE "^(W|E|Err):.*ravensport" update.log; then
+              echo "apt update complained about the RavensPort repository" >&2
+              exit 1
+            fi
+
+            sudo apt install -y ravensport
+            dpkg -s ravensport | grep -E "^(Version|Architecture):"
+            command -v ravensport
+          '
+
   deploy:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [ build, apt-install ]
     runs-on: ubuntu-latest
     permissions:
       pages: write
