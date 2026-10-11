@@ -10,10 +10,16 @@
   <meta property="og:image" content="https://abishekvupputur.github.io/ravensPort/media/logo.png">
   <link rel="icon" href="media/logo.png">
   <link rel="stylesheet" href="style.css">
+  <script src="site.js" data-index="docs/search.json" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="./"><img src="media/logo.png" alt="" width="28" height="28">RavensPort</a>
+    <div class="search" role="search">
+      <input type="search" id="q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+      <kbd>/</kbd>
+      <ol id="results" hidden></ol>
+    </div>
     <nav>
       <a href="docs/">Docs</a>
       <a href="https://github.com/abishekvupputur/ravensPort/releases">Releases</a>

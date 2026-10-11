@@ -39,6 +39,7 @@ Directory.CreateDirectory(Path.Combine(outDir, "media"));
 foreach (var f in Directory.GetFiles("media"))
     File.Copy(f, Path.Combine(outDir, "media", Path.GetFileName(f)), true);
 File.Copy("site/style.css", Path.Combine(outDir, "style.css"), true);
+File.Copy("site/site.js", Path.Combine(outDir, "site.js"), true);
 File.Copy("site/index.html", Path.Combine(outDir, "index.html"), true);
 
 // The sidebar's order is the reading order, so it also drives the previous/next links.
@@ -48,23 +49,68 @@ var titles = Regex.Matches(sidebarMd, @"\[([^\]]+)\]\(([^)#]+)\)")
     .ToDictionary(m => m.Groups[2].Value, m => m.Groups[1].Value);
 
 var pages = Directory.GetFiles(wikiDir, "*.md")
-    .Select(Path.GetFileNameWithoutExtension)
-    .Where(p => !p!.StartsWith('_'))
+    .Select(p => Path.GetFileNameWithoutExtension(p)!)
+    .Where(p => !p.StartsWith('_'))
+    .OrderBy(p => p)
     .ToList();
 
+// A page the sidebar forgot is still a page: it goes on the end of the list rather than being
+// reachable only by someone who already knows its name.
+var unlisted = pages.Where(p => !order.Contains(p)).ToList();
+foreach (var p in unlisted)
+{
+    var heading = Regex.Match(File.ReadAllText(Path.Combine(wikiDir, p + ".md")), @"^#\s+(.+)$", RegexOptions.Multiline);
+    titles[p] = heading.Success ? Regex.Replace(heading.Groups[1].Value, "<[^>]+>", "").Trim() : p.Replace('-', ' ');
+    order.Add(p);
+    sidebarMd += $"\n- [{titles[p]}]({p})";
+}
+
 var missing = new List<string>();
+var search = new List<object>();
+var headingPattern = new Regex(@"<h([23]) id=""([^""]+)"">(.*?)</h\1>", RegexOptions.Singleline);
+
 foreach (var page in pages)
 {
     var doc = Markdown.Parse(File.ReadAllText(Path.Combine(wikiDir, page + ".md")), pipeline);
-    Rewrite(doc, page!, pages!, missing);
+    Rewrite(doc, page, pages, missing);
     var body = doc.ToHtml(pipeline);
+    var title = titles.GetValueOrDefault(page, page.Replace('-', ' '));
+
+    // Search entries, one per section, so a result lands on the paragraph rather than the top.
+    var cuts = headingPattern.Matches(body).ToList();
+    var summary = title;
+    for (var s = -1; s < cuts.Count; s++)
+    {
+        var start = s < 0 ? 0 : cuts[s].Index + cuts[s].Length;
+        var end = s + 1 < cuts.Count ? cuts[s + 1].Index : body.Length;
+        var text = PlainText(body[start..end]);
+        if (text.Length == 0 && s < 0) continue;
+        if (summary == title && text.Length > 0) summary = text.Length > 160 ? text[..160] : text;
+
+        search.Add(new
+        {
+            p = FileFor(page),
+            t = title,
+            h = s < 0 ? "" : PlainText(cuts[s].Groups[3].Value),
+            a = s < 0 ? "" : cuts[s].Groups[2].Value,
+            x = text.Length > 700 ? text[..700] : text,
+        });
+    }
+
+    // The outline beside the page, from the same headings.
+    var toc = string.Concat(cuts.Select(m =>
+        $"<li class=\"l{m.Groups[1].Value}\"><a href=\"#{m.Groups[2].Value}\">{Enc(PlainText(m.Groups[3].Value))}</a></li>"));
+
+    // A link on every heading, so any section can be shared.
+    body = headingPattern.Replace(body, m =>
+        $"<h{m.Groups[1].Value} id=\"{m.Groups[2].Value}\">{m.Groups[3].Value}"
+        + $"<a class=\"anchor\" href=\"#{m.Groups[2].Value}\" aria-label=\"Link to this section\">#</a></h{m.Groups[1].Value}>");
 
     var sidebarDoc = Markdown.Parse(sidebarMd, pipeline);
-    Rewrite(sidebarDoc, page!, pages!, missing);
+    Rewrite(sidebarDoc, page, pages, missing);
     var sidebar = sidebarDoc.ToHtml(pipeline)
-        .Replace($"href=\"{FileFor(page!)}\"", $"href=\"{FileFor(page!)}\" aria-current=\"page\"");
+        .Replace($"href=\"{FileFor(page)}\"", $"href=\"{FileFor(page)}\" aria-current=\"page\"");
 
-    var title = titles.GetValueOrDefault(page!, page!.Replace('-', ' '));
     var i = order.IndexOf(page);
     var prev = i > 0 ? order[i - 1] : null;
     var next = i >= 0 && i < order.Count - 1 ? order[i + 1] : null;
@@ -76,12 +122,19 @@ foreach (var page in pages)
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>{{Enc(title)}} · RavensPort docs</title>
+          <meta name="description" content="{{Enc(summary)}}">
           <link rel="icon" href="../media/logo.png">
           <link rel="stylesheet" href="../style.css">
+          <script src="../site.js" data-index="search.json" defer></script>
         </head>
         <body class="docs">
           <header class="topbar">
             <a class="brand" href="../"><img src="../media/logo.png" alt="" width="28" height="28">RavensPort</a>
+            <div class="search" role="search">
+              <input type="search" id="q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+              <kbd>/</kbd>
+              <ol id="results" hidden></ol>
+            </div>
             <nav>
               <a href="index.html">Docs</a>
               <a href="{{Repo}}/releases">Releases</a>
@@ -96,25 +149,30 @@ foreach (var page in pages)
             <main class="prose">
               {{body}}
               <nav class="pager">
-                {{(prev is null ? "<span></span>" : $"<a href=\"{FileFor(prev)}\">← {Enc(titles.GetValueOrDefault(prev, prev))}</a>")}}
-                {{(next is null ? "<span></span>" : $"<a class=\"next\" href=\"{FileFor(next)}\">{Enc(titles.GetValueOrDefault(next, next))} →</a>")}}
+                {{(prev is null ? "<span></span>" : $"<a href=\"{FileFor(prev)}\"><small>Previous</small>{Enc(titles.GetValueOrDefault(prev, prev))}</a>")}}
+                {{(next is null ? "<span></span>" : $"<a class=\"next\" href=\"{FileFor(next)}\"><small>Next</small>{Enc(titles.GetValueOrDefault(next, next))}</a>")}}
               </nav>
               <p class="edit"><a href="{{Repo}}/wiki/{{page}}">Edit this page on the wiki</a></p>
             </main>
+            {{(toc.Length == 0 ? "" : $"<nav class=\"toc\" aria-label=\"On this page\"><p>On this page</p><ul>{toc}</ul></nav>")}}
           </div>
-          <script>
-            // The contents list is collapsible only on narrow screens, where it sits above the page.
-            if (matchMedia("(max-width: 860px)").matches) document.querySelector(".sidebar").open = false;
-          </script>
         </body>
         </html>
         """);
 }
 
+File.WriteAllText(Path.Combine(outDir, "docs", "search.json"), System.Text.Json.JsonSerializer.Serialize(search));
+
+foreach (var p in unlisted)
+    Console.Error.WriteLine($"warning: {p} is not in _Sidebar.md; listed at the end");
 foreach (var m in missing.Distinct())
     Console.Error.WriteLine($"warning: {m}");
 Console.WriteLine($"Built {pages.Count} pages into {outDir}");
 return 0;
+
+// Text a reader would see: tags gone, entities decoded, whitespace collapsed.
+static string PlainText(string html) =>
+    Regex.Replace(WebUtility.HtmlDecode(Regex.Replace(html, "<[^>]+>", " ")), @"\s+", " ").Trim();
 
 static string FileFor(string page) => page == "Home" ? "index.html" : page + ".html";
 
