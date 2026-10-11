@@ -25,7 +25,7 @@ namespace RavensPort.UI.Tests;
 /// </summary>
 public class DocsScreenshotsUiTests
 {
-    private const int Width = 1100;
+    private const int Width = 1240;
     private const int Height = 1040;
 
     private static string? Directory =>
@@ -108,6 +108,11 @@ public class DocsScreenshotsUiTests
         harness.Services.GetRequiredService<ApiBridgeViewModel>().RefreshCommand.Execute(null);
         funnels.RefreshCommand.Execute(null);
 
+        // Every write above goes through the save pipeline, and its banner is not what a reader of
+        // the docs should see.
+        var vault = harness.Services.GetRequiredService<VaultStatusViewModel>();
+        await UiDriver.UntilAsync(() => !vault.HasPendingChanges, "the last save to finish");
+
         SelectTab(window, 0);
         Snap(window, "credentialsScreen");
 
@@ -136,7 +141,10 @@ public class DocsScreenshotsUiTests
         drive.Tools.IsExpanded = true;
         Snap(window, "mcpFunnelScreen");
 
+        // Cut off above Recent activity, which would show this harness's startup rather than
+        // anything a reader would recognise.
         SelectTab(window, 4);
+        window.Height = 850;
         Snap(window, "settingsScreen");
     }
 
@@ -206,6 +214,7 @@ public class DocsScreenshotsUiTests
             Kind = CredentialKind.ApiKey,
             ApiKey = "placeholder-maps-key", // gitleaks:allow
             DefaultParameterName = "X-Goog-Api-Key",
+            DefaultValuePrefix = "",
         };
         var tailscale = new CredentialRecord
         {
