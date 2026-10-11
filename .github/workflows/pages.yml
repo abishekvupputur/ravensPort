@@ -20,10 +20,12 @@ on:
 permissions:
   contents: read
 
-# One deployment at a time, and never cancel one half-way: a wiki edit landing during a deploy
-# queues behind it rather than replacing it.
+# A deploying run holds `github-pages` from start to finish, shared with deb.yml's apt-repository
+# job, the other deployer of this site. Held for the whole run, not just the deploy job, because the
+# build job copies apt/: a release published between that copy and the deploy would otherwise be
+# rolled back to the previous package. Pull request builds deploy nothing and run side by side.
 concurrency:
-  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'github-pages' }}
   cancel-in-progress: false
 
 jobs:
@@ -49,6 +51,33 @@ jobs:
       # and content hash in site/packages.lock.json, or the build fails.
       - name: Build site
         run: dotnet run site/build.cs -p:RestoreLockedMode=true -- wiki _site
+
+      # deb.yml publishes the apt repository to this same Pages site, and a deploy replaces the
+      # whole site, so this one would delete apt/ and break `apt update` for everyone who installed
+      # it. The live repository is copied over byte for byte instead: it is signed, so it cannot be
+      # rebuilt here without the signing key, and an exact copy keeps that signature valid. The
+      # hashes in the signed Release file are checked so a partial download is never deployed.
+      #
+      # Runs on pull requests too, where it deploys nothing but shows the copy still works.
+      - name: Keep the apt repository
+        run: |
+          base=https://abishekvupputur.github.io/ravensPort/apt
+          if ! curl -fsS -o /dev/null "$base/InRelease"; then
+            echo "No apt repository is published yet; nothing to keep"
+            exit 0
+          fi
+          mkdir -p _site/apt
+          cd _site/apt
+          for f in InRelease Release Release.gpg Packages Packages.gz ravensport.asc; do
+            curl -fsSL --retry 3 -o "$f" "$base/$f"
+          done
+          awk '/^SHA256:/ { s = 1; next } /^[^ ]/ { s = 0 } s { print $1 "  " $3 }' Release | sha256sum -c
+          for f in $(awk '/^Filename:/ { sub(/^\.\//, "", $2); print $2 }' Packages); do
+            # Only a bare package name: a path from a downloaded file never chooses where we write.
+            [[ "$f" =~ ^[A-Za-z0-9._+-]+\.deb$ ]] || { echo "Unexpected Filename: $f" >&2; exit 1; }
+            curl -fsSL --retry 3 -o "$f" "$base/$f"
+          done
+          awk '/^Filename:/ { sub(/^\.\//, "", $2); f = $2 } /^SHA256:/ { print $2 "  " f }' Packages | sha256sum -c
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
