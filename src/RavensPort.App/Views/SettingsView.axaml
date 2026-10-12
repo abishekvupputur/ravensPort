@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RavensPort.UI.ViewModels"
              xmlns:vault="using:RavensPort.Core.Vault"
+             xmlns:views="using:RavensPort.Views"
              x:Class="RavensPort.Views.SettingsView"
              x:DataType="vm:SettingsViewModel"
              Background="{StaticResource BgBrush}">
@@ -334,7 +335,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Classes="card">
+            <Border Classes="card" Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Text="Recent activity" Classes="section"/>
                     <TextBlock Text="Last 20 lines — proxied requests, token refreshes, route reloads. Updates every 2s."
@@ -369,6 +370,8 @@
                                Classes="hint" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
+
+            <views:ProjectLinksView/>
 
             </StackPanel>
         </ScrollViewer>

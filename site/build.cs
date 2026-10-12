@@ -152,7 +152,10 @@ foreach (var page in pages)
                 {{(prev is null ? "<span></span>" : $"<a href=\"{FileFor(prev)}\"><small>Previous</small>{Enc(titles.GetValueOrDefault(prev, prev))}</a>")}}
                 {{(next is null ? "<span></span>" : $"<a class=\"next\" href=\"{FileFor(next)}\"><small>Next</small>{Enc(titles.GetValueOrDefault(next, next))}</a>")}}
               </nav>
-              <p class="edit"><a href="{{Repo}}/wiki/{{page}}">Edit this page on the wiki</a></p>
+              <p class="edit">
+                <a href="{{Repo}}/wiki/{{page}}">Edit this page on the wiki</a>
+                <span><a href="{{Repo}}/issues">Request support</a> · <a href="{{Repo}}/security/advisories/new">Report vulnerabilities privately</a></span>
+              </p>
             </main>
             {{(toc.Length == 0 ? "" : $"<nav class=\"toc\" aria-label=\"On this page\"><p>On this page</p><ul>{toc}</ul></nav>")}}
           </div>

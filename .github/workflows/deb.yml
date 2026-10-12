@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build and publish (e.g. v5.0.1)
+        description: Existing release tag to build and publish (e.g. v5.0.2)
         required: true
       ref:
         description: Branch, tag or commit to build from, if not the tag itself

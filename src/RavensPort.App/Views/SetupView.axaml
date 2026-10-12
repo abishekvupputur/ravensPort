@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:views="using:RavensPort.Views"
              x:Class="RavensPort.Views.SetupView"
              x:DataType="vm:SetupViewModel"
              Background="{StaticResource BgBrush}">
@@ -529,7 +530,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Classes="card">
+                <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
                         <TextBlock Text="Keeping the vault available" Classes="section"/>
                         <TextBlock Classes="hint">
@@ -537,6 +538,8 @@
                         </TextBlock>
                     </StackPanel>
                 </Border>
+
+                <views:ProjectLinksView/>
 
             </StackPanel>
         </ScrollViewer>

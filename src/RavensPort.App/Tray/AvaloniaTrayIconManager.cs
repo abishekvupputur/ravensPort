@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using RavensPort.Helpers;
 
 namespace RavensPort.Tray;
 
@@ -38,6 +39,14 @@ internal sealed class AvaloniaTrayIconManager : ITrayIcon
 
         var menu = new NativeMenu();
         menu.Add(_openItem);
+        menu.Add(new NativeMenuItemSeparator());
+        foreach (var (label, uri) in ProjectLinks.All)
+        {
+            var linkItem = new NativeMenuItem(label);
+            linkItem.Click += (_, _) => ProjectLinks.Open(_mainWindow, uri);
+            menu.Add(linkItem);
+        }
+
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(exitItem);
 

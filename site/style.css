@@ -58,7 +58,7 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.9em; }
   color: var(--text); text-decoration: none; font-weight: 700; letter-spacing: 0.2px;
 }
 .brand img { border-radius: 50%; }
-.topbar nav { display: flex; gap: 18px; }
+.topbar nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 18px; }
 .topbar nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
 .topbar nav a:hover { color: var(--text); }
 
@@ -217,7 +217,7 @@ table.compare { width: 100%; border-collapse: collapse; background: var(--surfac
 .pager small { display: block; color: var(--muted); font-size: 12px; }
 .pager a:hover { border-color: var(--accent); }
 .pager .next { margin-left: auto; text-align: right; }
-.edit { font-size: 14px; }
+.edit { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; font-size: 14px; color: var(--muted); }
 .edit a { color: var(--muted); }
 
 @media (max-width: 1180px) {
@@ -230,6 +230,9 @@ table.compare { width: 100%; border-collapse: collapse; background: var(--surfac
   .search { order: 3; flex-basis: 100%; max-width: none; }
   .sidebar { position: static; max-height: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; }
   .sidebar summary { display: block; padding: 8px 12px; font-weight: 600; cursor: pointer; }
-  .topbar nav { gap: 14px; }
+  .topbar nav { gap: 8px 14px; }
   .hero { padding-top: 48px; }
+}
+@media (max-width: 560px) {
+  .topbar nav { flex-basis: 100%; justify-content: flex-start; }
 }
