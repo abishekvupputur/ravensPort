@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using RavensPort.Helpers;
 
 namespace RavensPort.Tray;
 
@@ -43,6 +44,12 @@ public sealed class TrayIconManager : ITrayIcon
             ForeColor = Color.FromArgb(0xEB, 0xEB, 0xEB),
         };
         _openItem = contextMenu.Items.Add("Open Settings", null, (_, _) => ShowMainWindow());
+
+        contextMenu.Items.Add(new ToolStripSeparator());
+        foreach (var (label, uri) in ProjectLinks.All)
+        {
+            contextMenu.Items.Add(label, null, (_, _) => ProjectLinks.Open(_mainWindow, uri));
+        }
 
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add("Exit", null, (_, _) => BeginExit(confirmExit));

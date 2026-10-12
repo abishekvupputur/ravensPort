@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -141,10 +142,37 @@ public class DocsScreenshotsUiTests
         drive.Tools.IsExpanded = true;
         Snap(window, "mcpFunnelScreen");
 
-        // Cut off above Recent activity, which would show this harness's startup rather than
-        // anything a reader would recognise.
+        // Recent activity as a day with these routes would log it, in the app's own line formats.
+        // The real log at this point holds only the harness's startup, which no reader would
+        // recognise. Set straight on the view model: the 2s refresh does not run before the snap.
         SelectTab(window, 4);
-        window.Height = 850;
+        var settingsView = window.GetVisualDescendants().OfType<SettingsView>().First();
+        var day = DateTime.Today.AddHours(9).AddMinutes(41);
+        string At(int seconds) => day.AddSeconds(seconds).ToString("yyyy-MM-dd HH:mm:ss");
+        harness.Services.GetRequiredService<SettingsViewModel>().RecentActivity = string.Join(Environment.NewLine,
+        [
+            $"{At(0)} ROUTES reloaded — 9 active route(s)",
+            $"{At(4)} REFRESH 'GitHub' OK — expires in 8h",
+            $"{At(12)} PROXY GET /github/repos/octocat/hello-world -> https://api.github.com [tokens: header Authorization]",
+            $"{At(13)} PROXY GET /github/repos/octocat/hello-world/issues -> https://api.github.com [tokens: header Authorization]",
+            $"{At(31)} PROXY POST /places/v1/places:searchText -> https://places.googleapis.com [tokens: header X-Goog-Api-Key]",
+            $"{At(33)} MCP bridge 'Google Weather' call get_weather -> HTTP 200",
+            $"{At(34)} PROXY GET /weather/v1/currentConditions:lookup -> https://weather.googleapis.com [tokens: header X-Goog-Api-Key]",
+            $"{At(58)} PROXY GET /brightsky/weather -> https://api.brightsky.dev [no credential configured - forwarded unauthenticated]",
+            $"{At(75)} REFRESH 'Google Drive' OK — expires in 1h",
+            $"{At(76)} PROXY GET /drive/files -> https://www.googleapis.com/drive/v3 [tokens: header Authorization]",
+            $"{At(102)} PROXY GET /tailscale/tailnet/-/devices -> https://api.tailscale.com/api/v2 [tokens: header Authorization]",
+            $"{At(140)} DENIED GET /billing/invoices — missing or incorrect proxy key for route '/billing'",
+        ]);
+
+        // Exactly as tall as the cards, so the image ends under the last one instead of in space.
+        // Measured from the last card rather than the scroll extent: the page's panel stretches to
+        // fill the viewport, so the extent is always the window.
+        window.UpdateLayout();
+        var scroller = settingsView.GetVisualDescendants().OfType<ScrollViewer>().First();
+        var lastCard = settingsView.GetVisualDescendants().OfType<ProjectLinksView>().First();
+        var lastCardBottom = lastCard.TranslatePoint(new Point(0, lastCard.Bounds.Height), scroller)!.Value.Y;
+        window.Height -= scroller.Viewport.Height - lastCardBottom - 16;
         Snap(window, "settingsScreen");
     }
 

@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RavensPort.Views.ProjectLinksView">
+    <!-- Buttons are added from ProjectLinks in code-behind, so the tray menu and both pages share
+         one list. -->
+    <Border Classes="card">
+        <StackPanel>
+            <TextBlock Text="Help and feedback" Classes="section"/>
+            <!-- Negative bottom margin takes back the last row's 6px, so the card's padding is even. -->
+            <WrapPanel x:Name="Links" Margin="0,0,0,-6"/>
+        </StackPanel>
+    </Border>
+</UserControl>
