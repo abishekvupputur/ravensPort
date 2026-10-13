@@ -5,8 +5,8 @@
 <h1 align="center">RavensPort</h1>
 
 <p align="center">
-  <b>Give each AI agent its own MCP endpoint — pooling the servers you choose, exposing only the
-  tools you allow, with OAuth handled for you.</b>
+  <b>A local MCP gateway: give each AI agent its own MCP endpoint, choose exactly which tools it
+  sees, turn any REST API or OpenAPI spec into MCP tools, and let RavensPort handle the OAuth.</b>
 </p>
 
 <p align="center">
@@ -39,18 +39,29 @@
   mTLS — <a href="https://github.com/abishekvupputur/ravensPort/wiki/Installation#from-the-microsoft-store">why</a>.</sub>
 </p>
 
-A tray-resident desktop app that runs a local reverse proxy on `127.0.0.1`. It owns the OAuth2
-flow and token lifecycle for upstream APIs and MCP servers, then lets you compose those servers
-into filtered, per-agent MCP endpoints. Windows is the supported platform; an experimental
-Debian/Ubuntu build is available for x86-64 and arm64.
+RavensPort is an MCP proxy that lives in your tray and listens on `127.0.0.1`. Point Claude Code,
+Cursor, VS Code or any other MCP client at it, and each agent gets one endpoint carrying exactly
+the tools you granted, from as many MCP servers and APIs as you like. Windows is the supported
+platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
 
-[![MCP Funnel tab](media/mcpFunnelScreen.png)](media/mcpFunnelScreen.png)
+![A tour of RavensPort: sign in once, pool MCP servers into one endpoint per agent with MCP Funnel, and turn a REST API or OpenAPI spec into MCP tools with API to MCP](media/tour.gif)
+
+## Why
+
+- **Too many tools.** Connect three MCP servers and your agent sees all ninety of their tools,
+  crowding its context. RavensPort lets you say "this agent gets these six".
+- **OAuth everywhere.** More and more MCP servers sit behind OAuth2, but most clients expect a
+  plain HTTP endpoint. RavensPort signs in once, refreshes the tokens, and no token ever goes in
+  your `mcp.json`.
+- **No MCP server at all.** The system you want the agent to reach often has only a REST API.
+  RavensPort turns that API into MCP tools without you writing an MCP server.
 
 ## What it does
 
-- **MCP Funnel** — per-agent endpoints pooling several MCP servers, with per-tool filtering
-- **API to MCP** — turn an API you already proxy into an MCP endpoint from a JSON manifest, or
-  import an OpenAPI document and pick which of its operations become tools
+- **MCP Funnel** — an MCP gateway that pools several MCP servers behind one endpoint per agent,
+  with per-tool filtering of tools, resources and prompts
+- **API to MCP** — turn a REST API you already proxy into an MCP server from a JSON manifest, or
+  import an OpenAPI (Swagger) spec and pick which of its operations become tools
 - **OAuth2, handled** — Google, GitHub, Nextcloud or any custom provider; device-code sign-in;
   client-credentials and Google service accounts for logins with nobody at the keyboard; static
   API keys for the services that never offered OAuth. Tokens refresh in the background
