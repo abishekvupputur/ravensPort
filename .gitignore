@@ -67,3 +67,8 @@ libonepassword.h
 /*.snap
 # snapcraft export-login output: a live Store credential
 creds.txt
+
+# What packaging/flatpak/build.sh generates and produces.
+/packaging/flatpak/*-sources.json
+/packaging/flatpak/.local-build.yml
+/packaging/flatpak/*.flatpak

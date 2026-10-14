@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the Flatpak: what Flathub and software centres show. -->
+<component type="desktop-application">
+  <id>io.github.abishekvupputur.RavensPort</id>
+  <name>RavensPort</name>
+  <summary>Give each AI agent its own MCP endpoint</summary>
+  <developer id="io.github.abishekvupputur">
+    <name>Abishek Narasimhan</name>
+  </developer>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <!-- RavensPort is MIT. The Flatpak also ships the Proton Pass CLI, built from source, which is
+       GPL-3.0-or-later and runs as a separate program. -->
+  <project_license>MIT AND GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      RavensPort is a local MCP gateway that lives in your tray and listens on 127.0.0.1. Point
+      Claude Code, Cursor, VS Code or any other MCP client at it, and each agent gets one endpoint
+      carrying exactly the tools you granted, from as many MCP servers and APIs as you like.
+    </p>
+    <ul>
+      <li>MCP Funnel: pool several MCP servers behind one endpoint per agent, and choose which
+        tools, resources and prompts each agent sees</li>
+      <li>API to MCP: turn a REST API into MCP tools from a JSON manifest, or import an OpenAPI
+        spec and pick which operations become tools</li>
+      <li>OAuth2 handled: Google, GitHub, Nextcloud or any custom provider, with tokens refreshed
+        in the background and never written into your MCP client's config</li>
+    </ul>
+    <p>
+      Credentials, tokens, routes and funnels are kept in a vault in 1Password or Proton Pass.
+      This package includes the Proton Pass CLI, which RavensPort runs to reach a Proton Pass vault;
+      it keeps the Proton Pass session key in your system keyring, so it needs one running, such as
+      GNOME Keyring or KWallet. 1Password needs the 1Password desktop app running with SDK
+      integration turned on.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.abishekvupputur.RavensPort.desktop</launchable>
+  <icon type="stock">io.github.abishekvupputur.RavensPort</icon>
+
+  <url type="homepage">https://abishekvupputur.github.io/ravensPort/</url>
+  <url type="bugtracker">https://github.com/abishekvupputur/ravensPort/issues</url>
+  <url type="help">https://github.com/abishekvupputur/ravensPort/wiki</url>
+  <url type="vcs-browser">https://github.com/abishekvupputur/ravensPort</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>MCP Funnel: one endpoint per agent, with per-tool filtering</caption>
+      <image>https://raw.githubusercontent.com/abishekvupputur/ravensPort/main/media/mcpFunnelScreen.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>API to MCP: a REST API described in a manifest becomes MCP tools</caption>
+      <image>https://raw.githubusercontent.com/abishekvupputur/ravensPort/main/media/apiMcpBridgeScreen.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Importing an OpenAPI spec and choosing which operations become tools</caption>
+      <image>https://raw.githubusercontent.com/abishekvupputur/ravensPort/main/media/openAPIPicker.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Credentials: OAuth2 sign-ins and API keys, refreshed in the background</caption>
+      <image>https://raw.githubusercontent.com/abishekvupputur/ravensPort/main/media/credentialsScreen.png</image>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Development</category>
+    <category>Network</category>
+  </categories>
+  <keywords>
+    <keyword>MCP</keyword>
+    <keyword>Model Context Protocol</keyword>
+    <keyword>OAuth</keyword>
+    <keyword>proxy</keyword>
+    <keyword>gateway</keyword>
+    <keyword>OpenAPI</keyword>
+    <keyword>AI agent</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="5.0.2" date="2026-10-13">
+      <description>
+        <p>Help and support links in the app.</p>
+      </description>
+    </release>
+    <release version="5.0.1" date="2026-10-10"/>
+    <release version="5.0.0" date="2026-10-08"/>
+  </releases>
+</component>

@@ -35,11 +35,17 @@ internal static class UnixExecutableProvenance
     ///
     /// <c>/snap/bin</c> and <c>/nix/store</c> are here because both are managed by a daemon running
     /// as root and are the normal way to have these CLIs on the distributions that use them.
+    ///
+    /// <c>/app/bin</c> only inside a Flatpak, where it is the app's own read-only payload and is
+    /// where the Flatpak build puts the pass-cli it bundles. The sandbox cannot see the host's
+    /// <c>/usr/bin</c> at all, so that bundled copy is the only one there is. Outside a Flatpak,
+    /// <c>/app</c> means nothing in particular and stays untrusted.
     /// </summary>
     private static readonly string[] SystemRoots =
     [
         "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
         "/bin", "/sbin", "/opt", "/snap/bin", "/nix/store",
+        .. (File.Exists("/.flatpak-info") ? new[] { "/app/bin" } : []),
     ];
 
     /// <param name="reason">Why not, in words the setup page can show. Empty when trusted.</param>
