@@ -88,6 +88,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="5.0.3" date="2026-10-14">
+      <description>
+        <p>First release on Flathub, with the Proton Pass CLI built in.</p>
+      </description>
+    </release>
     <release version="5.0.2" date="2026-10-13">
       <description>
         <p>Help and support links in the app.</p>
