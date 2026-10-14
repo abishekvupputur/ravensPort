@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RavensPort
+Comment=Local MCP gateway: one MCP endpoint per AI agent, with OAuth2 handled
+Exec=ravensport
+Icon=io.github.abishekvupputur.RavensPort
+Terminal=false
+Categories=Development;Network;
+Keywords=MCP;OAuth;proxy;AI;agent;gateway;OpenAPI;
+StartupWMClass=RavensPort
