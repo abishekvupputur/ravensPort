@@ -1,2 +1,6 @@
 # Shell scripts run under bash, including from a Windows checkout under WSL, where CRLF breaks them.
 *.sh text eol=lf
+# The Flatpak files are read by Linux tools that reject CRLF (desktop-file-validate among them),
+# and the local build copies them from the working tree.
+packaging/flatpak/** text eol=lf
+packaging/flatpak/*.png binary
