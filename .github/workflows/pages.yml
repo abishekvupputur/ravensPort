@@ -11,9 +11,10 @@ on:
   push:
     branches: [ "main" ]
     paths: [ "site/**", "media/**", ".github/workflows/pages.yml" ]
+  # Every pull request, not only those touching the site: the apt-install jobs below are required
+  # checks on main, and a required check whose workflow never starts blocks the merge for good.
   pull_request:
     branches: [ "main" ]
-    paths: [ "site/**", "media/**", ".github/workflows/pages.yml" ]
   gollum:
   workflow_dispatch:
 
