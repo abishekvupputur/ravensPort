@@ -124,6 +124,7 @@ modules:
       - type: git
         url: https://github.com/abishekvupputur/ravensPort.git
         tag: v5.0.3
+        commit: 9faf101c4f16ef7db24bb476a7d04daf44fe55db
       - nuget-sources.json
       - go-sources.json
       # A wrapper rather than a symlink: the apphost resolves its runtime relative to its own
