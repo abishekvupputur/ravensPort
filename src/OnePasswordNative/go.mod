@@ -88,6 +88,12 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // to go1.26.9 at the same time: govulncheck traced GO-2026-6603, -6611, -6612, -6613 and -6617 from
 // onepassword.init into net/http, all fixed in go1.26.9.
 //
+// And again for x/net/html: CVE-2026-97045 (GO-2026-6860, ancestor namespace transitions not all
+// checked when rendering raw text) and CVE-2026-78661 (GO-2026-6866, quadratic coalescing of text
+// nodes). Both fixed in v0.62.0, which carried x/crypto to v0.58.0, x/sys to v0.49.0 and x/text to
+// v0.43.0. Nothing here imports x/net/html, and the standard library has no copy of it, so unlike
+// last time the toolchain line does not move.
+//
 // One advisory here cannot be closed this way. GO-2026-5932 says golang.org/x/crypto/openpgp is
 // unmaintained and unsafe by design, and OSV records it with no fixed version at all -- it is a
 // statement about the package existing, not about a release. No version of x/crypto clears it, and
@@ -98,7 +104,7 @@ require github.com/1password/onepassword-sdk-go v0.4.1
 // version. No workflow runs tidy (CI runs `go build` and `go test` only), so they hold -- but a
 // local tidy will undo this, and the alerts come back. Re-add with:
 //
-//	go get golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 google.golang.org/grpc@v1.83.2 go.opentelemetry.io/otel/sdk@v1.45.0 golang.org/x/crypto@v0.57.0 go.opentelemetry.io/otel@v1.45.0
+//	go get golang.org/x/net@v0.62.0 golang.org/x/text@v0.43.0 google.golang.org/grpc@v1.83.2 go.opentelemetry.io/otel/sdk@v1.45.0 golang.org/x/crypto@v0.58.0 go.opentelemetry.io/otel@v1.45.0
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 // indirect
@@ -115,10 +121,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
