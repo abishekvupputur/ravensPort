@@ -2,13 +2,14 @@ module onepasswordnative
 
 // The language minimum, and the toolchain that builds what ships, are two different numbers on
 // purpose. setup-go installs the toolchain line in every workflow, so CI and the release are built
-// with go1.26.9 and its net/http fixes (see the x/net note below). The go line stays at what the
-// code needs: a go line of 1.26.9 made every tool running an older Go refuse the file outright --
+// with go1.26.10, its net/http fixes (see the x/net note below) and its crypto/x509 denylist of
+// distrusted intermediates (GO-2026-6809). The go line stays at what the code needs: a go line of
+// 1.26.9 made every tool running an older Go refuse the file outright --
 // Snyk's own import of this module failed with "Failed to process go.mod" -- while a toolchain line
 // is only a preference that an older Go with GOTOOLCHAIN=local reads past.
 go 1.26.6
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require github.com/1password/onepassword-sdk-go v0.4.1
 
