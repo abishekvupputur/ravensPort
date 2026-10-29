@@ -238,7 +238,7 @@ jobs:
       # Handed to install-test-linux below, which installs this exact package rather than building
       # its own: the check is of what this job produced.
       - name: Upload the .deb
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-${{ matrix.arch }}
           path: packaging/ravensport_0.0.0_${{ matrix.arch }}.deb
@@ -302,7 +302,7 @@ jobs:
       # The screenshot is the only way to see what the installed app actually drew.
       - name: Upload the installed app's screenshot
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installed-deb-${{ matrix.arch }}
           path: ${{ runner.temp }}/test-deb
