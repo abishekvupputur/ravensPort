@@ -14,6 +14,7 @@ public sealed class ConfigStore
     public List<McpApiBridgeRecord> McpApiBridges { get; set; } = [];
     public List<EmbeddingProviderRecord> EmbeddingProviders { get; set; } = [];
     public List<EntityModelRecord> EntityModels { get; set; } = [];
+    public List<DecisionModelRecord> DecisionModels { get; set; } = [];
     public List<FilterProfileRecord> FilterProfiles { get; set; } = [];
     public AppSettings Settings { get; set; } = new();
 }

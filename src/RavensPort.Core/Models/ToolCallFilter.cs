@@ -24,6 +24,12 @@ public enum FilterCategory
 
     /// <summary>Step 4: calls that mean something the user denied, judged by an embedding model.</summary>
     RiskyActions,
+
+    /// <summary>
+    /// Step 5: statements the user wrote ("the call deletes data"), each answered by a decision model
+    /// with the probability it holds for the call; a probability at or over the threshold blocks.
+    /// </summary>
+    Decision,
 }
 
 /// <summary>
@@ -103,7 +109,12 @@ public sealed class FunnelFilter
     /// <summary>Texts that look similar but are fine; a text closer to one of these is let through.</summary>
     public List<string> AllowExamples { get; set; } = [];
 
-    /// <summary>A score the user set by hand (Entities and Meaning). Null uses the level's preset.</summary>
+    // ---- decision (step 5) — its statements are kept in DenyInstructions ----------------------
+
+    /// <summary>Which decision model answers this step's statements.</summary>
+    public Guid? DecisionModelId { get; set; }
+
+    /// <summary>A score the user set by hand (Entities, Meaning and Decision). Null uses the level's preset.</summary>
     public double? Threshold { get; set; }
 }
 

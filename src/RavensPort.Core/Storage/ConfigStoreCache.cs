@@ -403,6 +403,7 @@ public sealed class ConfigStoreCache
         List<McpApiBridgeRecord> McpApiBridges,
         List<EmbeddingProviderRecord> EmbeddingProviders,
         List<EntityModelRecord> EntityModels,
+        List<DecisionModelRecord> DecisionModels,
         List<FilterProfileRecord> FilterProfiles,
         int ListenPort,
         bool McpFunnelEnabled,
@@ -420,6 +421,7 @@ public sealed class ConfigStoreCache
         [.. store.McpApiBridges],
         [.. store.EmbeddingProviders],
         [.. store.EntityModels],
+        [.. store.DecisionModels],
         [.. store.FilterProfiles],
         store.Settings.ListenPort,
         store.Settings.McpFunnelEnabled,
@@ -438,6 +440,7 @@ public sealed class ConfigStoreCache
         ReplaceAll(store.McpApiBridges, snapshot.McpApiBridges);
         ReplaceAll(store.EmbeddingProviders, snapshot.EmbeddingProviders);
         ReplaceAll(store.EntityModels, snapshot.EntityModels);
+        ReplaceAll(store.DecisionModels, snapshot.DecisionModels);
         ReplaceAll(store.FilterProfiles, snapshot.FilterProfiles);
 
         store.Settings.ListenPort = snapshot.ListenPort;

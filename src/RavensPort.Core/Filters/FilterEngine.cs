@@ -29,6 +29,7 @@ public static class FilterNames
         FilterCategory.PersonalData => "RegEx",
         FilterCategory.Entities => "Entities",
         FilterCategory.RiskyActions => "Meaning",
+        FilterCategory.Decision => "Decision",
         _ => category.ToString(),
     };
 
