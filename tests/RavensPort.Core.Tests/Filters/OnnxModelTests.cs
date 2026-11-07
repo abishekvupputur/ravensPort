@@ -54,6 +54,18 @@ internal static class TinyOnnx
         Cat(Str(1, name), Bytes(2, Bytes(1, Cat(Int(1, elemType), Bytes(2, Cat([.. dims.Select(d => Bytes(1, Str(2, d)))]))))));
 
     private const int Float = 1, Int64 = 7;
+    public const int Bool = 9, Long = Int64, Single = Float;
+
+    /// <summary>
+    /// A graph with the given inputs whose one output is <paramref name="from"/> cast to float: inputs it
+    /// does not use are still declared, so code that feeds them by name is exercised.
+    /// </summary>
+    public static void WriteCast(string path, (string Name, int Type, string[] Dims)[] inputs, string from, string output, string[] outputDims)
+    {
+        var cast = Cat(Str(1, from), Str(2, output), Str(4, "Cast"), Bytes(5, Cat(Str(1, "to"), Int(3, Float), Int(20, 2))));
+        var graph = Cat([Bytes(1, cast), Str(2, "tiny"), .. inputs.Select(i => Bytes(11, Tensor(i.Name, i.Type, i.Dims))), Bytes(12, Tensor(output, Float, outputDims))]);
+        File.WriteAllBytes(path, Cat(Int(1, 8), Bytes(8, Int(2, 13)), Bytes(7, graph)));
+    }
 
     /// <summary>input_ids, attention_mask (and optionally token_type_ids) → embedding = float(input_ids).</summary>
     public static string Write(string folder, bool tokenTypes = false, string outputName = "embedding")

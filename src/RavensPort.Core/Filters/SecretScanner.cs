@@ -422,7 +422,8 @@ public static class SecretRuleSet
     }
 
     private static readonly Lazy<HashSet<string>> GitleaksIds = new(() =>
-        [.. System.Text.RegularExpressions.Regex.Matches(Embedded("RavensPort.Core.Filters.gitleaks.toml"), "(?m)^id = \"([^\"]+)\"").Select(m => m.Groups[1].Value)]);
+        [.. System.Text.RegularExpressions.Regex.Matches(Embedded("RavensPort.Core.Filters.gitleaks.toml"), "(?m)^id = \"([^\"]+)\"",
+            System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(5)).Select(m => m.Groups[1].Value)]);
 
     /// <summary>Where a rule came from: gitleaks, RavensPort, strict, or the user's own.</summary>
     public static string OriginOf(string id) =>
