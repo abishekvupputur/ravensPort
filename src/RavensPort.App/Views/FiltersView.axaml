@@ -1,0 +1,560 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RavensPort.UI.ViewModels"
+             xmlns:models="using:RavensPort.Core.Models"
+             x:Class="RavensPort.Views.FiltersView"
+             x:DataType="vm:FiltersViewModel"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Styles>
+        <!-- A pattern inside Personal data: a small pill. Off ones are struck through and dimmed,
+             not hidden, so they can be switched back on in place. -->
+        <Style Selector="Button.chip">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="0,0,4,4"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        </Style>
+        <Style Selector="Button.chip.custom">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+        </Style>
+        <Style Selector="Button.chip.off">
+            <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
+        </Style>
+        <Style Selector="Button.chip.off TextBlock">
+            <Setter Property="TextDecorations" Value="Strikethrough"/>
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.warning">
+            <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.step">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <UserControl.Resources>
+        <!-- Where an ONNX model runs. One template for the model cards and steps 3 and 4: all edit
+             the same model, so a change shows everywhere and applies to every funnel using it. -->
+        <DataTemplate x:Key="DevicePickerTemplate" x:DataType="vm:DevicePickerViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Runs on" Classes="label" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding DeviceChoices}" SelectedItem="{Binding SelectedDeviceChoice}" Width="90"
+                          AutomationProperties.AutomationId="filters.device"
+                          ToolTip.Tip="CPU is usually faster for short tool calls. A GPU that cannot start the model falls back to the CPU, and the activity log says so."/>
+                <ComboBox ItemsSource="{Binding Gpus}" SelectedItem="{Binding SelectedGpu}" Width="320"
+                          IsVisible="{Binding ShowsGpu}" AutomationProperties.AutomationId="filters.device.gpu"/>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,0,4,0">
+            <StackPanel Margin="16">
+
+                <!-- What this tab is, before anything to configure. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="What filters do" Classes="section"/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Text="Filters are set up as profiles. Point each funnel at one, and give an upstream inside a funnel its own when you trust it more — or less — than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys and passwords, by the gitleaks rule set. Always denied."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · Personal data — emails, card numbers, IBANs, phone numbers… by patterns you can edit and add to."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="3 · Entities — names, places, medical conditions… found by an entity model (GLiNER) on this PC."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6" Text="4 · Meaning — calls that mean something you deny, judged by an embedding model."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap"
+                                   Text="A Block ends the check at that step. Whatever a step found is replaced with [its name] before the next step reads the call — so step 4, which may use an API, never receives a secret or personal data that steps 1–3 found. Matched values are never written to a log, only which step matched and in which field."/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Models: needed only by steps 3 and 4, so collapsed until wanted. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <Expander HorizontalAlignment="Stretch" IsExpanded="False">
+                        <Expander.Header>
+                            <StackPanel>
+                                <TextBlock Text="Models" FontWeight="SemiBold"/>
+                                <TextBlock Classes="hint" Text="Entity models for step 3 and embedding models for step 4. Add one here, then pick it in a funnel below."/>
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel>
+
+                            <!-- ===== Entity models (step 3) ===== -->
+                            <TextBlock Text="Entity models (step 3)" Classes="label" Margin="0,0,0,4"/>
+                            <ItemsControl ItemsSource="{Binding EntityModels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:EntityModelItemViewModel">
+                                        <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <Button Grid.Column="1" Content="Test" Classes="ghost" Margin="0,0,6,0"
+                                                        Command="{Binding TestCommand}" AutomationProperties.AutomationId="filters.entity.test"
+                                                        ToolTip.Tip="Loads the model and looks for a person, a city and a phone number in a test sentence"/>
+                                                <Button Grid.Column="2" Content="Remove" Classes="ghost"
+                                                        Command="{Binding RemoveCommand}" AutomationProperties.AutomationId="filters.entity.remove"/>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding Summary}" Classes="hint" TextWrapping="Wrap"/>
+                                                <ContentControl Grid.Row="2" Grid.ColumnSpan="3" Margin="0,6,0,0"
+                                                                Content="{Binding Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                                <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding TestResult}" Classes="hint" TextWrapping="Wrap"
+                                                           IsVisible="{Binding TestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Grid ColumnDefinitions="180,*" Margin="0,0,0,6">
+                                <StackPanel Margin="0,0,6,0">
+                                    <TextBlock Text="Name" Classes="label"/>
+                                    <TextBox Text="{Binding NewEntityName}" PlaceholderText="e.g. GLiNER PII"
+                                             AutomationProperties.AutomationId="filters.entity.name"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Model file or folder" Classes="label"/>
+                                    <TextBox Text="{Binding NewEntityPath}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                             PlaceholderText="C:\Models\gliner_multi_pii-v1\onnx\model.onnx"
+                                             AutomationProperties.AutomationId="filters.entity.path"/>
+                                </StackPanel>
+                            </Grid>
+                            <ContentControl Margin="0,0,0,4" Content="{Binding NewEntityRuns}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                                       Text="A GLiNER model exported to ONNX, with spm.model, gliner_config.json and added_tokens.json from its Hugging Face page beside it (or one folder up, if the .onnx is in onnx/). onnx-community/gliner_multi_pii-v1 is tuned for personal data and reads German and English. Use model.onnx or model_fp16.onnx — the int8 and other quantized files find almost nothing. About 1.2 GB of RAM while RavensPort runs."/>
+                            <Button Content="Add entity model" Command="{Binding AddEntityModelCommand}" HorizontalAlignment="Left" Margin="0,4,0,4"
+                                    AutomationProperties.AutomationId="filters.entity.add"/>
+                            <TextBlock Text="{Binding NewEntityError}" Classes="error"
+                                       IsVisible="{Binding NewEntityError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                            <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,10"/>
+
+                            <!-- ===== Embedding models (step 4) ===== -->
+                            <TextBlock Text="Embedding models (step 4)" Classes="label" Margin="0,0,0,4"/>
+                            <ItemsControl ItemsSource="{Binding Providers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:EmbeddingProviderItemViewModel">
+                                        <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <Button Grid.Column="1" Content="Test" Classes="ghost" Margin="0,0,6,0"
+                                                        Command="{Binding TestCommand}" AutomationProperties.AutomationId="filters.provider.test"
+                                                        ToolTip.Tip="Embeds three short sentences and shows the result"/>
+                                                <Button Grid.Column="2" Content="Remove" Classes="ghost"
+                                                        Command="{Binding RemoveCommand}" AutomationProperties.AutomationId="filters.provider.remove"/>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding Summary}" Classes="hint" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Text="{Binding RemoteWarning}" Classes="warning"
+                                                           IsVisible="{Binding IsRemote}"/>
+                                                <ContentControl Grid.Row="3" Grid.ColumnSpan="3" Margin="0,6,0,0" IsVisible="{Binding IsOnnx}"
+                                                                Content="{Binding Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                                <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Text="{Binding TestResult}" Classes="hint" TextWrapping="Wrap"
+                                                           IsVisible="{Binding TestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,6">
+                                <StackPanel Margin="0,0,6,0">
+                                    <TextBlock Text="Where it runs" Classes="label"/>
+                                    <ComboBox ItemsSource="{Binding ProviderKinds}" SelectedItem="{Binding NewProviderKindChoice}"
+                                              HorizontalAlignment="Stretch" AutomationProperties.AutomationId="filters.provider.kind"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Name" Classes="label"/>
+                                    <TextBox Text="{Binding NewProviderName}" PlaceholderText="e.g. Ollama nomic"
+                                             AutomationProperties.AutomationId="filters.provider.name"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- An API: URL, model, key. -->
+                            <StackPanel IsVisible="{Binding NewIsApi}">
+                                <Grid ColumnDefinitions="*,*" Margin="0,0,0,6">
+                                    <StackPanel Margin="0,0,6,0">
+                                        <TextBlock Text="API base URL" Classes="label"/>
+                                        <TextBox Text="{Binding NewProviderBaseUrl}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                 AutomationProperties.AutomationId="filters.provider.url"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Model" Classes="label"/>
+                                        <TextBox Text="{Binding NewProviderModel}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                 AutomationProperties.AutomationId="filters.provider.model"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="{Binding NewModelHint}" Classes="hint" Margin="0,0,0,6"
+                                           IsVisible="{Binding NewModelHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                <TextBlock Text="API key" Classes="label"/>
+                                <ComboBox ItemsSource="{Binding CredentialChoices}" SelectedItem="{Binding NewProviderCredential}"
+                                          Width="320" HorizontalAlignment="Left" AutomationProperties.AutomationId="filters.provider.credential"/>
+                                <TextBlock Classes="hint" Margin="0,2,0,6" TextWrapping="Wrap"
+                                           Text="A credential from the Credentials tab — add the key there as an &quot;API key&quot;, so it stays in your password manager. Local servers usually need none."/>
+
+                                <!-- The trust note, shown while what is being added would send calls off this PC. -->
+                                <Border BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="3" Padding="8" Margin="0,0,0,6"
+                                        IsVisible="{Binding NewIsRemote}">
+                                    <TextBlock Classes="warning"
+                                               Text="Only use an API you trust. Every call step 4 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API to be embedded, after steps 1–3 have replaced what they found. Ollama, a llama.cpp server on this PC, or an ONNX model keep it on this PC."/>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- An ONNX model in this process. -->
+                            <StackPanel IsVisible="{Binding NewIsOnnx}" Margin="0,0,0,6">
+                                <TextBlock Text="Model file or folder" Classes="label"/>
+                                <TextBox Text="{Binding NewProviderFolder}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                         PlaceholderText="C:\Models\stella-en-400M-v5.onnx   or   C:\Models\all-MiniLM-L6-v2"
+                                         AutomationProperties.AutomationId="filters.provider.folder"/>
+                                <ContentControl Margin="0,6,0,0" Content="{Binding NewRuns}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0"
+                                           Text="A sentence-embedding model exported to ONNX — the .onnx file, or a folder holding model.onnx — with its tokenizer beside it: vocab.txt, and tokenizer_config.json if the model has one. BERT-style models work: all-MiniLM-L6-v2, bge, e5, gte, stella-en-400M-v5. RavensPort never downloads a model itself."/>
+                            </StackPanel>
+
+                            <Button Content="Add embedding model" Command="{Binding AddProviderCommand}" HorizontalAlignment="Left" Margin="0,4,0,4"
+                                    AutomationProperties.AutomationId="filters.provider.add"/>
+                            <TextBlock Text="{Binding NewProviderError}" Classes="error"
+                                       IsVisible="{Binding NewProviderError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,10,0,0" IsVisible="{Binding HasGpus}"
+                                       Text="GPU runs through DirectML on any DirectX 12 GPU. For short tool calls the CPU is usually faster — DirectML re-prepares a model for every new input length (measured: GLiNER 40–60 ms on CPU, 170–290 ms on an RTX 4060). A GPU that cannot start the model falls back to the CPU, and the activity log says so."/>
+                        </StackPanel>
+                    </Expander>
+                </Border>
+
+                <!-- Profiles: named sets of the four steps. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Profiles" Classes="section"/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="A profile is one setting of the four steps. Make one per level of trust — say Strict for anything that leaves your network, Trusted for your own servers — and point funnels and upstreams at them below. Editing a profile changes every funnel using it, on its next call."/>
+                        <TextBlock Classes="empty" TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="{Binding !HasProfiles}"
+                                   Text="No profiles yet. Add one below, set its steps, then choose where it applies."/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding NewProfileName}" PlaceholderText="New profile name, e.g. Strict" Margin="0,0,6,0"
+                                     AutomationProperties.AutomationId="filters.profile.name"/>
+                            <Button Grid.Column="1" Content="Add profile" Command="{Binding AddProfileCommand}"
+                                    AutomationProperties.AutomationId="filters.profile.add"/>
+                        </Grid>
+                        <TextBlock Text="{Binding NewProfileError}" Classes="error"
+                                   IsVisible="{Binding NewProfileError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- One card per profile: its name, who uses it, and its four steps in run order. -->
+                <ItemsControl ItemsSource="{Binding Profiles}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProfileItemViewModel">
+                            <Border Classes="card" Margin="0,0,0,14">
+                                <Expander HorizontalAlignment="Stretch" IsExpanded="{Binding IsExpanded}">
+                                    <Expander.Header>
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding UsedBySummary}" Classes="hint" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Classes="ghost" Content="Duplicate" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                    Command="{Binding DuplicateCommand}" AutomationProperties.AutomationId="filters.profile.duplicate"/>
+                                            <Button Grid.Column="2" Classes="ghost" Content="Remove" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                    Command="{Binding RemoveCommand}" AutomationProperties.AutomationId="filters.profile.remove"/>
+                                        </Grid>
+                                    </Expander.Header>
+                                <StackPanel>
+                                    <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
+                                        <TextBlock Text="Name" Classes="label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox Grid.Column="1" Text="{Binding NameText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="260" HorizontalAlignment="Left"
+                                                 AutomationProperties.AutomationId="filters.profile.rename"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding NameError}" Classes="error"
+                                               IsVisible="{Binding NameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:McpFunnelFilterItemViewModel">
+                                                <Border Background="{StaticResource PanelAltBrush}"
+                                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                        BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                                    <StackPanel>
+                                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                                            <TextBlock Text="{Binding Title}" Classes="step"/>
+
+                                                            <ComboBox Grid.Column="1" Width="110" Margin="0,0,8,0"
+                                                                      ItemsSource="{Binding LevelChoices}"
+                                                                      SelectedItem="{Binding SelectedLevelChoice}"
+                                                                      AutomationProperties.AutomationId="filters.level"/>
+
+                                                            <ComboBox Grid.Column="2" Width="100" IsVisible="{Binding HasAction}"
+                                                                      ItemsSource="{x:Static vm:McpFunnelFilterItemViewModel.AllActions}"
+                                                                      SelectedItem="{Binding Action, Mode=TwoWay}"
+                                                                      AutomationProperties.AutomationId="filters.action"
+                                                                      ToolTip.Tip="Block stops the call. Watch lets it through and logs the match."/>
+                                                        </Grid>
+
+                                                        <TextBlock Margin="0,6,0,0" Text="{Binding LevelExplained}" Classes="hint" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding ActionExplained}" Classes="hint" TextWrapping="Wrap"
+                                                                   IsVisible="{Binding ActionExplained, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                                        <!-- 2 Personal data: chips, and an editor on demand. -->
+                                                        <StackPanel IsVisible="{Binding IsPersonalData}">
+                                                            <StackPanel IsVisible="{Binding IsOn}" Margin="0,6,0,0">
+                                                                <ItemsControl ItemsSource="{Binding Chips}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate x:DataType="vm:DetectorChipViewModel">
+                                                                            <Button Classes="chip" Classes.off="{Binding !IsOn}" Classes.custom="{Binding IsCustom}"
+                                                                                    Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding Tip}"
+                                                                                    AutomationProperties.AutomationId="filters.chip">
+                                                                                <TextBlock Text="{Binding Name}"/>
+                                                                            </Button>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <Button Classes="ghost" Content="Edit patterns" Command="{Binding ToggleEditPatternsCommand}"
+                                                                        HorizontalAlignment="Left" Margin="0,2,0,0"
+                                                                        AutomationProperties.AutomationId="filters.patterns.edit"/>
+
+                                                                <Border IsVisible="{Binding IsEditingPatterns}" Margin="0,6,0,0" Padding="8"
+                                                                        BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="3">
+                                                                    <StackPanel>
+                                                                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
+                                                                                   Text=".NET regular expressions, checked against every text in a call. A change is saved when you leave the box. Built-ins keep their checksum (Luhn, mod-97, IP grammar) whatever you change; Reset puts the shipped regex back."/>
+                                                                        <ItemsControl ItemsSource="{Binding PatternRows}">
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate x:DataType="vm:PatternEditorRowViewModel">
+                                                                                    <StackPanel Margin="0,0,0,6">
+                                                                                        <Grid ColumnDefinitions="190,*,Auto">
+                                                                                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" ToolTip.Tip="{Binding Hint}"/>
+                                                                                            <TextBox Grid.Column="1" Text="{Binding Regex, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                                                     FontFamily="Cascadia Code, Consolas" FontSize="11" Margin="0,0,6,0"
+                                                                                                     AutomationProperties.AutomationId="filters.pattern.regex"/>
+                                                                                            <Button Grid.Column="2" Classes="ghost" Content="{Binding ResetLabel}"
+                                                                                                    IsEnabled="{Binding CanReset}" Command="{Binding ResetCommand}"
+                                                                                                    AutomationProperties.AutomationId="filters.pattern.reset"/>
+                                                                                        </Grid>
+                                                                                        <TextBlock Text="{Binding Error}" Classes="error"
+                                                                                                   IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                                    </StackPanel>
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+
+                                                                        <TextBlock Text="Add your own" Classes="label" Margin="0,6,0,2"/>
+                                                                        <Grid ColumnDefinitions="190,*,Auto">
+                                                                            <TextBox Text="{Binding NewPatternName}" PlaceholderText="Name, e.g. Customer id" Margin="0,0,6,0"
+                                                                                     AutomationProperties.AutomationId="filters.pattern.name"/>
+                                                                            <TextBox Grid.Column="1" Text="{Binding NewPatternRegex}" PlaceholderText="e.g. \bKD-\d{6}\b"
+                                                                                     FontFamily="Cascadia Code, Consolas" FontSize="11" Margin="0,0,6,0"
+                                                                                     AutomationProperties.AutomationId="filters.pattern.new"/>
+                                                                            <Button Grid.Column="2" Content="Add" Command="{Binding AddPatternCommand}"
+                                                                                    AutomationProperties.AutomationId="filters.pattern.add"/>
+                                                                        </Grid>
+                                                                        <TextBlock Text="{Binding PatternError}" Classes="error"
+                                                                                   IsVisible="{Binding PatternError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </StackPanel>
+                                                        </StackPanel>
+
+                                                        <!-- 3 Entities: model, labels, threshold. -->
+                                                        <StackPanel IsVisible="{Binding IsEntities}">
+                                                            <StackPanel IsVisible="{Binding IsOn}" Margin="0,8,0,0">
+                                                                <TextBlock Text="Entity model" Classes="label"/>
+                                                                <ComboBox ItemsSource="{Binding EntityModels}" SelectedItem="{Binding SelectedEntityModel}"
+                                                                          Width="320" HorizontalAlignment="Left" PlaceholderText="Pick a model"
+                                                                          AutomationProperties.AutomationId="filters.entities.model"/>
+                                                                <TextBlock Classes="warning" Margin="0,2,0,0"
+                                                                           IsVisible="{Binding SelectedEntityModel, Converter={x:Static ObjectConverters.IsNull}}"
+                                                                           Text="No model chosen — the step reports every call until you pick one (add one under Models, above)."/>
+                                                                <ContentControl Margin="0,6,0,0"
+                                                                                IsVisible="{Binding SelectedEntityModel, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                                                Content="{Binding SelectedEntityModel.Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+
+                                                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                                                    <TextBlock Text="Look for" Classes="label" VerticalAlignment="Bottom"/>
+                                                                    <Button Grid.Column="1" Classes="ghost" Content="Use suggested labels" Command="{Binding UseSuggestedLabelsCommand}"
+                                                                            AutomationProperties.AutomationId="filters.entities.suggest"/>
+                                                                </Grid>
+                                                                <TextBox Text="{Binding EntityLabelsText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                         TextWrapping="Wrap" Margin="0,4,0,0"
+                                                                         PlaceholderText="Labels in plain words, separated by commas: person, address, medical condition"
+                                                                         AutomationProperties.AutomationId="filters.entities.labels"/>
+                                                                <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                                           Text="Any words work — the model matches them by meaning. Keep it to what you want stopped: every label is a chance for a false alarm. Up to 25."/>
+
+                                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="6">
+                                                                    <TextBlock Text="Threshold" Classes="label" VerticalAlignment="Center"/>
+                                                                    <TextBox Text="{Binding ThresholdText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="70"
+                                                                             PlaceholderText="level" AutomationProperties.AutomationId="filters.entities.threshold"/>
+                                                                    <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                               Text="The model's score, 0–1. Empty follows the level (Relaxed 0.85, Balanced 0.65, Strict 0.45)."/>
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding ThresholdError}" Classes="error"
+                                                                           IsVisible="{Binding ThresholdError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+
+                                                        <!-- 4 Meaning: the model, what to deny, examples, threshold. -->
+                                                        <StackPanel IsVisible="{Binding IsRiskyActions}">
+                                                            <StackPanel IsVisible="{Binding IsOn}" Margin="0,8,0,0">
+                                                                <TextBlock Text="Embedding model" Classes="label"/>
+                                                                <ComboBox ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}"
+                                                                          Width="320" HorizontalAlignment="Left" PlaceholderText="Pick a model"
+                                                                          AutomationProperties.AutomationId="filters.risky.provider"/>
+                                                                <TextBlock Classes="warning" Margin="0,2,0,0"
+                                                                           IsVisible="{Binding SelectedProvider, Converter={x:Static ObjectConverters.IsNull}}"
+                                                                           Text="No model chosen — the step reports every call until you pick one (add one under Models, above)."/>
+                                                                <ContentControl Margin="0,6,0,0"
+                                                                                IsVisible="{Binding SelectedProviderIsOnnx}"
+                                                                                Content="{Binding SelectedProvider.Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                                                <TextBlock Classes="hint" Margin="0,4,0,0"
+                                                                           IsVisible="{Binding SelectedProviderIsApi}"
+                                                                           Text="Runs at the API (or Ollama / llama.cpp), so there is no CPU or GPU to choose here."/>
+
+                                                                <TextBlock Text="Deny calls that…" Classes="label" Margin="0,8,0,0"/>
+                                                                <TextBox Text="{Binding DenyInstructionsText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54"
+                                                                         PlaceholderText="One per line, in plain words:&#10;delete files, folders or whole disks&#10;drop or truncate database tables"
+                                                                         AutomationProperties.AutomationId="filters.risky.instructions"/>
+
+                                                                <Grid ColumnDefinitions="*,*" Margin="0,8,0,0">
+                                                                    <StackPanel Margin="0,0,6,0">
+                                                                        <TextBlock Text="Examples to deny" Classes="label"/>
+                                                                        <TextBox Text="{Binding DenyExamplesText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54"
+                                                                                 FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                                                 PlaceholderText="rm -rf /&#10;DROP TABLE users&#10;git push --force origin main"
+                                                                                 AutomationProperties.AutomationId="filters.risky.deny"/>
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="1">
+                                                                        <TextBlock Text="Look-alikes to allow" Classes="label"/>
+                                                                        <TextBox Text="{Binding AllowExamplesText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54"
+                                                                                 FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                                                 PlaceholderText="rm -rf ./build&#10;SELECT * FROM users&#10;git push origin feature"
+                                                                                 AutomationProperties.AutomationId="filters.risky.allow"/>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                                <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                                           Text="Write examples as plain text, not as tool-call JSON. Examples matter more than descriptions, and a text closer to an allow example than to anything denied always goes through."/>
+
+                                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="6">
+                                                                    <TextBlock Text="Threshold" Classes="label" VerticalAlignment="Center"/>
+                                                                    <TextBox Text="{Binding ThresholdText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="70"
+                                                                             PlaceholderText="level" AutomationProperties.AutomationId="filters.risky.threshold"/>
+                                                                    <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                               Text="Empty follows the level (Relaxed 0.55, Balanced 0.40, Strict 0.25). Try it below shows the closeness your calls score."/>
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding ThresholdError}" Classes="error"
+                                                                           IsVisible="{Binding ThresholdError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                </Expander>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Where profiles apply: per funnel, and per upstream inside it. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Where profiles apply" Classes="section"/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="A call to an upstream uses that upstream's profile in this funnel if it has one; otherwise the funnel's profile; otherwise it is not filtered. The same upstream can have a different profile in each funnel."/>
+                        <TextBlock Classes="empty" TextWrapping="Wrap" IsVisible="{Binding !HasFunnels}"
+                                   Text="No funnels yet. Create one on the MCP Funnel tab, then come back here to choose its profile."/>
+                        <ItemsControl ItemsSource="{Binding Assignments}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FunnelAssignmentViewModel">
+                                    <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                            BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding Endpoint}" FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                               VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
+                                                </StackPanel>
+                                                <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedProfile}"
+                                                          AutomationProperties.AutomationId="filters.assign.funnel"
+                                                          ToolTip.Tip="The profile every call through this funnel uses, unless its upstream has its own below."/>
+                                            </Grid>
+                                            <ItemsControl ItemsSource="{Binding Upstreams}" Margin="16,6,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:UpstreamAssignmentViewModel">
+                                                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                                <TextBlock Text="›" Foreground="{StaticResource MutedTextBrush}"/>
+                                                                <TextBlock Text="{Binding Name}"/>
+                                                                <TextBlock Text="{Binding Alias, StringFormat='{}{0}__…'}" FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                                                           VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
+                                                            </StackPanel>
+                                                            <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedProfile}"
+                                                                      AutomationProperties.AutomationId="filters.assign.upstream"
+                                                                      ToolTip.Tip="Calls from this funnel to this upstream only. Same as the funnel uses the funnel's profile."/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Classes="hint" Margin="16,4,0,0" IsVisible="{Binding !HasUpstreams}"
+                                                       Text="No upstreams in this funnel yet — add them on the MCP Funnel tab."/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Try before trusting. -->
+                <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasProfiles}">
+                    <StackPanel>
+                        <TextBlock Text="Try it" Classes="section"/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="Paste text an agent might send and see what each step of the chosen profile would do with it — and what step 4 would read after steps 1–3. Nothing is logged; step 4 sends its text to the profile's embedding model as a real call would."/>
+
+                        <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
+                            <TextBlock Text="Profile" Classes="label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                                      ItemsSource="{Binding Profiles}" SelectedItem="{Binding TestProfile}"
+                                      AutomationProperties.AutomationId="filters.test.profile"/>
+                        </Grid>
+
+                        <TextBox Text="{Binding TestInput}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                 PlaceholderText="e.g.  My name is John Doe, Musterstraße 1, 12345 Musterstadt   or   export API_SECRET=..."
+                                 AutomationProperties.AutomationId="filters.test.input"/>
+
+                        <Button Content="Check" Command="{Binding RunTestCommand}" Margin="0,8,0,8" HorizontalAlignment="Left"
+                                AutomationProperties.AutomationId="filters.test.run"/>
+
+                        <TextBlock Text="{Binding TestResult}" TextWrapping="Wrap"
+                                   FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                   Foreground="{StaticResource AccentBrush}"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" Classes="footer">
+            <TextBlock Text="{Binding StatusMessage}" Classes="footer"/>
+        </Border>
+    </Grid>
+</UserControl>

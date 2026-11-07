@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RavensPort.UI.ViewModels"
         xmlns:views="using:RavensPort.Views"
@@ -79,6 +79,9 @@
                 </TabItem>
                 <TabItem Header="MCP Funnel">
                     <views:McpFunnelView x:Name="McpFunnelViewControl"/>
+                </TabItem>
+                <TabItem Header="Filters">
+                    <views:FiltersView x:Name="FiltersViewControl"/>
                 </TabItem>
                 <TabItem Header="Settings">
                     <views:SettingsView x:Name="SettingsViewControl"/>

@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RavensPort.UI.ViewModels"
              xmlns:models="using:RavensPort.Core.Models"
@@ -214,6 +214,13 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                  Foreground="{StaticResource AccentBrush}"/>
                         <TextBlock Classes="hint" Margin="0,0,0,10"
                                    Text="Press Show above to reveal the key inside this snippet before copying it. A client that cannot set request headers cannot reach a funnel — the key is never read from the URL."/>
+
+                        <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
+                                Margin="0,0,0,10"/>
+
+<!-- Filters have their own tab; say so here, where people look for per-agent settings. -->
+                        <TextBlock Classes="hint" Margin="0,0,0,10" TextWrapping="Wrap"
+                                   Text="To stop this agent sending secrets or personal data, set its filters on the Filters tab."/>
 
                         <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
                                 Margin="0,0,0,10"/>

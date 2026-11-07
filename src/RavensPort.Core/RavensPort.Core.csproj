@@ -77,6 +77,29 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.1" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageReference Include="IdentityModel.OidcClient" Version="6.0.0" />
+    <!-- Filters: tokenizers for the ONNX models (WordPiece for embeddings, SentencePiece for GLiNER). -->
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+  </ItemGroup>
+
+  <!--
+    ONNX Runtime for the filters' models. The Windows build takes the DirectML package, which runs a
+    model on any DirectX 12 GPU as well as the CPU; every other build takes the CPU-only one. Both
+    ship the same managed API — they cannot both be referenced, as each brings its own
+    onnxruntime.dll. DirectML builds trail the CPU package by a few versions (1.24 vs 1.31).
+  -->
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.0-windows'))">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+  </ItemGroup>
+  <ItemGroup Condition="!$(TargetFramework.StartsWith('net10.0-windows'))">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Step 1 of the call filters: gitleaks' own rule set, unchanged, so updating it is dropping in
+      the file from a newer release. MIT — see Rules/gitleaks.LICENSE and THIRD-PARTY-NOTICES.md.
+    -->
+    <EmbeddedResource Include="Filters/Rules/gitleaks.toml" LogicalName="RavensPort.Core.Filters.gitleaks.toml" />
   </ItemGroup>
 
   <ItemGroup>

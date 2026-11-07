@@ -39,6 +39,18 @@ public sealed class McpFunnelRecord
     public ProxyKey Key { get; set; } = new();
 
     public List<McpFunnelSource> Sources { get; set; } = [];
+
+    /// <summary>
+    /// The filter profile this funnel's calls are checked with, unless the upstream a call goes to
+    /// has its own in this funnel (<see cref="McpFunnelSource.FilterProfileId"/>). Null: none.
+    /// </summary>
+    public Guid? FilterProfileId { get; set; }
+
+    /// <summary>
+    /// Filters set on the funnel itself, before profiles existed. Still honoured when the funnel has
+    /// no profile; the Filters tab turns them into a profile the first time it loads them.
+    /// </summary>
+    public List<FunnelFilter> Filters { get; set; } = [];
 }
 
 /// <summary>
@@ -58,6 +70,13 @@ public sealed class McpFunnelSource
 
     public McpSelectionMode PromptMode { get; set; } = McpSelectionMode.All;
     public List<string> Prompts { get; set; } = [];
+
+    /// <summary>
+    /// A filter profile for calls to this upstream through this funnel, overriding the funnel's
+    /// own. Null: the funnel's profile applies. Per funnel, so the same upstream can be trusted by
+    /// one agent's funnel and not by another's.
+    /// </summary>
+    public Guid? FilterProfileId { get; set; }
 
     /// <summary>
     /// Whether <paramref name="name"/> survives this source's selection for a given primitive

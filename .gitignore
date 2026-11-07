@@ -72,3 +72,8 @@ creds.txt
 /packaging/flatpak/*-sources.json
 /packaging/flatpak/.local-build.yml
 /packaging/flatpak/*.flatpak
+
+# Embedding models are downloaded by users, never committed (large, separately licensed).
+*.onnx
+*.onnx_data
+/publish-*/
