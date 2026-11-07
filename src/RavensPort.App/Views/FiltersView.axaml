@@ -270,14 +270,14 @@
                             <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2"
                                        Text="• RavensPort — what gitleaks leaves out: passwords however short, usernames, refresh and bearer tokens, Basic auth, user:password in URLs, and JSON fields named like them (password, client_secret, refresh_token, username…)."/>
                             <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6"
-                                       Text="• Yours — a file on this PC, read last. A rule with the same id as a built-in one replaces it, so to change a gitleaks rule, copy it into your file and edit it there. Besides gitleaks' fields, a rule can have keyName to match JSON fields by name."/>
+                                       Text="• Yours — a file on this PC, read last. It starts with RavensPort's strict rules (generic API keys, JWTs, access and refresh tokens, Authorization headers, session cookies, private keys, certificates, key files, connection strings, cloud keys, webhooks), all on. A rule with the same id as a built-in one replaces it, so to change a gitleaks rule, copy it into your file and edit it there. Besides gitleaks' fields, a rule can have keyName to match JSON fields by name."/>
                             <TextBlock Text="Your rules file" Classes="label"/>
                             <TextBox Text="{Binding UserRulesPath, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Code, Consolas" FontSize="11"
                                      Background="Transparent" BorderThickness="0" Padding="0"/>
                             <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
                                 <Button Content="Open rules file" Command="{Binding OpenRulesFileCommand}" Classes="ghost"
                                         AutomationProperties.AutomationId="filters.rules.open"
-                                        ToolTip.Tip="Creates the file with a short guide the first time, then opens it in your editor"/>
+                                        ToolTip.Tip="Creates the file with RavensPort's strict starter rules the first time, then opens it in your editor"/>
                                 <Button Content="Reload rules" Command="{Binding ReloadRulesCommand}" Classes="ghost"
                                         AutomationProperties.AutomationId="filters.rules.reload"/>
                             </StackPanel>

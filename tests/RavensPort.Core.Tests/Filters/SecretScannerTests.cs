@@ -169,12 +169,43 @@ public class SecretScannerTests
     }
 
     [Fact]
-    public void TheUserFileTemplate_HasNoActiveRules_AndReadsCleanly()
+    public void TheDefaultUserFile_IsFilledWithStrictRules_ThatAllCompile()
     {
-        var scanner = new SecretScanner(SecretRuleSet.UserFileTemplate, "yours");
+        var scanner = new SecretScanner(SecretRuleSet.DefaultUserRules, "yours");
 
-        Assert.Equal(0, scanner.RuleCount);
+        Assert.Equal(14, scanner.RuleCount);
         Assert.Empty(scanner.SkippedRules);
+        Assert.All(scanner.Rules, r => Assert.StartsWith("strict-", r.Id));
+    }
+
+    [Theory]
+    [InlineData("X-API-Key: Zr8Lq2Vm5Tx9Nb4Kc7Pw", "strict-generic-api-key")]
+    [InlineData("export OPENAI=sk-proj-Ab12Cd34Ef56Gh78Ij90Kl", "strict-prefixed-key")]
+    [InlineData("eyJhbGciOiJub25lIn0.eyJzdWIiOiJqb2huLmRvZSJ9.", "strict-jwt")]
+    [InlineData("refresh_token=1//0gExampleExampleExampleEx", "strict-token-assignment")]
+    [InlineData("https://api.example.com/v1/me?access_token=ExampleExampleExample12", "strict-token-in-url")]
+    [InlineData("Authorization: Token Example1234Example5678", "strict-bearer")]
+    [InlineData("Cookie: lang=en; sessionid=Ab12Cd34Ef56Gh78Ij90", "strict-session-cookie")]
+    [InlineData("-----BEGIN PGP PRIVATE KEY BLOCK-----", "strict-pem-private-key")]
+    [InlineData("-----BEGIN CERTIFICATE-----", "strict-pem-certificate")]
+    [InlineData("cat ~/.ssh/id_ed25519", "strict-ssh-private-key-file")]
+    [InlineData("Server=db.example.com;Database=app;User Id=jane;Password=hunter2;", "strict-connection-string-password")]
+    [InlineData("https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX", "strict-webhook-url")]
+    public void TheDefaultUserRules_CatchWhatTheySayTheyDo(string text, string rule)
+    {
+        var scanner = new SecretScanner(SecretRuleSet.DefaultUserRules, "yours");
+
+        Assert.Contains(scanner.Find(text), m => m.RuleId == rule);
+    }
+
+    [Theory]
+    [InlineData("the api key is stored in the vault, ask an admin")]
+    [InlineData("please refresh the token page")]
+    [InlineData("cookie banner text update")]
+    [InlineData("SELECT id, title FROM tasks WHERE done = false")]
+    public void TheDefaultUserRules_LeaveOrdinaryTextAlone(string text)
+    {
+        Assert.Empty(new SecretScanner(SecretRuleSet.DefaultUserRules, "yours").Find(text));
     }
 
     [Fact]
