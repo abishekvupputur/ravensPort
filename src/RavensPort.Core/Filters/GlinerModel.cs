@@ -87,7 +87,7 @@ internal sealed class GlinerModel : IDisposable
     /// <summary>Words per window. GLiNER is trained on up to 384 tokens; a long text is read in windows.</summary>
     private const int WindowWords = 200;
 
-    private static readonly Regex WordSplitter = new(@"\w+(?:[-_]\w+)*|\S", RegexOptions.Compiled);
+    private static readonly Regex WordSplitter = new(@"\w+(?:[-_]\w+)*|\S", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     private readonly InferenceSession _session;
     private readonly SentencePieceTokenizer _tokenizer;

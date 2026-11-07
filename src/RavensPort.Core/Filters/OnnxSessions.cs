@@ -131,6 +131,10 @@ public static class OnnxSessions
                         // The software renderer is listed too; it is no faster than the CPU path.
                         if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) continue;
 
+                        // Microsoft Basic Render Driver (vendor 0x1414, device 0x8C): some VMs, such as
+                        // GitHub's Windows runners, list it without the software flag.
+                        if (desc.VendorId == 0x1414 && desc.DeviceId == 0x8C) continue;
+
                         adapters.Add(new GpuAdapter((int)i, desc.Description.Trim(), (long)desc.DedicatedVideoMemory));
                     }
                     finally
