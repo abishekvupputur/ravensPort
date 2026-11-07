@@ -162,14 +162,20 @@ public sealed partial class McpFunnelViewModel : ObservableObject
         var isMtls = _mtlsState.IsEnabled;
         foreach (var funnel in store.McpFunnels)
         {
-            Funnels.Add(new McpFunnelItemViewModel(
+            var funnelRow = new McpFunnelItemViewModel(
                 funnel,
                 store.Settings.ListenPort,
                 funnel.Sources.Count,
                 OnFunnelEdited,
                 message => StatusMessage = message,
                 isMtls,
-                _clipboard));
+                _clipboard);
+            funnelRow.FilterProfile = new FilterProfilePickerViewModel(funnel.FilterProfileId, store.FilterProfiles, "None", (id, label) =>
+            {
+                funnel.FilterProfileId = id;
+                OnFunnelEdited(funnelRow, $"Funnel '{funnel.Name}' is now filtered by {label}.");
+            });
+            Funnels.Add(funnelRow);
         }
 
         NewSourceRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);
@@ -186,12 +192,27 @@ public sealed partial class McpFunnelViewModel : ObservableObject
 
         foreach (var source in _configStoreCache.Current.McpSources)
         {
-            FunnelSources.Add(new McpFunnelSourceItemViewModel(
+            var sourceRow = new McpFunnelSourceItemViewModel(
                 selected.Funnel,
                 source,
                 selected.Funnel.Sources.FirstOrDefault(s => s.SourceId == source.Id),
                 _catalogCache.Get(source.Id),
-                OnFunnelContentEdited));
+                OnFunnelContentEdited);
+
+            // The link is looked up when the choice is made: it only exists while the upstream is
+            // included, and including it again creates a new one.
+            var funnel = selected.Funnel;
+            sourceRow.FilterProfile = new FilterProfilePickerViewModel(
+                funnel.Sources.FirstOrDefault(s => s.SourceId == source.Id)?.FilterProfileId,
+                _configStoreCache.Current.FilterProfiles,
+                "Same as the funnel",
+                (id, label) =>
+                {
+                    if (funnel.Sources.FirstOrDefault(s => s.SourceId == source.Id) is not { } link) return;
+                    link.FilterProfileId = id;
+                    OnFunnelContentEdited($"Calls from '{funnel.Name}' to '{source.Name}' are now filtered by {label}.");
+                });
+            FunnelSources.Add(sourceRow);
         }
     }
 

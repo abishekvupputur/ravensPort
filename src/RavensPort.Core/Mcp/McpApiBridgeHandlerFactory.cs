@@ -5,6 +5,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RavensPort.Core.Diagnostics;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
 using RavensPort.Core.Storage;
@@ -48,14 +49,18 @@ public sealed class McpApiBridgeHandlerFactory
     private readonly LoopbackHttpClient _loopback;
     private readonly ActivityLog _activityLog;
 
+    private readonly FilterService _filters;
+
     public McpApiBridgeHandlerFactory(
         ConfigStoreCache configStoreCache,
         LoopbackHttpClient loopback,
-        ActivityLog activityLog)
+        ActivityLog activityLog,
+        FilterService filters)
     {
         _configStoreCache = configStoreCache;
         _loopback = loopback;
         _activityLog = activityLog;
+        _filters = filters;
     }
 
     public McpApiBridgeRecord? FindBridge(string? slug) =>
@@ -147,6 +152,13 @@ public sealed class McpApiBridgeHandlerFactory
             return Failure($"This bridge's route no longer exists. Pick one on the API to MCP tab.");
         }
 
+        // The bridge's own filter profile, before anything is built or sent. Through a funnel the
+        // funnel's profile has run already; this one runs as well.
+        if (await CheckFiltersAsync(bridge, bridgeName, tool.Name, request.Params?.Arguments, ct).ConfigureAwait(false) is { } refusal)
+        {
+            return Failure(refusal);
+        }
+
         var (built, error) = McpApiBridgeRequestBuilder.Build(tool, request.Params?.Arguments);
         if (error is not null || built is null) return Failure(error ?? "This call could not be built.");
 
@@ -211,6 +223,38 @@ public sealed class McpApiBridgeHandlerFactory
 
             return Failure($"The call failed: {summary}");
         }
+    }
+
+    /// <summary>
+    /// Runs the bridge's filter profile over a tool call's arguments. Returns why the call is
+    /// refused, or null to let it through; every hit is logged by step and field, never by value.
+    /// </summary>
+    private async Task<string?> CheckFiltersAsync(
+        McpApiBridgeRecord bridge, string bridgeName, string toolName,
+        IEnumerable<KeyValuePair<string, System.Text.Json.JsonElement>>? arguments, CancellationToken ct)
+    {
+        FilterChoice choice;
+        try
+        {
+            choice = FilterProfiles.For(_configStoreCache.Current, bridge.FilterProfileId, "bridge");
+        }
+        catch (FilterProfileMissingException ex)
+        {
+            _activityLog.Log($"MCP bridge '{bridgeName}' call {toolName} -> blocked: {ex.Message}");
+            return $"Blocked: {ex.Message}. Choose another profile for this bridge on the API to MCP tab.";
+        }
+
+        if (choice.Filters.Count == 0) return null;
+
+        var hits = await _filters.EvaluateAsync(choice.Filters, toolName, arguments, ct).ConfigureAwait(false);
+        foreach (var hit in hits)
+        {
+            _activityLog.Log($"MCP bridge '{bridgeName}' call {toolName} -> {(hit.Action == FilterAction.Block ? "blocked" : "watched")} by {choice.Source}: {hit.Describe()}");
+        }
+
+        return hits.FirstOrDefault(h => h.Action == FilterAction.Block) is { } blocked
+            ? $"Blocked by a RavensPort filter ({blocked.Describe()}). The call was not sent. Remove that data from the call, or ask the user to change the filter in RavensPort."
+            : null;
     }
 
     /// <summary>

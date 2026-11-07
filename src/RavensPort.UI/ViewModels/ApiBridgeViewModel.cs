@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -163,14 +163,20 @@ public sealed partial class ApiBridgeViewModel : ObservableObject
 
         foreach (var bridge in store.McpApiBridges)
         {
-            Bridges.Add(new ApiBridgeItemViewModel(
+            var bridgeRow = new ApiBridgeItemViewModel(
                 bridge,
                 store.Routes.FirstOrDefault(r => r.Id == bridge.RouteId),
                 store.Settings.ListenPort,
                 OnBridgeEdited,
                 message => StatusMessage = message,
                 isMtls,
-                _clipboard));
+                _clipboard);
+            bridgeRow.FilterProfile = new FilterProfilePickerViewModel(bridge.FilterProfileId, store.FilterProfiles, "None", (id, label) =>
+            {
+                bridge.FilterProfileId = id;
+                OnBridgeEdited(bridgeRow, $"Bridge '{bridge.Name}' is now filtered by {label}.");
+            });
+            Bridges.Add(bridgeRow);
         }
 
         NewBridgeRoute = Routes.FirstOrDefault(r => r.Id == selectedRouteId);

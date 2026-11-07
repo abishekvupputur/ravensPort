@@ -38,6 +38,25 @@ public static class FilterProfiles
         return new FilterChoice([], "no filters");
     }
 
+    /// <summary>A route's or a bridge's profile: none, or the one chosen — never a fallback.</summary>
+    public static FilterChoice For(ConfigStore store, Guid? profileId, string level) =>
+        profileId is { } id ? Profile(store, id, level) : new FilterChoice([], "no filters");
+
+    /// <summary>Who points at a profile, in words, for the Filters tab and for refusing to delete it.</summary>
+    public static List<string> UsersOf(ConfigStore store, Guid profileId)
+    {
+        var users = new List<string>();
+        foreach (var funnel in store.McpFunnels)
+        {
+            if (funnel.FilterProfileId == profileId) users.Add($"funnel {funnel.Name}");
+            foreach (var link in funnel.Sources.Where(l => l.FilterProfileId == profileId))
+                users.Add($"funnel {funnel.Name} › {store.McpSources.FirstOrDefault(s => s.Id == link.SourceId)?.Name ?? "an upstream"}");
+        }
+        users.AddRange(store.Routes.Where(r => r.FilterProfileId == profileId).Select(r => $"route {r.PathPrefix}"));
+        users.AddRange(store.McpApiBridges.Where(b => b.FilterProfileId == profileId).Select(b => $"bridge {b.Name}"));
+        return users;
+    }
+
     private static FilterChoice Profile(ConfigStore store, Guid id, string level) =>
         store.FilterProfiles.FirstOrDefault(p => p.Id == id) is { } profile
             ? new FilterChoice(profile.Filters, $"{level} profile '{profile.Name}'")

@@ -153,6 +153,14 @@ Entries may reuse the same credential in different places, or use different cred
                                         AutomationProperties.AutomationId="routes.detail.addCredential"
                                         Command="{Binding AddCredentialCommand}"
                                         ToolTip.Tip="{StaticResource MultiCredentialHelpText}"/>
+
+                                <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
+                                        Margin="0,10,0,10"/>
+
+                                <!-- What a request through this route is checked for before it is forwarded. -->
+                                <ContentControl Content="{Binding FilterProfile}" ContentTemplate="{StaticResource FilterProfilePickerTemplate}"/>
+                                <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0"
+                                           Text="Checks each request's query and its JSON, form or text body (up to 1 MB). A route that carries uploads is best left on None."/>
                             </StackPanel>
                         </Border>
                     </DataTemplate>

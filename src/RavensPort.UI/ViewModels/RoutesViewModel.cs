@@ -205,7 +205,7 @@ public sealed partial class RoutesViewModel : ObservableObject
         var isMtls = _mtlsState.IsEnabled;
         foreach (var r in store.Routes)
         {
-            Routes.Add(new RouteItemViewModel(
+            var row = new RouteItemViewModel(
                 r,
                 store.Upstreams.FirstOrDefault(u => u.Id == r.UpstreamId),
                 credentials,
@@ -213,7 +213,13 @@ public sealed partial class RoutesViewModel : ObservableObject
                 isMtls,
                 _clipboard,
                 OnRouteEdited,
-                message => StatusMessage = message));
+                message => StatusMessage = message);
+            row.FilterProfile = new FilterProfilePickerViewModel(r.FilterProfileId, store.FilterProfiles, "None", (id, label) =>
+            {
+                r.FilterProfileId = id;
+                OnRouteEdited(row, $"Route {r.PathPrefix} is now filtered by {label}.");
+            });
+            Routes.Add(row);
         }
 
         NewRouteUpstream = Upstreams.FirstOrDefault(u => u.Id == selectedUpstreamId);

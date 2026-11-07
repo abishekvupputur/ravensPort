@@ -36,7 +36,7 @@ public class FiltersViewModelUnitTests
         var card = Assert.Single(vm.Profiles);
         Assert.Equal(["1 · Secrets", "2 · Personal data", "3 · Entities", "4 · Meaning"], card.Rows.Select(r => r.Title));
         Assert.Same(card, vm.TestProfile);
-        Assert.Equal("Used by agent", card.UsedBySummary);
+        Assert.Equal("Used by funnel agent", card.UsedBySummary);
     }
 
     [Fact]
@@ -102,16 +102,59 @@ public class FiltersViewModelUnitTests
         vm.NewProfileName = "Trusted";
         vm.AddProfileCommand.Execute(null);
 
-        var upstream = vm.Assignments.Single().Upstreams.Single();
-        Assert.Equal("Same as the funnel", upstream.SelectedProfile!.Label);
+        // The override is chosen on the MCP Funnel tab, beside the upstream's tools.
+        var funnels = fixture.Get<McpFunnelViewModel>();
+        funnels.Reload();
+        funnels.SelectedFunnel = funnels.Funnels.Single();
+        var upstream = funnels.FunnelSources.Single(s => s.Source.Id == source.Id).FilterProfile!;
+        Assert.Equal("Same as the funnel", upstream.Selected!.Label);
 
-        upstream.SelectedProfile = upstream.Choices.Single(c => c.Label == "Trusted");
+        upstream.Selected = upstream.Choices.Single(c => c.Label == "Trusted");
         var link = fixture.Store.Current.McpFunnels.Single().Sources.Single();
         Assert.Equal(vm.Profiles.Single(p => p.Name == "Trusted").Record.Id, link.FilterProfileId);
-        Assert.Equal("Used by agent › kb", vm.Profiles.Single(p => p.Name == "Trusted").UsedBySummary);
+        vm.Reload();
+        Assert.Equal("Used by funnel agent › kb", vm.Profiles.Single(p => p.Name == "Trusted").UsedBySummary);
 
-        upstream.SelectedProfile = upstream.Choices.Single(c => c.Id is null);
+        upstream.Selected = upstream.Choices.Single(c => c.Id is null);
         Assert.Null(link.FilterProfileId);
+    }
+
+    [Fact]
+    public async Task ARouteABridgeAndAFunnel_EachChooseAProfileInTheirOwnEditor()
+    {
+        var (fixture, vm) = await WithFunnelAsync();
+        using var _ = fixture;
+        var upstream = new UpstreamRecord { Name = "api", BaseUrl = "https://api.example.com" };
+        var route = new RouteMapping { PathPrefix = "/api", UpstreamId = upstream.Id };
+        await fixture.Store.MutateAsync(store =>
+        {
+            store.Upstreams.Add(upstream);
+            store.Routes.Add(route);
+        });
+        var profile = vm.Profiles.Single().Record;
+
+        var routes = fixture.Get<RoutesViewModel>();
+        routes.Reload();
+        var picker = routes.Routes.Single().FilterProfile!;
+        Assert.Equal("None", picker.Selected!.Label);
+        picker.Selected = picker.Choices.Single(c => c.Id == profile.Id);
+        Assert.Equal(profile.Id, fixture.Store.Current.Routes.Single().FilterProfileId);
+
+        var funnels = fixture.Get<McpFunnelViewModel>();
+        funnels.Reload();
+        Assert.Equal(profile.Id, funnels.Funnels.Single().FilterProfile!.Selected!.Id);
+
+        vm.Reload();
+        Assert.Contains("route /api", vm.Profiles.Single().UsedBySummary);
+    }
+
+    [Fact]
+    public void AProfileThatNoLongerExists_IsShownAsMissing_NotAsNone()
+    {
+        var picker = new FilterProfilePickerViewModel(Guid.NewGuid(), [], "None", (_, _) => { });
+
+        Assert.StartsWith("⚠ missing", picker.Selected!.Label);
+        Assert.Equal(["None", picker.Selected.Label], picker.Choices.Select(c => c.Label));
     }
 
     [Fact]

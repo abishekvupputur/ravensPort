@@ -44,10 +44,7 @@ public sealed partial class FiltersViewModel : ObservableObject
     public ObservableCollection<EmbeddingProviderItemViewModel> Providers { get; } = [];
     public ObservableCollection<EntityModelItemViewModel> EntityModels { get; } = [];
     public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
-    public ObservableCollection<FunnelAssignmentViewModel> Assignments { get; } = [];
-
     public bool HasProfiles => Profiles.Count > 0;
-    public bool HasFunnels => Assignments.Count > 0;
 
     // ---- profiles --------------------------------------------------------------------------
 
@@ -70,7 +67,7 @@ public sealed partial class FiltersViewModel : ObservableObject
         if (NewProfileError.Length > 0) return;
 
         _configStoreCache.Current.FilterProfiles.Add(new FilterProfileRecord { Name = name, Filters = filters });
-        Save($"Profile '{name}' added. Point a funnel or an upstream at it under Where profiles apply.");
+        Save($"Profile '{name}' added. Choose it in a route's, bridge's or funnel's editor.");
         NewProfileName = "";
         Reload();
     }
@@ -98,7 +95,6 @@ public sealed partial class FiltersViewModel : ObservableObject
 
         item.Record.Name = name;
         Save($"Profile renamed to '{name}'.");
-        foreach (var assignment in Assignments) assignment.RefreshLabels(ProfileChoices());
         return null;
     }
 
@@ -110,22 +106,8 @@ public sealed partial class FiltersViewModel : ObservableObject
         return candidate;
     }
 
-    /// <summary>Who uses a profile, in words: "claude-code" for a funnel, "claude-code › kb" for one upstream in it.</summary>
-    internal List<string> UsersOf(Guid profileId)
-    {
-        var store = _configStoreCache.Current;
-        var users = new List<string>();
-        foreach (var funnel in store.McpFunnels)
-        {
-            if (funnel.FilterProfileId == profileId) users.Add(funnel.Name);
-            foreach (var link in funnel.Sources.Where(l => l.FilterProfileId == profileId))
-                users.Add($"{funnel.Name} › {store.McpSources.FirstOrDefault(src => src.Id == link.SourceId)?.Name ?? "an upstream"}");
-        }
-        return users;
-    }
-
-    private List<ProfileChoice> ProfileChoices() =>
-        [.. _configStoreCache.Current.FilterProfiles.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Select(p => new ProfileChoice(p.Id, p.Name))];
+    /// <summary>Who uses a profile, in words — funnels, upstreams in them, routes and bridges.</summary>
+    internal List<string> UsersOf(Guid profileId) => FilterProfiles.UsersOf(_configStoreCache.Current, profileId);
 
     /// <summary>
     /// Funnels set up before profiles existed carry their filters themselves. The first time the
@@ -509,26 +491,12 @@ public sealed partial class FiltersViewModel : ObservableObject
             Profiles.Add(new ProfileItemViewModel(profile, this, Save, Providers, EntityModels));
         }
 
-        var choices = ProfileChoices();
-        Assignments.Clear();
-        foreach (var funnel in store.McpFunnels)
-        {
-            Assignments.Add(new FunnelAssignmentViewModel(funnel, store.McpSources, choices, OnAssignmentChanged));
-        }
-
         TestProfile = Profiles.FirstOrDefault(p => p.Record.Id == selectedId) ?? Profiles.FirstOrDefault();
         OnPropertyChanged(nameof(HasProfiles));
-        OnPropertyChanged(nameof(HasFunnels));
         OnPropertyChanged(nameof(HasModels));
     }
 
     internal void SaveModelChange(string message) => Save(message);
-
-    private void OnAssignmentChanged(string message)
-    {
-        Save(message);
-        foreach (var profile in Profiles) profile.RefreshUsedBy();
-    }
 
     private async void Save(string message)
     {
@@ -768,100 +736,6 @@ public sealed partial class ProfileItemViewModel : ObservableObject
     private void Remove() => _owner.RemoveProfile(this);
 
     public override string ToString() => Name;
-}
-
-/// <summary>Where profiles apply for one funnel: its own profile, and an override per upstream in it.</summary>
-public sealed partial class FunnelAssignmentViewModel : ObservableObject
-{
-    private readonly McpFunnelRecord _funnel;
-    private readonly Action<string> _onChanged;
-    private bool _loading = true;
-
-    public FunnelAssignmentViewModel(
-        McpFunnelRecord funnel, IReadOnlyList<McpSourceRecord> sources, IReadOnlyList<ProfileChoice> profiles, Action<string> onChanged)
-    {
-        _funnel = funnel;
-        _onChanged = onChanged;
-
-        Choices = [new ProfileChoice(null, "No filters"), .. profiles];
-        SelectedProfile = Choices.FirstOrDefault(c => c.Id == funnel.FilterProfileId) ?? Choices[0];
-
-        Upstreams = [.. funnel.Sources.Select(link =>
-            new UpstreamAssignmentViewModel(funnel, link, sources.FirstOrDefault(s => s.Id == link.SourceId), profiles, onChanged))];
-        _loading = false;
-    }
-
-    public string Name => _funnel.Name;
-    public string Endpoint => $"/mcp/{_funnel.Slug}";
-    public IReadOnlyList<ProfileChoice> Choices { get; private set; }
-    public IReadOnlyList<UpstreamAssignmentViewModel> Upstreams { get; }
-    public bool HasUpstreams => Upstreams.Count > 0;
-
-    [ObservableProperty] private ProfileChoice? _selectedProfile;
-
-    partial void OnSelectedProfileChanged(ProfileChoice? value)
-    {
-        if (_loading || value is null) return;
-        _funnel.FilterProfileId = value.Id;
-        _onChanged($"Funnel '{Name}' now uses {(value.Id is null ? "no filters" : $"profile '{value.Label}'")}.");
-    }
-
-    /// <summary>After a rename, so the dropdowns show the new name.</summary>
-    internal void RefreshLabels(IReadOnlyList<ProfileChoice> profiles)
-    {
-        _loading = true;
-        Choices = [new ProfileChoice(null, "No filters"), .. profiles];
-        OnPropertyChanged(nameof(Choices));
-        SelectedProfile = Choices.FirstOrDefault(c => c.Id == _funnel.FilterProfileId) ?? Choices[0];
-        foreach (var upstream in Upstreams) upstream.RefreshLabels(profiles);
-        _loading = false;
-    }
-}
-
-/// <summary>One upstream inside a funnel: the funnel's profile, or one of its own.</summary>
-public sealed partial class UpstreamAssignmentViewModel : ObservableObject
-{
-    private readonly McpFunnelRecord _funnel;
-    private readonly McpFunnelSource _link;
-    private readonly Action<string> _onChanged;
-    private bool _loading = true;
-
-    public UpstreamAssignmentViewModel(
-        McpFunnelRecord funnel, McpFunnelSource link, McpSourceRecord? source, IReadOnlyList<ProfileChoice> profiles, Action<string> onChanged)
-    {
-        _funnel = funnel;
-        _link = link;
-        _onChanged = onChanged;
-        Name = source?.Name ?? "(removed upstream)";
-        Alias = source?.Alias ?? "";
-        RefreshLabels(profiles);
-        _loading = false;
-    }
-
-    public string Name { get; }
-    public string Alias { get; }
-    public IReadOnlyList<ProfileChoice> Choices { get; private set; } = [];
-
-    [ObservableProperty] private ProfileChoice? _selectedProfile;
-
-    partial void OnSelectedProfileChanged(ProfileChoice? value)
-    {
-        if (_loading || value is null) return;
-        _link.FilterProfileId = value.Id;
-        _onChanged(value.Id is null
-            ? $"Calls from '{_funnel.Name}' to '{Name}' now follow the funnel's profile."
-            : $"Calls from '{_funnel.Name}' to '{Name}' now use profile '{value.Label}'.");
-    }
-
-    internal void RefreshLabels(IReadOnlyList<ProfileChoice> profiles)
-    {
-        var was = _loading;
-        _loading = true;
-        Choices = [new ProfileChoice(null, "Same as the funnel"), .. profiles];
-        OnPropertyChanged(nameof(Choices));
-        SelectedProfile = Choices.FirstOrDefault(c => c.Id == _link.FilterProfileId) ?? Choices[0];
-        _loading = was;
-    }
 }
 
 /// <summary>

@@ -70,7 +70,7 @@
                     <StackPanel>
                         <TextBlock Text="What filters do" Classes="section"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="Filters are set up as profiles. Point each funnel at one, and give an upstream inside a funnel its own when you trust it more — or less — than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
+                                   Text="Filters are set up here as profiles. Choose one in a route's, an API bridge's or a funnel's editor — and inside a funnel, give an upstream its own when you trust it more or less than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys, passwords, usernames and refresh tokens, by gitleaks' rules plus RavensPort's and your own. All on; always denied."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · Personal data — emails, card numbers, IBANs, phone numbers… by patterns you can edit and add to."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="3 · Entities — names, places, medical conditions… found by an entity model (GLiNER) on this PC."/>
@@ -86,7 +86,7 @@
                         <Expander.Header>
                             <StackPanel>
                                 <TextBlock Text="Models" FontWeight="SemiBold"/>
-                                <TextBlock Classes="hint" Text="Entity models for step 3 and embedding models for step 4. Add one here, then pick it in a funnel below."/>
+                                <TextBlock Classes="hint" Text="Entity models for step 3 and embedding models for step 4. Add one here, then pick it in a profile below."/>
                             </StackPanel>
                         </Expander.Header>
                         <StackPanel>
@@ -270,7 +270,7 @@
                     <StackPanel>
                         <TextBlock Text="Profiles" Classes="section"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Text="A profile is one setting of the four steps. Make one per level of trust — say Strict for anything that leaves your network, Trusted for your own servers — and point funnels and upstreams at them below. Editing a profile changes every funnel using it, on its next call."/>
+                                   Text="A profile is one setting of the four steps. Make one per level of trust — say Strict for anything that leaves your network, Trusted for your own servers — then choose it in the Routes, API to MCP or MCP Funnel tab. Editing a profile changes everything using it, on its next call."/>
                         <TextBlock Classes="empty" TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="{Binding !HasProfiles}"
                                    Text="No profiles yet. Add one below, set its steps, then choose where it applies."/>
                         <Grid ColumnDefinitions="*,Auto">
@@ -543,57 +543,6 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-
-                <!-- Where profiles apply: per funnel, and per upstream inside it. -->
-                <Border Classes="card" Margin="0,0,0,14">
-                    <StackPanel>
-                        <TextBlock Text="Where profiles apply" Classes="section"/>
-                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Text="A call to an upstream uses that upstream's profile in this funnel if it has one; otherwise the funnel's profile; otherwise it is not filtered. The same upstream can have a different profile in each funnel."/>
-                        <TextBlock Classes="empty" TextWrapping="Wrap" IsVisible="{Binding !HasFunnels}"
-                                   Text="No funnels yet. Create one on the MCP Funnel tab, then come back here to choose its profile."/>
-                        <ItemsControl ItemsSource="{Binding Assignments}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:FunnelAssignmentViewModel">
-                                    <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
-                                            BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
-                                        <StackPanel>
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                                    <TextBlock Text="{Binding Endpoint}" FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                                               VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
-                                                </StackPanel>
-                                                <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedProfile}"
-                                                          AutomationProperties.AutomationId="filters.assign.funnel"
-                                                          ToolTip.Tip="The profile every call through this funnel uses, unless its upstream has its own below."/>
-                                            </Grid>
-                                            <ItemsControl ItemsSource="{Binding Upstreams}" Margin="16,6,0,0">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:UpstreamAssignmentViewModel">
-                                                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-                                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                                <TextBlock Text="›" Foreground="{StaticResource MutedTextBrush}"/>
-                                                                <TextBlock Text="{Binding Name}"/>
-                                                                <TextBlock Text="{Binding Alias, StringFormat='{}{0}__…'}" FontFamily="Cascadia Code, Consolas" FontSize="11"
-                                                                           VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
-                                                            </StackPanel>
-                                                            <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedProfile}"
-                                                                      AutomationProperties.AutomationId="filters.assign.upstream"
-                                                                      ToolTip.Tip="Calls from this funnel to this upstream only. Same as the funnel uses the funnel's profile."/>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <TextBlock Classes="hint" Margin="16,4,0,0" IsVisible="{Binding !HasUpstreams}"
-                                                       Text="No upstreams in this funnel yet — add them on the MCP Funnel tab."/>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
 
                 <!-- Try before trusting. -->
                 <Border Classes="card" Margin="0,0,0,14" IsVisible="{Binding HasProfiles}">

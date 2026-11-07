@@ -218,9 +218,10 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                         <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
                                 Margin="0,0,0,10"/>
 
-<!-- Filters have their own tab; say so here, where people look for per-agent settings. -->
-                        <TextBlock Classes="hint" Margin="0,0,0,10" TextWrapping="Wrap"
-                                   Text="To stop this agent sending secrets or personal data, set its filters on the Filters tab."/>
+<!-- What this agent's calls are checked for; an upstream below can have its own. -->
+                        <ContentControl Content="{Binding SelectedFunnel.FilterProfile}" ContentTemplate="{StaticResource FilterProfilePickerTemplate}"/>
+                        <TextBlock Classes="hint" Margin="0,2,0,10" TextWrapping="Wrap"
+                                   Text="Applies to every upstream below unless one has its own profile — open an upstream to choose one for it."/>
 
                         <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0"
                                 Margin="0,0,0,10"/>
@@ -258,6 +259,8 @@ Use Include to grant a known set, Exclude to revoke a few from an otherwise trus
                                             </Grid>
 
                                             <StackPanel Margin="22,10,0,0" IsVisible="{Binding ShowDetail}">
+                                                <!-- Trusted more or less than the rest of this funnel. -->
+                                                <ContentControl Margin="0,0,0,8" Content="{Binding FilterProfile}" ContentTemplate="{StaticResource FilterProfilePickerTemplate}"/>
                                                 <ContentControl Content="{Binding Tools}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
                                                 <ContentControl Content="{Binding Resources}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>
                                                 <ContentControl Content="{Binding Prompts}" ContentTemplate="{StaticResource SelectionGroupTemplate}"/>

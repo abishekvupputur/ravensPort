@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
@@ -376,7 +377,7 @@ internal sealed class SystemTestHost : IAsyncDisposable
         proxy.UseLocalAccessGuard();
         proxy.UseMcpFunnelGate();
         proxy.MapMcpFunnel();
-        proxy.MapReverseProxy();
+        proxy.MapRavensPortProxy();
 
         await proxy.StartAsync();
 

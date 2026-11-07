@@ -18,6 +18,19 @@ Each route and each funnel has its own key. A key issued for one endpoint does n
 
 "Never expires" is right for a config file nobody rotates. A fixed period suits a key handed to something temporary — once it lapses the endpoint answers 403 until you regenerate the key or set a longer period.</sys:String>
 
+    <!-- The filter profile a route, bridge, funnel or upstream in a funnel uses. One template for
+         all four editors, beside where each chooses its credential or key. -->
+    <DataTemplate x:Key="FilterProfilePickerTemplate" x:DataType="vm:FilterProfilePickerViewModel">
+        <StackPanel>
+            <TextBlock Text="Filter profile" Classes="label"
+                       ToolTip.Tip="Checks for secrets, personal data and risky calls before anything is sent. Profiles are made on the Filters tab."/>
+            <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" Width="260" HorizontalAlignment="Left"
+                      AutomationProperties.AutomationId="filters.profile.picker"/>
+            <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding !HasProfiles}"
+                       Text="No filter profiles yet — create one on the Filters tab to check what goes out here."/>
+        </StackPanel>
+    </DataTemplate>
+
     <!-- The key controls, identical for a route and for a funnel, so they live here once rather
          than as two copies that drift. The data context is a ProxyKeyViewModel. -->
     <DataTemplate x:Key="ProxyKeyEditorTemplate" x:DataType="vm:ProxyKeyViewModel">
