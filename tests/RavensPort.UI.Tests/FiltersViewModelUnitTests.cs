@@ -34,7 +34,7 @@ public class FiltersViewModelUnitTests
         using var _ = fixture;
 
         var card = Assert.Single(vm.Profiles);
-        Assert.Equal(["1 · Secrets", "2 · Personal data", "3 · Entities", "4 · Meaning"], card.Rows.Select(r => r.Title));
+        Assert.Equal(["1 · Secrets", "2 · RegEx", "3 · Entities", "4 · Meaning"], card.Rows.Select(r => r.Title));
         Assert.Same(card, vm.TestProfile);
         Assert.Equal("Used by funnel agent", card.UsedBySummary);
     }
@@ -380,9 +380,19 @@ public class FiltersViewModelUnitTests
         vm.TestInput = $"aws configure set aws_access_key_id {AwsKey}";
         await vm.RunTestCommand.ExecuteAsync(null);
 
+        Assert.StartsWith("BLOCKED", vm.TestResult);
         Assert.Contains("1 Secrets: BLOCK", vm.TestResult);
         Assert.Contains("Stopped at step 1", vm.TestResult);
         Assert.DoesNotContain(AwsKey, vm.TestResult);
+        Assert.True(vm.TestBlocked);
+        Assert.False(vm.TestAllowed);
+
+        vm.TestInput = "water the plants on friday";
+        await vm.RunTestCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("ALLOWED", vm.TestResult);
+        Assert.True(vm.TestAllowed);
+        Assert.False(vm.TestBlocked);
     }
 
     [Fact]

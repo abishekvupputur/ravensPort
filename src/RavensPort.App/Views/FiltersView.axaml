@@ -6,11 +6,12 @@
              x:DataType="vm:FiltersViewModel"
              Background="{StaticResource BgBrush}">
     <UserControl.Styles>
-        <!-- A pattern inside Personal data: a small pill. Off ones are struck through and dimmed,
-             not hidden, so they can be switched back on in place. -->
+        <!-- A check as a small pill: on is lit (accent tint, ✓), off is plain, dimmed, struck
+             through and marked ✕ — never hidden, so it can be switched back on in place. The hover
+             and pressed states keep that difference instead of painting over it. -->
         <Style Selector="Button.chip">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+            <Setter Property="Background" Value="{StaticResource AccentSelectedBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="8,2"/>
@@ -19,14 +20,35 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         </Style>
-        <Style Selector="Button.chip.custom">
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+        <Style Selector="Button.chip:pointerover">
+            <Setter Property="Background" Value="{StaticResource AccentSelectedBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource AccentHoverBrush}"/>
         </Style>
         <Style Selector="Button.chip.off">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
             <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
         </Style>
-        <Style Selector="Button.chip.off TextBlock">
+        <Style Selector="Button.chip.off:pointerover">
+            <Setter Property="Background" Value="{StaticResource HoverStrongBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush0}"/>
+            <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}"/>
+        </Style>
+        <Style Selector="Button.chip.off TextBlock.name">
             <Setter Property="TextDecorations" Value="Strikethrough"/>
+        </Style>
+        <!-- The user's own patterns and rules read in italics. -->
+        <Style Selector="Button.chip.custom TextBlock.name">
+            <Setter Property="FontStyle" Value="Italic"/>
+        </Style>
+        <Style Selector="TextBlock.tryit">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.tryit.blocked">
+            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.tryit.allowed">
+            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
         </Style>
         <Style Selector="TextBlock.error">
             <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
@@ -72,7 +94,7 @@
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
                                    Text="Filters are set up here as profiles. Choose one in a route's, an API bridge's or a funnel's editor — and inside a funnel, give an upstream its own when you trust it more or less than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys, passwords, usernames and refresh tokens, by gitleaks' rules plus RavensPort's and your own. All on; always denied."/>
-                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · Personal data — emails, card numbers, IBANs, phone numbers… by patterns you can edit and add to."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · RegEx — emails, card numbers, IBANs, phone numbers… found by regular expressions you can edit and add to."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="3 · Entities — names, places, medical conditions… found by an entity model (GLiNER) on this PC."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6" Text="4 · Meaning — calls that mean something you deny, judged by an embedding model."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap"
@@ -352,7 +374,7 @@
                                                                         <DataTemplate x:DataType="vm:DetectorChipViewModel">
                                                                             <Button Classes="chip" Classes.custom="{Binding IsCustom}" Command="{Binding ToggleCommand}"
                                                                                     ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="filters.secrets.match">
-                                                                                <TextBlock Text="{Binding Name}"/>
+                                                                                <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Text="{Binding Glyph}"/><TextBlock Classes="name" Text="{Binding Name}"/></StackPanel>
                                                                             </Button>
                                                                         </DataTemplate>
                                                                     </ItemsControl.ItemTemplate>
@@ -367,7 +389,7 @@
                                                                             <DataTemplate x:DataType="vm:DetectorChipViewModel">
                                                                                 <Button Classes="chip off" Command="{Binding ToggleCommand}"
                                                                                         ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="filters.secrets.off">
-                                                                                    <TextBlock Text="{Binding Name}"/>
+                                                                                    <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Text="{Binding Glyph}"/><TextBlock Classes="name" Text="{Binding Name}"/></StackPanel>
                                                                                 </Button>
                                                                             </DataTemplate>
                                                                         </ItemsControl.ItemTemplate>
@@ -376,7 +398,7 @@
                                                             </StackPanel>
                                                         </StackPanel>
 
-                                                        <!-- 2 Personal data: chips, and an editor on demand. -->
+                                                        <!-- 2 RegEx: chips, and an editor on demand. -->
                                                         <StackPanel IsVisible="{Binding IsPersonalData}">
                                                             <StackPanel IsVisible="{Binding IsOn}" Margin="0,6,0,0">
                                                                 <ItemsControl ItemsSource="{Binding Chips}">
@@ -388,7 +410,7 @@
                                                                             <Button Classes="chip" Classes.off="{Binding !IsOn}" Classes.custom="{Binding IsCustom}"
                                                                                     Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding Tip}"
                                                                                     AutomationProperties.AutomationId="filters.chip">
-                                                                                <TextBlock Text="{Binding Name}"/>
+                                                                                <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Text="{Binding Glyph}"/><TextBlock Classes="name" Text="{Binding Name}"/></StackPanel>
                                                                             </Button>
                                                                         </DataTemplate>
                                                                     </ItemsControl.ItemTemplate>
@@ -566,9 +588,11 @@
                         <Button Content="Check" Command="{Binding RunTestCommand}" Margin="0,8,0,8" HorizontalAlignment="Left"
                                 AutomationProperties.AutomationId="filters.test.run"/>
 
+                        <!-- Red when the call would be blocked, green when it would go through. -->
                         <TextBlock Text="{Binding TestResult}" TextWrapping="Wrap"
                                    FontFamily="Cascadia Code, Consolas" FontSize="12"
-                                   Foreground="{StaticResource AccentBrush}"/>
+                                   Classes="tryit" Classes.blocked="{Binding TestBlocked}" Classes.allowed="{Binding TestAllowed}"
+                                   AutomationProperties.AutomationId="filters.test.result"/>
                     </StackPanel>
                 </Border>
 

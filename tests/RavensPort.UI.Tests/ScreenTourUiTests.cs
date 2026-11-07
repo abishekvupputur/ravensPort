@@ -139,7 +139,12 @@ public class ScreenTourUiTests
                 },
             ];
         });
-        harness.Services.GetRequiredService<FiltersViewModel>().Reload();
+        var filters = harness.Services.GetRequiredService<FiltersViewModel>();
+        filters.Reload();
+
+        // A Try it that is blocked, so the tour shows the red verdict.
+        filters.TestInput = "login with password=hunter2";
+        await filters.RunTestCommand.ExecuteAsync(null);
 
         var window = await OpenReadyAsync(harness);
         var names = new[] { "credentials", "routes", "api-to-mcp", "funnel", "filters", "settings" };

@@ -26,7 +26,7 @@ public static class FilterNames
     public static string Of(FilterCategory category) => category switch
     {
         FilterCategory.Secrets => "Secrets",
-        FilterCategory.PersonalData => "Personal data",
+        FilterCategory.PersonalData => "RegEx",
         FilterCategory.Entities => "Entities",
         FilterCategory.RiskyActions => "Meaning",
         _ => category.ToString(),
@@ -36,7 +36,7 @@ public static class FilterNames
 }
 
 /// <summary>
-/// The pattern steps (1 Secrets, 2 Personal data) and the plumbing all four steps share: reading a
+/// The pattern steps (1 Secrets, 2 RegEx) and the plumbing all four steps share: reading a
 /// call's arguments into texts, and replacing what a step found before the next step reads them.
 ///
 /// Every string value is checked, wherever it is nested, and object keys too — a secret pasted as a
