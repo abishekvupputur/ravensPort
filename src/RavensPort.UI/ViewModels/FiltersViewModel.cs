@@ -410,9 +410,18 @@ public sealed partial class FiltersViewModel : ObservableObject
     [ObservableProperty] private string _testInput = "";
     [ObservableProperty] private string _testResult = "";
 
+    /// <summary>The verdict, for the result's colour: blocked red, allowed green, null for anything else.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TestBlocked), nameof(TestAllowed))]
+    private bool? _testWouldBlock;
+
+    public bool TestBlocked => TestWouldBlock == true;
+    public bool TestAllowed => TestWouldBlock == false;
+
     [RelayCommand]
     private async Task RunTestAsync()
     {
+        TestWouldBlock = null;
         if (TestProfile is null)
         {
             TestResult = "Pick a profile to test against.";
@@ -457,8 +466,12 @@ public sealed partial class FiltersViewModel : ObservableObject
             lines.Add("Step 4 read: " + string.Join(" | ", outcome.TextsForMeaning.Select(t => t.Text)));
         }
 
-        TestResult = lines.Count == 0
-            ? $"Nothing caught. A call carrying this text would pass '{TestProfile.Name}'."
+        // Any Block ends the check, so a stop means blocked; Watch-only hits still go through.
+        TestWouldBlock = outcome.StoppedAt is not null;
+        lines.Insert(0, outcome.StoppedAt is not null ? "BLOCKED — this call would not be sent." : "ALLOWED — this call would go through.");
+
+        TestResult = lines.Count == 1
+            ? lines[0] + $" Nothing in it matched '{TestProfile.Name}'."
             : string.Join("\n", lines);
     }
 
@@ -490,6 +503,9 @@ public sealed partial class FiltersViewModel : ObservableObject
         {
             Profiles.Add(new ProfileItemViewModel(profile, this, Save, Providers, EntityModels));
         }
+
+        // A profile alone on the tab opens, so its steps are in view without a click.
+        if (Profiles.Count == 1) Profiles[0].IsExpanded = true;
 
         TestProfile = Profiles.FirstOrDefault(p => p.Record.Id == selectedId) ?? Profiles.FirstOrDefault();
         OnPropertyChanged(nameof(HasProfiles));
@@ -753,7 +769,14 @@ public sealed partial class DetectorChipViewModel(string name, bool isCustom, bo
     public string Tip => (description is { Length: > 0 } d ? d + "\n" : "") +
         (IsOn ? "On in this profile. Click to turn it off." : "Off in this profile. Click to turn it back on.");
 
-    partial void OnIsOnChanged(bool value) => OnPropertyChanged(nameof(Tip));
+    /// <summary>The state at a glance, in front of the name: lit and ticked when on.</summary>
+    public string Glyph => IsOn ? "✓" : "✕";
+
+    partial void OnIsOnChanged(bool value)
+    {
+        OnPropertyChanged(nameof(Tip));
+        OnPropertyChanged(nameof(Glyph));
+    }
 
     [RelayCommand]
     private void Toggle()

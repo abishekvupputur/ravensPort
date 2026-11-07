@@ -30,7 +30,7 @@ public sealed record FilterOutcome(
 /// Runs a funnel's four filter steps on one call, in order:
 ///
 ///   1 Secrets        the gitleaks rule set — Off or Deny
-///   2 Personal data  patterns: editable built-ins (with checksums) and the user's own
+///   2 RegEx          patterns: editable built-ins (with checksums) and the user's own
 ///   3 Entities       a GLiNER model looking for labels the user chose
 ///   4 Meaning        an embedding model judging the call against a deny list
 ///
@@ -131,7 +131,7 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
             if (hits.Count > 0) return Outcome(FilterCategory.Secrets);
         }
 
-        // ---- 2 Personal data: patterns --------------------------------------------------------
+        // ---- 2 RegEx: patterns ----------------------------------------------------------------
         if (On(FilterCategory.PersonalData) is { } personal)
         {
             var patterns = PersonalPatterns.Active(personal);
