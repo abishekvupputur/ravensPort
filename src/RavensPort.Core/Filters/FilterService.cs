@@ -15,16 +15,24 @@ public sealed record Judgement(double Closeness, double Threshold, string Closes
     public bool Denied => AllowedBy is null && Closeness >= Threshold;
 }
 
-/// <summary>What the four steps made of one call.</summary>
+/// <summary>Step 5's answer: the statement most likely to hold for the call, and how likely.</summary>
+public sealed record Decision(double Probability, double Threshold, string Statement)
+{
+    public bool Denied => Probability >= Threshold;
+}
+
+/// <summary>What the five steps made of one call.</summary>
 /// <param name="Hits">Every match, Block ones first.</param>
 /// <param name="StoppedAt">The step whose Block ended the check, or null if the call may go on.</param>
 /// <param name="TextsForMeaning">The texts step 4 read — or would read — with earlier matches replaced.</param>
 /// <param name="Judgement">Step 4's score, when it ran.</param>
+/// <param name="Decision">Step 5's answer, when it ran.</param>
 public sealed record FilterOutcome(
     IReadOnlyList<FilterHit> Hits,
     FilterCategory? StoppedAt,
     IReadOnlyList<(string Path, string Text)> TextsForMeaning,
-    Judgement? Judgement);
+    Judgement? Judgement,
+    Decision? Decision = null);
 
 /// <summary>
 /// Runs a funnel's four filter steps on one call, in order:
@@ -33,6 +41,7 @@ public sealed record FilterOutcome(
 ///   2 RegEx          patterns: editable built-ins (with checksums) and the user's own
 ///   3 Entities       a GLiNER model looking for labels the user chose
 ///   4 Meaning        an embedding model judging the call against a deny list
+///   5 Decision       a decision model answering how likely each of the user's statements holds
 ///
 /// A Block in any step ends the check there: later steps never run, and an embedding API never sees
 /// a call that step 1–3 already refused. What a step matched — Block or Watch — is replaced with
@@ -64,9 +73,12 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
         "npm run build",
     ];
 
-    /// <summary>Meaning: closeness presets. Entities: model-score presets.</summary>
+    /// <summary>Meaning: closeness presets. Entities: model-score presets. Decision: the probability that blocks.</summary>
     public static double PresetThreshold(FilterLevel level, FilterCategory category = FilterCategory.RiskyActions) => (category, level) switch
     {
+        (FilterCategory.Decision, FilterLevel.Relaxed) => 0.90,
+        (FilterCategory.Decision, FilterLevel.Balanced) => 0.75,
+        (FilterCategory.Decision, FilterLevel.Strict) => 0.50,
         (FilterCategory.Entities, FilterLevel.Relaxed) => 0.85,
         (FilterCategory.Entities, FilterLevel.Balanced) => 0.65,
         (FilterCategory.Entities, FilterLevel.Strict) => 0.45,
@@ -97,12 +109,14 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
         var spans = texts.Select(_ => new List<Span>()).ToArray();
         var hits = new List<FilterHit>();
         Judgement? judgement = null;
+        Decision? decision = null;
 
         FilterOutcome Outcome(FilterCategory? stoppedAt) => new(
             [.. hits.OrderBy(h => h.Action == FilterAction.Block ? 0 : 1)],
             stoppedAt,
             TextsToJudge(toolName, texts, spans),
-            judgement);
+            judgement,
+            decision);
 
         FunnelFilter? On(FilterCategory category) =>
             filters.FirstOrDefault(f => f.Category == category && f.Level != FilterLevel.Off);
@@ -201,6 +215,26 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
             if (Blocked(hits, FilterCategory.RiskyActions)) return Outcome(FilterCategory.RiskyActions);
         }
 
+        // ---- 5 Decision: a decision model, on the call with steps 1–3's matches replaced ---
+        if (On(FilterCategory.Decision) is { } decide && Statements(decide).Count > 0)
+        {
+            try
+            {
+                decision = await DecideAsync(decide, StateOf(toolName, TextsToJudge(toolName, texts, spans)), ct).ConfigureAwait(false);
+                if (decision.Denied)
+                {
+                    hits.Add(new FilterHit(FilterCategory.Decision, decide.Action,
+                        $"\"{Shorten(decision.Statement)}\" ({decision.Probability:0.00})", "call"));
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                hits.Add(new FilterHit(FilterCategory.Decision, decide.Action, $"decision model unavailable — {ex.Message}", "call"));
+            }
+
+            if (Blocked(hits, FilterCategory.Decision)) return Outcome(FilterCategory.Decision);
+        }
+
         return Outcome(null);
     }
 
@@ -288,6 +322,33 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
     /// <summary>Convenience for tests: step 4 on raw arguments, nothing redacted.</summary>
     public Task<Judgement> JudgeAsync(FunnelFilter filter, string toolName, IReadOnlyList<KeyValuePair<string, JsonElement>>? arguments, CancellationToken ct) =>
         JudgeAsync(filter, TextsToJudge(toolName, FilterEngine.Read(arguments)), ct);
+
+    /// <summary>Step 5 on a state already built (and redacted): the most likely statement and its probability.</summary>
+    public async Task<Decision> DecideAsync(FunnelFilter filter, string state, CancellationToken ct)
+    {
+        var record = store.Current.DecisionModels.FirstOrDefault(m => m.Id == filter.DecisionModelId)
+                     ?? throw new InvalidOperationException("no decision model is chosen for Decision");
+
+        var statements = Statements(filter);
+        if (statements.Count == 0) throw new InvalidOperationException("there is no statement to decide yet");
+
+        var probabilities = await clients.GetDecisionModel(record)(state, statements, ct).ConfigureAwait(false);
+        var best = Enumerable.Range(0, statements.Count).MaxBy(i => probabilities[i]);
+
+        return new Decision(probabilities[best], filter.Threshold ?? PresetThreshold(filter.Level, FilterCategory.Decision), statements[best]);
+    }
+
+    /// <summary>What step 5 reads: the tool's name and its redacted texts, one per line, kept short.</summary>
+    internal static string StateOf(string toolName, IReadOnlyList<(string Path, string Text)> texts)
+    {
+        var state = texts is [{ Path: "call" } whole]
+            ? whole.Text
+            : $"tool: {toolName}\n" + string.Join("\n", texts.Select(t => $"{t.Path}: {t.Text}"));
+        return state.Length <= 4000 ? state : state[..4000];
+    }
+
+    private static List<string> Statements(FunnelFilter filter) =>
+        [.. filter.DenyInstructions.Where(s => !string.IsNullOrWhiteSpace(s)).Take(10)];
 
     private static List<string> DenyAnchors(FunnelFilter filter) =>
         [.. filter.DenyInstructions.Concat(filter.DenyExamples).Where(s => !string.IsNullOrWhiteSpace(s))];

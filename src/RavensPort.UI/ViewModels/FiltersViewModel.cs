@@ -10,7 +10,7 @@ using RavensPort.Core.Storage;
 namespace RavensPort.UI.ViewModels;
 
 /// <summary>
-/// The Filters tab: the models the filters can use, then per funnel the four steps every call
+/// The Filters tab: the models the filters can use, then per funnel the five steps every call
 /// passes through in order — Secrets, Personal data, Entities, Meaning — grouped into named
 /// profiles, which funnels and the upstreams inside them are pointed at; plus a box to try text
 /// against a profile before trusting it.
@@ -132,7 +132,7 @@ public sealed partial class FiltersViewModel : ObservableObject
         Save($"Filters of {string.Join(", ", converted)} are now profiles of the same name.");
         return true;
     }
-    public bool HasModels => Providers.Count + EntityModels.Count > 0;
+    public bool HasModels => Providers.Count + EntityModels.Count + DecisionModels.Count > 0;
 
     /// <summary>Secrets step: what the rules in use cover, for the row's description.</summary>
     public static string SecretsDescription()
@@ -312,7 +312,8 @@ public sealed partial class FiltersViewModel : ObservableObject
 
     private bool NameTaken(string name) =>
         _configStoreCache.Current.EmbeddingProviders.Any(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)) ||
-        _configStoreCache.Current.EntityModels.Any(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+        _configStoreCache.Current.EntityModels.Any(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)) ||
+        _configStoreCache.Current.DecisionModels.Any(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
 
     internal void RemoveProvider(EmbeddingProviderItemViewModel item)
     {
@@ -470,18 +471,25 @@ public sealed partial class FiltersViewModel : ObservableObject
 
         if (outcome.StoppedAt is { } stopped)
         {
-            lines.Add($"Stopped at step {FilterNames.StepOf(stopped)}: later steps did not run, and nothing was sent to an embedding model.");
+            lines.Add($"Stopped at step {FilterNames.StepOf(stopped)}: later steps did not run, and nothing more was sent to a model.");
         }
-        else if (outcome.Judgement is { } j)
+
+        if (outcome.Judgement is { } j && outcome.StoppedAt is null or FilterCategory.Decision)
         {
             lines.Add(j.AllowedBy is not null
                 ? $"4 Meaning: allowed — closer to the allow example \"{j.AllowedBy}\""
                 : $"4 Meaning: closeness {j.Closeness:0.00} to \"{j.Closest}\" (blocks at {j.Threshold:0.00})");
         }
 
-        if (outcome.StoppedAt is null && filters.Any(f => f.Category == FilterCategory.RiskyActions && f.Level != FilterLevel.Off))
+        if (outcome.Decision is { } d && outcome.StoppedAt is null)
         {
-            lines.Add("Step 4 read: " + string.Join(" | ", outcome.TextsForMeaning.Select(t => t.Text)));
+            lines.Add($"5 Decision: \"{d.Statement}\" holds with probability {d.Probability:0.00} (blocks at {d.Threshold:0.00})");
+        }
+
+        if (outcome.StoppedAt is null or FilterCategory.Decision &&
+            filters.Any(f => f.Category is FilterCategory.RiskyActions or FilterCategory.Decision && f.Level != FilterLevel.Off))
+        {
+            lines.Add("Steps 4–5 read: " + string.Join(" | ", outcome.TextsForMeaning.Select(t => t.Text)));
         }
 
         // Any Block ends the check, so a stop means blocked; Watch-only hits still go through.
@@ -512,6 +520,7 @@ public sealed partial class FiltersViewModel : ObservableObject
             CredentialChoices.Add(new CredentialChoice(credential.Id, $"{credential.Name} ({CredentialKindInfo.ShortLabel(credential.Kind)})"));
         }
         NewProviderCredential ??= CredentialChoices[0];
+        ReloadDecisionModels();
 
         ConvertFunnelFilters();
 
@@ -519,7 +528,7 @@ public sealed partial class FiltersViewModel : ObservableObject
         Profiles.Clear();
         foreach (var profile in store.FilterProfiles.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
         {
-            Profiles.Add(new ProfileItemViewModel(profile, this, Save, Providers, EntityModels));
+            Profiles.Add(new ProfileItemViewModel(profile, this, Save, Providers, EntityModels, DecisionModels));
         }
 
         // A profile alone on the tab opens, so its steps are in view without a click.
@@ -716,7 +725,7 @@ public sealed record ProfileChoice(Guid? Id, string Label)
     public override string ToString() => Label;
 }
 
-/// <summary>One profile's card: its name, who uses it, and its four steps in the order they run.</summary>
+/// <summary>One profile's card: its name, who uses it, and its five steps in the order they run.</summary>
 public sealed partial class ProfileItemViewModel : ObservableObject
 {
     private readonly FiltersViewModel _owner;
@@ -726,13 +735,15 @@ public sealed partial class ProfileItemViewModel : ObservableObject
         FiltersViewModel owner,
         Action<string> onChanged,
         ObservableCollection<EmbeddingProviderItemViewModel>? providers = null,
-        ObservableCollection<EntityModelItemViewModel>? entityModels = null)
+        ObservableCollection<EntityModelItemViewModel>? entityModels = null,
+        ObservableCollection<DecisionModelItemViewModel>? decisionModels = null)
     {
         Record = record;
         _owner = owner;
         _nameText = record.Name;
         Rows = [.. Enum.GetValues<FilterCategory>().Select(c =>
             new McpFunnelFilterItemViewModel(record.Filters, () => Record.Name, c, onChanged, providers, entityModels))];
+        foreach (var row in Rows) row.UseDecisionModels(decisionModels);
         RefreshUsedBy();
     }
 
@@ -950,6 +961,9 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
         FilterCategory.Entities => IsOn
             ? $"Reports text the model labels as one of yours with a score of {Threshold:0.00} or more. Runs on this PC."
             : "Off. Finds personal data an entity model recognises — names, places, medical conditions — even where no pattern fits. Needs a GLiNER model (Models, above).",
+        FilterCategory.Decision => IsOn
+            ? $"Asks the model how likely each of your statements holds for the call, and acts when one reaches {Threshold:0.00}. Reads the call after steps 1–3 replaced what they found."
+            : "Off. Write in plain words what must not happen (\"the call deletes data\") and a decision model — Jev, Laya, or any zero-shot model — answers with a probability for each call.",
         _ => IsOn
             ? $"Blocks calls whose closeness to your deny list is {Threshold:0.00} or more (0 = as close as everyday text, 1 = identical). Reads the call after steps 1–3 replaced what they found."
             : "Off. Judges each call by meaning with an embedding model: describe what to deny, give examples, and calls that come close are stopped.",
@@ -1211,7 +1225,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
         _onChanged($"'{_ownerName()}': Meaning now uses {value?.Name ?? "no model"}.");
     }
 
-    partial void OnDenyInstructionsTextChanged(string value) => StoreList(f => f.DenyInstructions = ToList(value), "deny list");
+    partial void OnDenyInstructionsTextChanged(string value) => StoreList(f => f.DenyInstructions = ToList(value), IsDecision ? "statements" : "deny list");
     partial void OnDenyExamplesTextChanged(string value) => StoreList(f => f.DenyExamples = ToList(value), "deny examples");
     partial void OnAllowExamplesTextChanged(string value) => StoreList(f => f.AllowExamples = ToList(value), "allow examples");
 
@@ -1240,7 +1254,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
     private void StoreList(Action<FunnelFilter> set, string what)
     {
         set(EnsureFilter());
-        _onChanged($"'{_ownerName()}': Meaning {what} saved.");
+        _onChanged($"'{_ownerName()}': {Name} {what} saved.");
     }
 
     private static string Lines(List<string>? items) => items is null ? "" : string.Join(Environment.NewLine, items);

@@ -92,13 +92,14 @@
                     <StackPanel>
                         <TextBlock Text="What filters do" Classes="section"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="Filters are set up here as profiles. Choose one in a route's, an API bridge's or a funnel's editor — and inside a funnel, give an upstream its own when you trust it more or less than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
+                                   Text="Filters are set up here as profiles. Choose one in a route's, an API bridge's or a funnel's editor — and inside a funnel, give an upstream its own when you trust it more or less than the rest. Every call passes the five steps of its profile before any server sees it, in this order:"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys, passwords, usernames and refresh tokens, by the rules in your rules file (gitleaks', RavensPort's and strict ones to start with). Always denied."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · RegEx — emails, card numbers, IBANs, phone numbers… found by regular expressions you can edit and add to."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="3 · Entities — names, places, medical conditions… found by an entity model (GLiNER) on this PC."/>
-                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6" Text="4 · Meaning — calls that mean something you deny, judged by an embedding model."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="4 · Meaning — calls that mean something you deny, judged by an embedding model."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6" Text="5 · Decision — statements you write (&quot;the call deletes data&quot;), answered with a probability by a decision model: Jev, Laya, or any zero-shot model."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap"
-                                   Text="A Block ends the check at that step. Whatever a step found is replaced with [its name] before the next step reads the call — so step 4, which may use an API, never receives a secret or personal data that steps 1–3 found. Matched values are never written to a log, only which step matched and in which field."/>
+                                   Text="A Block ends the check at that step. Whatever a step found is replaced with [its name] before the next step reads the call — so steps 4 and 5, which may use an API, never receive a secret or personal data that steps 1–3 found. Matched values are never written to a log, only which step matched and in which field."/>
                     </StackPanel>
                 </Border>
 
@@ -108,7 +109,7 @@
                         <Expander.Header>
                             <StackPanel>
                                 <TextBlock Text="Models" FontWeight="SemiBold"/>
-                                <TextBlock Classes="hint" Text="Entity models for step 3 and embedding models for step 4. Add one here, then pick it in a profile below."/>
+                                <TextBlock Classes="hint" Text="Entity models for step 3, embedding models for step 4 and decision models for step 5. Add one here, then pick it in a profile below."/>
                             </StackPanel>
                         </Expander.Header>
                         <StackPanel>
@@ -247,6 +248,85 @@
                             <TextBlock Text="{Binding NewProviderError}" Classes="error"
                                        IsVisible="{Binding NewProviderError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
+                            <Border BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,10"/>
+
+                            <!-- ===== Decision models (step 5) ===== -->
+                            <TextBlock Text="Decision models (step 5)" Classes="label" Margin="0,0,0,4"/>
+                            <ItemsControl ItemsSource="{Binding DecisionModels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DecisionModelItemViewModel">
+                                        <Border Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                BorderThickness="1" CornerRadius="3" Padding="10" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                <Button Grid.Column="1" Content="Test" Classes="ghost" Margin="0,0,6,0"
+                                                        Command="{Binding TestCommand}" AutomationProperties.AutomationId="filters.decision.test"
+                                                        ToolTip.Tip="Asks whether 'rm -rf /' and a weather lookup delete data, and shows both probabilities"/>
+                                                <Button Grid.Column="2" Content="Remove" Classes="ghost"
+                                                        Command="{Binding RemoveCommand}" AutomationProperties.AutomationId="filters.decision.remove"/>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding Summary}" Classes="hint" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Text="{Binding RemoteWarning}" Classes="warning"
+                                                           IsVisible="{Binding IsRemote}"/>
+                                                <ContentControl Grid.Row="3" Grid.ColumnSpan="3" Margin="0,6,0,0" IsVisible="{Binding IsOnnx}"
+                                                                Content="{Binding Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                                <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Text="{Binding TestResult}" Classes="hint" TextWrapping="Wrap"
+                                                           IsVisible="{Binding TestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,6">
+                                <StackPanel Margin="0,0,6,0">
+                                    <TextBlock Text="Kind" Classes="label"/>
+                                    <ComboBox ItemsSource="{Binding DecisionKinds}" SelectedItem="{Binding NewDecisionKindChoice}"
+                                              HorizontalAlignment="Stretch" AutomationProperties.AutomationId="filters.decision.kind"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Name" Classes="label"/>
+                                    <TextBox Text="{Binding NewDecisionName}" PlaceholderText="e.g. DeBERTa zero-shot"
+                                             AutomationProperties.AutomationId="filters.decision.name"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel IsVisible="{Binding NewDecisionIsApi}">
+                                <Grid ColumnDefinitions="*,*" Margin="0,0,0,6">
+                                    <StackPanel Margin="0,0,6,0">
+                                        <TextBlock Text="API base URL" Classes="label"/>
+                                        <TextBox Text="{Binding NewDecisionBaseUrl}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                 AutomationProperties.AutomationId="filters.decision.url"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Model" Classes="label"/>
+                                        <TextBox Text="{Binding NewDecisionModel}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                                 AutomationProperties.AutomationId="filters.decision.model"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="API key" Classes="label"/>
+                                <ComboBox ItemsSource="{Binding CredentialChoices}" SelectedItem="{Binding NewDecisionCredential}"
+                                          Width="320" HorizontalAlignment="Left" AutomationProperties.AutomationId="filters.decision.credential"/>
+                                <Border BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="3" Padding="8" Margin="0,6,0,6"
+                                        IsVisible="{Binding NewDecisionIsRemote}">
+                                    <TextBlock Classes="warning" TextWrapping="Wrap"
+                                               Text="Only use an API you trust. Every call step 5 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API, after steps 1–3 have replaced what they found. laya-serve on this PC, or an ONNX model, keep it on this PC."/>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding NewDecisionIsOnnx}" Margin="0,0,0,6">
+                                <TextBlock Text="Model folder (or .onnx file)" Classes="label"/>
+                                <TextBox Text="{Binding NewDecisionPath}" FontFamily="Cascadia Code, Consolas" FontSize="12"
+                                         PlaceholderText="C:\Models\deberta-v3-base-zeroshot-v2.0   or   C:\Models\laya-english"
+                                         AutomationProperties.AutomationId="filters.decision.path"/>
+                                <ContentControl Margin="0,6,0,0" Content="{Binding NewDecisionRuns}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding NewDecisionHint}" Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                            <Button Content="Add decision model" Command="{Binding AddDecisionModelCommand}" HorizontalAlignment="Left" Margin="0,4,0,4"
+                                    AutomationProperties.AutomationId="filters.decision.add"/>
+                            <TextBlock Text="{Binding NewDecisionError}" Classes="error"
+                                       IsVisible="{Binding NewDecisionError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
                             <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,10,0,0" IsVisible="{Binding HasGpus}"
                                        Text="GPU runs through DirectML on any DirectX 12 GPU. For short tool calls the CPU is usually faster — DirectML re-prepares a model for every new input length (measured: GLiNER 40–60 ms on CPU, 170–290 ms on an RTX 4060). A GPU that cannot start the model falls back to the CPU, and the activity log says so."/>
                         </StackPanel>
@@ -293,12 +373,12 @@
                     </Expander>
                 </Border>
 
-                <!-- Profiles: named sets of the four steps. -->
+                <!-- Profiles: named sets of the five steps. -->
                 <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
                         <TextBlock Text="Profiles" Classes="section"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Text="A profile is one setting of the four steps. Make one per level of trust — say Strict for anything that leaves your network, Trusted for your own servers — then choose it in the Routes, API to MCP or MCP Funnel tab. Editing a profile changes everything using it, on its next call."/>
+                                   Text="A profile is one setting of the five steps. Make one per level of trust — say Strict for anything that leaves your network, Trusted for your own servers — then choose it in the Routes, API to MCP or MCP Funnel tab. Editing a profile changes everything using it, on its next call."/>
                         <TextBlock Classes="empty" TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="{Binding !HasProfiles}"
                                    Text="No profiles yet. Add one below, set its steps, then choose where it applies."/>
                         <Grid ColumnDefinitions="*,Auto">
@@ -312,7 +392,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- One card per profile: its name, who uses it, and its four steps in run order. -->
+                <!-- One card per profile: its name, who uses it, and its five steps in run order. -->
                 <ItemsControl ItemsSource="{Binding Profiles}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ProfileItemViewModel">
@@ -555,6 +635,43 @@
                                                                              PlaceholderText="level" AutomationProperties.AutomationId="filters.risky.threshold"/>
                                                                     <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap"
                                                                                Text="Empty follows the level (Relaxed 0.55, Balanced 0.40, Strict 0.25). Try it below shows the closeness your calls score."/>
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding ThresholdError}" Classes="error"
+                                                                           IsVisible="{Binding ThresholdError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+
+                                                        <!-- 5 Decision: the model, the statements, the probability that blocks. -->
+                                                        <StackPanel IsVisible="{Binding IsDecision}">
+                                                            <StackPanel IsVisible="{Binding IsOn}" Margin="0,8,0,0">
+                                                                <TextBlock Text="Decision model" Classes="label"/>
+                                                                <ComboBox ItemsSource="{Binding DecisionModels}" SelectedItem="{Binding SelectedDecisionModel}"
+                                                                          Width="320" HorizontalAlignment="Left" PlaceholderText="Pick a model"
+                                                                          AutomationProperties.AutomationId="filters.decision.model.pick"/>
+                                                                <TextBlock Classes="warning" Margin="0,2,0,0"
+                                                                           IsVisible="{Binding SelectedDecisionModel, Converter={x:Static ObjectConverters.IsNull}}"
+                                                                           Text="No model chosen — the step reports every call until you pick one (add one under Models, above)."/>
+                                                                <ContentControl Margin="0,6,0,0"
+                                                                                IsVisible="{Binding SelectedDecisionIsOnnx}"
+                                                                                Content="{Binding SelectedDecisionModel.Runs}" ContentTemplate="{StaticResource DevicePickerTemplate}"/>
+                                                                <TextBlock Classes="hint" Margin="0,4,0,0"
+                                                                           IsVisible="{Binding SelectedDecisionIsApi}"
+                                                                           Text="Runs at the API (or laya-serve), so there is no CPU or GPU to choose here."/>
+
+                                                                <TextBlock Text="Block when it is likely that…" Classes="label" Margin="0,8,0,0"/>
+                                                                <TextBox Text="{Binding DenyInstructionsText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54"
+                                                                         PlaceholderText="One statement per line (up to 10):&#10;The call deletes or overwrites files or data.&#10;The call sends money or makes a purchase.&#10;The call shares private information with someone outside."
+                                                                         AutomationProperties.AutomationId="filters.decision.statements"/>
+                                                                <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                                           Text="Write each as a statement that is true for a call to block, not as a question. The model answers each with a probability; the call is acted on when any reaches the threshold."/>
+
+                                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="6">
+                                                                    <TextBlock Text="Threshold" Classes="label" VerticalAlignment="Center"/>
+                                                                    <TextBox Text="{Binding ThresholdText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="70"
+                                                                             PlaceholderText="level" AutomationProperties.AutomationId="filters.decision.threshold"/>
+                                                                    <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                               Text="The probability that acts. Empty follows the level (Relaxed 0.90, Balanced 0.75, Strict 0.50). Try it below shows what your calls score."/>
                                                                 </StackPanel>
                                                                 <TextBlock Text="{Binding ThresholdError}" Classes="error"
                                                                            IsVisible="{Binding ThresholdError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

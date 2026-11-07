@@ -315,6 +315,27 @@ public sealed class EmbeddingClientFactory(AccessTokenProvider tokens, ActivityL
         return model.FindAsync;
     }
 
+    /// <summary>Tests swap decision models out here.</summary>
+    internal Func<DecisionModelRecord, DecideAsync>? DecisionOverride { get; set; }
+
+    /// <summary>The decision model for a record (step 5): an API client, or an ONNX model loaded once.</summary>
+    public DecideAsync GetDecisionModel(DecisionModelRecord record)
+    {
+        if (DecisionOverride is { } replace) return replace(record);
+
+        if (record.Kind == DecisionModelKind.JevApi)
+        {
+            return new JevDecisionClient(Http, record, ct => record.CredentialId is { } id
+                ? tokens.GetAccessTokenAsync(id, ct)
+                : ValueTask.FromResult<string?>(null)).DecideAsync;
+        }
+
+        var model = GetOrCreate(record.Id, $"{record.Kind}|{record.ModelPath}|{record.Device}|{record.GpuIndex}", () => record.Kind == DecisionModelKind.LayaOnnx
+            ? new LayaDecisionModel(record, log)
+            : new ZeroShotDecisionModel(record, log));
+        return model is LayaDecisionModel laya ? laya.DecideAsync : ((ZeroShotDecisionModel)model).DecideAsync;
+    }
+
     /// <summary>Where an ONNX model ended up running, once loaded: for the Test buttons.</summary>
     public string? DeviceOf(Guid id)
     {
@@ -324,6 +345,8 @@ public sealed class EmbeddingClientFactory(AccessTokenProvider tokens, ActivityL
             {
                 OnnxEmbeddingClient o => o.UsedDevice,
                 GlinerModel g => g.UsedDevice,
+                LayaDecisionModel l => l.UsedDevice,
+                ZeroShotDecisionModel z => z.UsedDevice,
                 _ => null,
             } : null;
         }

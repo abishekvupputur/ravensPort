@@ -28,13 +28,13 @@ public class FiltersViewModelUnitTests
     }
 
     [Fact]
-    public async Task EveryProfileGetsACard_WithItsFourStepsInOrder()
+    public async Task EveryProfileGetsACard_WithItsFiveStepsInOrder()
     {
         var (fixture, vm) = await WithFunnelAsync();
         using var _ = fixture;
 
         var card = Assert.Single(vm.Profiles);
-        Assert.Equal(["1 · Secrets", "2 · RegEx", "3 · Entities", "4 · Meaning"], card.Rows.Select(r => r.Title));
+        Assert.Equal(["1 · Secrets", "2 · RegEx", "3 · Entities", "4 · Meaning", "5 · Decision"], card.Rows.Select(r => r.Title));
         Assert.Same(card, vm.TestProfile);
         Assert.Equal("Used by funnel agent", card.UsedBySummary);
     }
@@ -280,6 +280,37 @@ public class FiltersViewModelUnitTests
 
         Assert.Equal("", vm.NewProviderError);
         Assert.Single(vm.Providers);
+    }
+
+    [Fact]
+    public async Task ADecisionModel_IsAdded_ARemoteApiNeedsAKey_AndStep5CanPickIt()
+    {
+        var (fixture, vm) = await WithFunnelAsync();
+        using var _ = fixture;
+
+        vm.NewDecisionKindChoice = vm.DecisionKinds.Single(k => k.Kind == DecisionModelKind.JevApi);
+        vm.NewDecisionName = "Jev";
+        vm.NewDecisionBaseUrl = DecisionModelRecord.JevBaseUrl;
+        Assert.True(vm.NewDecisionIsRemote);
+        vm.AddDecisionModelCommand.Execute(null);
+        Assert.Contains("needs a key", vm.NewDecisionError);
+
+        vm.NewDecisionName = "Laya on this PC";
+        vm.NewDecisionBaseUrl = DecisionModelRecord.LayaServeBaseUrl;
+        Assert.False(vm.NewDecisionIsRemote);
+        vm.AddDecisionModelCommand.Execute(null);
+        Assert.Equal("", vm.NewDecisionError);
+
+        var model = Assert.Single(vm.DecisionModels);
+        var step5 = vm.Profiles.Single().Rows.Single(r => r.IsDecision);
+        step5.SelectedLevelChoice = step5.LevelChoices.Single(c => c.Level == FilterLevel.Balanced);
+        step5.SelectedDecisionModel = step5.DecisionModels.Single();
+        step5.DenyInstructionsText = "The call deletes data." + Environment.NewLine + "The call spends money.";
+
+        var stored = fixture.Store.Current.FilterProfiles.Single().Filters.Single(f => f.Category == FilterCategory.Decision);
+        Assert.Equal(model.Record.Id, stored.DecisionModelId);
+        Assert.Equal(["The call deletes data.", "The call spends money."], stored.DenyInstructions);
+        Assert.Contains("0.75", step5.LevelExplained.Replace(',', '.'));
     }
 
     [Fact]
