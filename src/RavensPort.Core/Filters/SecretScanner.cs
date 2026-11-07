@@ -363,42 +363,22 @@ public static class SecretRuleSet
         return reader.ReadToEnd();
     }
 
-    /// <summary>The user's rules file, created with a short guide the first time it is asked for.</summary>
+    /// <summary>
+    /// The user's rules file, created the first time it is asked for from RavensPort's strict
+    /// starter rules (Rules/secret-rules.default.toml) — a full file to edit, not an empty one.
+    /// </summary>
     public static string EnsureUserFile()
     {
         if (!File.Exists(UserFilePath))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(UserFilePath)!);
-            File.WriteAllText(UserFilePath, UserFileTemplate);
+            File.WriteAllText(UserFilePath, DefaultUserRules);
         }
         return UserFilePath;
     }
 
-    internal const string UserFileTemplate = """
-        # Your own secret rules for RavensPort's Secrets step, in gitleaks' format:
-        # https://github.com/gitleaks/gitleaks#configuration
-        #
-        # They are read after gitleaks' rules and RavensPort's. A rule with the same id as a built-in
-        # one replaces it — copy a rule from gitleaks' config, change it here, and the change wins.
-        # After saving, press "Reload rules" on the Filters tab.
-        #
-        # Besides gitleaks' fields, a rule can have `keyName`: it then matches the value of a JSON field
-        # whose name matches the keyName regex, whatever the value looks like.
-        #
-        # Examples (remove the leading # to use them):
-        #
-        # [[rules]]
-        # id = "my-internal-token"
-        # description = "Tokens of our internal API"
-        # regex = '''\bint_[A-Za-z0-9]{32}\b'''
-        # keywords = ["int_"]
-        #
-        # [[rules]]
-        # id = "my-customer-number-field"
-        # description = "Fields named customerNumber"
-        # keyName = '''(?i)^customer[_-]?number$'''
-
-        """;
+    /// <summary>The strict starter rules a new user rules file is written with.</summary>
+    public static string DefaultUserRules => Embedded("RavensPort.Core.Filters.secret-rules.default.toml");
 }
 
 /// <summary>
