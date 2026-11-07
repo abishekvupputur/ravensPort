@@ -213,6 +213,24 @@ public class FilterServiceTests
     }
 
     [Fact]
+    public async Task APasswordSentAsAJsonField_IsStoppedAtStep1_UnlessThatRuleIsOff()
+    {
+        var (service, filters, model) = Pipeline();
+
+        var blocked = await service.RunAsync(filters, "login", Args(new { username = "jane.doe", password = "hunter2" }), default);
+
+        Assert.Equal(FilterCategory.Secrets, blocked.StoppedAt);
+        Assert.Contains(blocked.Hits, h => h.Detector == "ravensport-password-field" && h.FieldPath == "password");
+        Assert.Contains(blocked.Hits, h => h.Detector == "ravensport-username-field" && h.FieldPath == "username");
+        Assert.Empty(model.Seen);
+
+        filters[0].DisabledDetectors = ["ravensport-password-field", "ravensport-username-field"];
+        var allowed = await service.RunAsync(filters, "login", Args(new { username = "jane.doe", password = "hunter2" }), default);
+
+        Assert.DoesNotContain(allowed.Hits, h => h.Category == FilterCategory.Secrets);
+    }
+
+    [Fact]
     public async Task ASecret_StopsTheCallAtStep1_AndNothingReachesTheEmbeddingModel()
     {
         var (service, filters, model) = Pipeline();

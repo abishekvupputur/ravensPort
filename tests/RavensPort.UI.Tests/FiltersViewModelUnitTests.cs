@@ -115,6 +115,28 @@ public class FiltersViewModelUnitTests
     }
 
     [Fact]
+    public async Task Secrets_EveryRuleIsOn_AndAFoundRuleCanBeTurnedOffAndBackOn()
+    {
+        var (fixture, vm) = await WithFunnelAsync(new FunnelFilter { Category = FilterCategory.Secrets, Level = FilterLevel.Balanced });
+        using var _ = fixture;
+        var secrets = vm.Profiles[0].Rows.Single(r => r.IsSecrets);
+
+        Assert.StartsWith("All ", secrets.LevelExplained);
+        Assert.Empty(secrets.SecretRulesOff);
+
+        secrets.SecretRuleSearch = "username";
+        var field = secrets.SecretRuleMatches.Single(c => c.Name == "ravensport-username-field");
+        field.ToggleCommand.Execute(null);
+
+        Assert.Equal(["ravensport-username-field"], vm.Profiles[0].Record.Filters.Single().DisabledDetectors);
+        Assert.Single(secrets.SecretRulesOff, c => c.Name == "ravensport-username-field");
+        Assert.DoesNotContain(secrets.SecretRuleMatches, c => c.Name == "ravensport-username-field");
+
+        secrets.SecretRulesOff.Single().ToggleCommand.Execute(null);
+        Assert.Empty(vm.Profiles[0].Record.Filters.Single().DisabledDetectors);
+    }
+
+    [Fact]
     public async Task Secrets_IsOffOrDeny_WithNoActionToChoose()
     {
         var (fixture, vm) = await WithFunnelAsync();

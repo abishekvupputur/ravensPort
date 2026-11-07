@@ -1,4 +1,4 @@
-using RavensPort.Core.Filters;
+﻿using RavensPort.Core.Filters;
 
 namespace RavensPort.Core.Tests.Filters;
 
@@ -8,7 +8,7 @@ namespace RavensPort.Core.Tests.Filters;
 /// </summary>
 public class SecretScannerTests
 {
-    private static readonly SecretScanner Scanner = SecretScanner.Default;
+    private static readonly SecretScanner Scanner = SecretRuleSet.Current;
 
     [Fact]
     public void EveryGitleaksRuleCompiles_AndNoneIsSkipped()
@@ -54,5 +54,149 @@ public class SecretScannerTests
     public void Re2SyntaxIsTranslated()
     {
         Assert.Matches(SecretScanner.Compile("(?P<x>[[:alnum:]]{3})"), "ab1");
+    }
+
+    // ---- what gitleaks alone did not catch: RavensPort's rules ------------------------------
+
+    [Theory]
+    [InlineData("password", "hunter2", "ravensport-password-field")]
+    [InlineData("db_password", "s3cret!", "ravensport-password-field")]
+    [InlineData("client_secret", "abc", "ravensport-secret-field")]
+    [InlineData("refresh_token", "1//0gExampleExampleExampleExampleExample", "ravensport-token-field")]
+    [InlineData("accessToken", "xyz123", "ravensport-token-field")]
+    [InlineData("username", "admin", "ravensport-username-field")]
+    [InlineData("login", "jane.doe", "ravensport-username-field")]
+    public void AFieldNamedLikeASecret_IsASecret_HoweverSimpleItsValue(string key, string value, string rule)
+    {
+        Assert.Contains(Scanner.FindByKey(key, value), m => m.RuleId == rule);
+    }
+
+    [Theory]
+    [InlineData("password", "")]
+    [InlineData("password", "${DB_PASSWORD}")]
+    [InlineData("password", "********")]
+    [InlineData("password", "<password>")]
+    [InlineData("token", "null")]
+    [InlineData("note", "hunter2")]
+    [InlineData("passenger", "Jane Doe")]
+    public void PlaceholdersAndOrdinaryFields_AreNot(string key, string value)
+    {
+        Assert.Empty(Scanner.FindByKey(key, value));
+    }
+
+    [Theory]
+    [InlineData("connect with password=hunter2 please", "ravensport-password-assignment")]
+    [InlineData("mysql -u root --password hunter2", "ravensport-password-flag")]
+    [InlineData("postgres://jane:hunter2@db.example.com/app", "ravensport-url-credentials")]
+    [InlineData("Authorization: Bearer abcdefgh12345678", "ravensport-bearer-header")]
+    [InlineData("Authorization: Basic am9objpodW50ZXIy", "ravensport-basic-auth-header")]
+    [InlineData("refresh_token=abc123def456ghi", "ravensport-token-assignment")]
+    [InlineData("user: admin", "ravensport-username-assignment")]
+    [InlineData("token 1//0gExampleExampleExampleExampleExample", "ravensport-google-refresh-token")]
+    public void CredentialsWrittenIntoText_AreFound(string text, string rule)
+    {
+        Assert.Contains(Scanner.Find(text), m => m.RuleId == rule);
+    }
+
+    [Theory]
+    [InlineData("please send a password reset link to the user")]
+    [InlineData("the login page shows the username field")]
+    public void ProseAboutCredentials_IsNot(string text)
+    {
+        Assert.Empty(Scanner.Find(text));
+    }
+
+    [Fact]
+    public void ARuleCanBeTurnedOff()
+    {
+        Assert.DoesNotContain(Scanner.Find("password=hunter2", ["ravensport-password-assignment"]), m => m.RuleId == "ravensport-password-assignment");
+        Assert.Empty(Scanner.FindByKey("password", "hunter2", ["ravensport-password-field"]));
+    }
+
+    [Fact]
+    public void EveryRuleIsOnByDefault_FromAllSources()
+    {
+        Assert.True(Scanner.CountFrom(SecretRuleSet.GitleaksSource) > 200);
+        Assert.True(Scanner.CountFrom(SecretRuleSet.RavensPortSource) >= 12);
+        Assert.All(Scanner.Rules, r => Assert.False(string.IsNullOrEmpty(r.Id)));
+    }
+
+    [Fact]
+    public void AUserRuleWithABuiltInId_ReplacesIt_AndNewOnesAreAdded()
+    {
+        var scanner = new SecretScanner(
+        [
+            ("built-in", """
+                [[rules]]
+                id = "thing"
+                description = "built-in"
+                regex = '''THING-\d+'''
+                """),
+            ("yours", """
+                [[rules]]
+                id = "thing"
+                description = "edited"
+                regex = '''OTHER-\d+'''
+
+                [[rules]]
+                id = "mine"
+                keyName = '''(?i)^customer[_-]?number$'''
+                """),
+        ]);
+
+        Assert.Equal(2, scanner.RuleCount);
+        Assert.Equal("edited", scanner.Rules.Single(r => r.Id == "thing").Description);
+        Assert.Empty(scanner.Find("THING-1"));
+        Assert.Single(scanner.Find("OTHER-1"));
+        Assert.Single(scanner.FindByKey("customerNumber", "12345"));
+    }
+
+    [Fact]
+    public void ABrokenUserFile_IsReported_AndTheBuiltInRulesStillApply()
+    {
+        var scanner = new SecretScanner(
+        [
+            ("built-in", """
+                [[rules]]
+                id = "thing"
+                regex = '''THING-\d+'''
+                """),
+            ("yours", "[[rules]]\nid = \"oops\"\nregex = '''unclosed"),
+        ]);
+
+        Assert.Single(scanner.Find("THING-1"));
+        Assert.Contains(scanner.SkippedRules, s => s.StartsWith("yours", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheUserFileTemplate_HasNoActiveRules_AndReadsCleanly()
+    {
+        var scanner = new SecretScanner(SecretRuleSet.UserFileTemplate, "yours");
+
+        Assert.Equal(0, scanner.RuleCount);
+        Assert.Empty(scanner.SkippedRules);
+    }
+
+    [Fact]
+    public void TheUserFile_IsCreatedOnFirstUse_AndPickedUpOnReload()
+    {
+        var dir = Directory.CreateTempSubdirectory("ravensport-rules-").FullName;
+        SecretRuleSet.DirectoryOverride = dir;
+        try
+        {
+            var path = SecretRuleSet.EnsureUserFile();
+            File.AppendAllText(path, "\n[[rules]]\nid = \"my-ticket\"\nregex = '''\\bTKT-\\d{4}\\b'''\n");
+
+            var reloaded = SecretRuleSet.Reload();
+
+            Assert.Contains(reloaded.Rules, r => r.Id == "my-ticket" && r.Source == SecretRuleSet.UserSource);
+            Assert.Single(reloaded.Find("see TKT-1234"));
+        }
+        finally
+        {
+            SecretRuleSet.DirectoryOverride = null;
+            SecretRuleSet.Reload();
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

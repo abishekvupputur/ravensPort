@@ -238,15 +238,21 @@ internal sealed class OnnxEmbeddingClient : IEmbeddingClient, IDisposable
         }
 
         using var results = _session.Run(inputs, [_output]);
-        var hidden = results.First().AsTensor<float>();
+        return Pool(results.First().AsTensor<float>(), length, _clsPooling);
+    }
 
-        // [1, tokens, dim] → one vector. A model already exporting a pooled [1, dim] output is used as-is.
+    /// <summary>
+    /// The model's output as one unit vector: a pooled [1, dim] output as it is, per-token
+    /// [1, tokens, dim] states by their mean or by the first ([CLS]) token.
+    /// </summary>
+    internal static float[] Pool(Tensor<float> hidden, int length, bool clsPooling)
+    {
         if (hidden.Dimensions.Length == 2) return HttpEmbeddingClient.Normalize([.. hidden]);
 
         var dim = hidden.Dimensions[2];
         var pooled = new float[dim];
 
-        if (_clsPooling)
+        if (clsPooling)
         {
             for (var d = 0; d < dim; d++) pooled[d] = hidden[0, 0, d];
         }

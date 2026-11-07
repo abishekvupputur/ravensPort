@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -89,22 +89,43 @@ internal sealed class GlinerModel : IDisposable
 
     private static readonly Regex WordSplitter = new(@"\w+(?:[-_]\w+)*|\S", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
-    private readonly InferenceSession _session;
-    private readonly SentencePieceTokenizer _tokenizer;
+    /// <summary>What GLiNER's ONNX graph takes, built from one window of words.</summary>
+    internal sealed record Inputs(long[] Ids, long[] WordsMask, int Words, long[] SpanIdx, bool[] SpanMask, int MaxWidth);
+
+    private readonly InferenceSession? _session;
+    private readonly Func<string, IReadOnlyList<int>> _tokenize;
+    private readonly Func<Inputs, int, float[]> _run;
     private readonly int _maxWidth;
     private readonly long _cls, _sep, _ent, _entSep;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public string UsedDevice { get; }
 
+    /// <summary>
+    /// A model without files, for tests: a tokenizer and a stand-in for the ONNX run that returns
+    /// the flattened logits [words × maxWidth × labels]. Everything around the run — the prompt,
+    /// the word mask, the spans, windowing, scoring and decoding — is the real code.
+    /// </summary>
+    internal GlinerModel(Func<string, IReadOnlyList<int>> tokenize, Func<Inputs, int, float[]> run, int maxWidth = 12,
+        long cls = 1, long sep = 2, long ent = 250103, long entSep = 250104)
+    {
+        _tokenize = tokenize;
+        _run = run;
+        _maxWidth = maxWidth;
+        (_cls, _sep, _ent, _entSep) = (cls, sep, ent, entSep);
+        UsedDevice = "test";
+    }
+
     public GlinerModel(EntityModelRecord record, ActivityLog? log)
     {
         var files = GlinerFiles.Find(record.ModelPath, out var error) ?? throw new InvalidOperationException(error);
 
+        SentencePieceTokenizer tokenizer;
         using (var spm = File.OpenRead(Path.Combine(files.Folder, "spm.model")))
         {
-            _tokenizer = SentencePieceTokenizer.Create(spm, addBeginningOfSentence: false, addEndOfSentence: false);
+            tokenizer = SentencePieceTokenizer.Create(spm, addBeginningOfSentence: false, addEndOfSentence: false);
         }
+        _tokenize = text => tokenizer.EncodeToIds(text);
 
         using var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(files.Folder, "gliner_config.json")));
         _maxWidth = config.RootElement.TryGetProperty("max_width", out var w) ? w.GetInt32() : 12;
@@ -112,13 +133,33 @@ internal sealed class GlinerModel : IDisposable
         var added = ReadAddedTokens(files.Folder);
         _ent = added.GetValueOrDefault("<<ENT>>", config.RootElement.TryGetProperty("class_token_index", out var c) ? c.GetInt64() : 0);
         _entSep = added.GetValueOrDefault("<<SEP>>", _ent + 1);
-        _cls = _tokenizer.Vocabulary.TryGetValue("[CLS]", out var cls) ? cls : 1;
-        _sep = _tokenizer.Vocabulary.TryGetValue("[SEP]", out var sep) ? sep : 2;
+        _cls = tokenizer.Vocabulary.TryGetValue("[CLS]", out var cls) ? cls : 1;
+        _sep = tokenizer.Vocabulary.TryGetValue("[SEP]", out var sep) ? sep : 2;
 
         if (_ent == 0) throw new InvalidOperationException("the model's <<ENT>> token id is unknown: added_tokens.json is missing");
 
         _session = OnnxSessions.Open(files.Model, record.Device, record.GpuIndex, record.Name, log, out var used);
         UsedDevice = used;
+        _run = RunSession;
+    }
+
+    /// <summary>The ONNX run itself: the six inputs GLiNER's export takes, its "logits" back flattened.</summary>
+    private float[] RunSession(Inputs inputs, int labels)
+    {
+        var length = inputs.Ids.Length;
+        var spans = inputs.Words * inputs.MaxWidth;
+        var named = new List<NamedOnnxValue>
+        {
+            NamedOnnxValue.CreateFromTensor("input_ids", new DenseTensor<long>(inputs.Ids, [1, length])),
+            NamedOnnxValue.CreateFromTensor("attention_mask", new DenseTensor<long>(Enumerable.Repeat(1L, length).ToArray(), [1, length])),
+            NamedOnnxValue.CreateFromTensor("words_mask", new DenseTensor<long>(inputs.WordsMask, [1, length])),
+            NamedOnnxValue.CreateFromTensor("text_lengths", new DenseTensor<long>(new long[] { inputs.Words }, [1, 1])),
+            NamedOnnxValue.CreateFromTensor("span_idx", new DenseTensor<long>(inputs.SpanIdx, [1, spans, 2])),
+            NamedOnnxValue.CreateFromTensor("span_mask", new DenseTensor<bool>(inputs.SpanMask, [1, spans])),
+        };
+
+        using var results = _session!.Run(named, ["logits"]);
+        return results.First().AsTensor<float>().ToArray();
     }
 
     private static Dictionary<string, long> ReadAddedTokens(string folder)
@@ -163,14 +204,14 @@ internal sealed class GlinerModel : IDisposable
         {
             ids.Add(_ent);
             wordsMask.Add(0);
-            foreach (var t in _tokenizer.EncodeToIds(label)) { ids.Add(t); wordsMask.Add(0); }
+            foreach (var t in _tokenize(label)) { ids.Add(t); wordsMask.Add(0); }
         }
         ids.Add(_entSep);
         wordsMask.Add(0);
 
         for (var w = 0; w < words.Count; w++)
         {
-            var pieces = _tokenizer.EncodeToIds(words[w].Value);
+            var pieces = _tokenize(words[w].Value);
             for (var p = 0; p < pieces.Count; p++)
             {
                 ids.Add(pieces[p]);
@@ -192,26 +233,15 @@ internal sealed class GlinerModel : IDisposable
             spanMask[k] = i + j < n;
         }
 
-        var length = ids.Count;
-        var inputs = new List<NamedOnnxValue>
-        {
-            NamedOnnxValue.CreateFromTensor("input_ids", new DenseTensor<long>(ids.ToArray(), [1, length])),
-            NamedOnnxValue.CreateFromTensor("attention_mask", new DenseTensor<long>(Enumerable.Repeat(1L, length).ToArray(), [1, length])),
-            NamedOnnxValue.CreateFromTensor("words_mask", new DenseTensor<long>(wordsMask.ToArray(), [1, length])),
-            NamedOnnxValue.CreateFromTensor("text_lengths", new DenseTensor<long>(new long[] { n }, [1, 1])),
-            NamedOnnxValue.CreateFromTensor("span_idx", new DenseTensor<long>(spanIdx, [1, n * _maxWidth, 2])),
-            NamedOnnxValue.CreateFromTensor("span_mask", new DenseTensor<bool>(spanMask, [1, n * _maxWidth])),
-        };
-
-        using var results = _session.Run(inputs, ["logits"]);
-        var logits = results.First().AsTensor<float>();
+        // Logits come back as [1, words, maxWidth, labels], flattened.
+        var logits = _run(new Inputs([.. ids], [.. wordsMask], n, spanIdx, spanMask, _maxWidth), labels.Count);
 
         var candidates = new List<(int Start, int End, int Label, double Score)>();
         for (var i = 0; i < n; i++)
         for (var j = 0; j < _maxWidth && i + j < n; j++)
         for (var c = 0; c < labels.Count; c++)
         {
-            var score = 1 / (1 + Math.Exp(-logits[0, i, j, c]));
+            var score = 1 / (1 + Math.Exp(-logits[(i * _maxWidth + j) * labels.Count + c]));
             if (score >= threshold) candidates.Add((i, i + j, c, score));
         }
 
@@ -231,7 +261,7 @@ internal sealed class GlinerModel : IDisposable
 
     public void Dispose()
     {
-        _session.Dispose();
+        _session?.Dispose();
         _gate.Dispose();
     }
 }

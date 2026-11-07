@@ -108,14 +108,15 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
             filters.FirstOrDefault(f => f.Category == category && f.Level != FilterLevel.Off);
 
         // ---- 1 Secrets: always Block when on ----------------------------------------------
-        if (On(FilterCategory.Secrets) is not null)
+        if (On(FilterCategory.Secrets) is { } secrets)
         {
+            var disabled = secrets.DisabledDetectors.ToHashSet(StringComparer.Ordinal);
             for (var i = 0; i < texts.Count; i++)
             {
                 List<Span> found;
                 try
                 {
-                    found = [.. FilterEngine.FindSecrets(texts[i].Text)];
+                    found = [.. FilterEngine.FindSecrets(texts[i], disabled)];
                 }
                 catch (Exception)
                 {

@@ -71,7 +71,7 @@
                         <TextBlock Text="What filters do" Classes="section"/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
                                    Text="Filters are set up as profiles. Point each funnel at one, and give an upstream inside a funnel its own when you trust it more — or less — than the rest. Every call passes the four steps of its profile before any server sees it, in this order:"/>
-                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys and passwords, by the gitleaks rule set. Always denied."/>
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="1 · Secrets — API keys, tokens, private keys, passwords, usernames and refresh tokens, by gitleaks' rules plus RavensPort's and your own. All on; always denied."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="2 · Personal data — emails, card numbers, IBANs, phone numbers… by patterns you can edit and add to."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2" Text="3 · Entities — names, places, medical conditions… found by an entity model (GLiNER) on this PC."/>
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6" Text="4 · Meaning — calls that mean something you deny, judged by an embedding model."/>
@@ -231,6 +231,40 @@
                     </Expander>
                 </Border>
 
+                <!-- Secret rules: where step 1's rules come from, and the user's own file. -->
+                <Border Classes="card" Margin="0,0,0,14">
+                    <Expander HorizontalAlignment="Stretch" IsExpanded="False">
+                        <Expander.Header>
+                            <StackPanel>
+                                <TextBlock Text="Secret rules (step 1)" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding RulesStatus}" Classes="hint" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                                       Text="Step 1 uses three sets of rules, all in gitleaks' format and all on by default:"/>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2"
+                                       Text="• gitleaks — the most widely used open-source secret scanner (MIT). Its rules find cloud and API keys, tokens, private keys and connection strings, and skip values that do not look random, as source code is full of those."/>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,2"
+                                       Text="• RavensPort — what gitleaks leaves out: passwords however short, usernames, refresh and bearer tokens, Basic auth, user:password in URLs, and JSON fields named like them (password, client_secret, refresh_token, username…)."/>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="12,0,0,6"
+                                       Text="• Yours — a file on this PC, read last. A rule with the same id as a built-in one replaces it, so to change a gitleaks rule, copy it into your file and edit it there. Besides gitleaks' fields, a rule can have keyName to match JSON fields by name."/>
+                            <TextBlock Text="Your rules file" Classes="label"/>
+                            <TextBox Text="{Binding UserRulesPath, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Code, Consolas" FontSize="11"
+                                     Background="Transparent" BorderThickness="0" Padding="0"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                <Button Content="Open rules file" Command="{Binding OpenRulesFileCommand}" Classes="ghost"
+                                        AutomationProperties.AutomationId="filters.rules.open"
+                                        ToolTip.Tip="Creates the file with a short guide the first time, then opens it in your editor"/>
+                                <Button Content="Reload rules" Command="{Binding ReloadRulesCommand}" Classes="ghost"
+                                        AutomationProperties.AutomationId="filters.rules.reload"/>
+                            </StackPanel>
+                            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Why gitleaks: it is the most widely used open-source secret scanner and its MIT licence lets RavensPort ship its rules. Kingfisher (MongoDB, Apache-2.0) is a newer alternative with more rules; TruffleHog verifies keys against live services but is AGPL-3.0, which RavensPort cannot bundle. Rules from either can be copied into your file."/>
+                        </StackPanel>
+                    </Expander>
+                </Border>
+
                 <!-- Profiles: named sets of the four steps. -->
                 <Border Classes="card" Margin="0,0,0,14">
                     <StackPanel>
@@ -302,6 +336,45 @@
                                                         <TextBlock Margin="0,6,0,0" Text="{Binding LevelExplained}" Classes="hint" TextWrapping="Wrap"/>
                                                         <TextBlock Text="{Binding ActionExplained}" Classes="hint" TextWrapping="Wrap"
                                                                    IsVisible="{Binding ActionExplained, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                                        <!-- 1 Secrets: every rule on; find one to turn it off here. -->
+                                                        <StackPanel IsVisible="{Binding IsSecrets}">
+                                                            <StackPanel IsVisible="{Binding IsOn}" Margin="0,6,0,0">
+                                                                <TextBox Text="{Binding SecretRuleSearch}" PlaceholderText="Find a rule to turn off, e.g. username, slack, jwt"
+                                                                         AutomationProperties.AutomationId="filters.secrets.search"/>
+                                                                <TextBlock Text="{Binding SecretRuleSearchHint}" Classes="hint" Margin="0,2,0,0"
+                                                                           IsVisible="{Binding SecretRuleSearchHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                <ItemsControl ItemsSource="{Binding SecretRuleMatches}" Margin="0,4,0,0">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate x:DataType="vm:DetectorChipViewModel">
+                                                                            <Button Classes="chip" Classes.custom="{Binding IsCustom}" Command="{Binding ToggleCommand}"
+                                                                                    ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="filters.secrets.match">
+                                                                                <TextBlock Text="{Binding Name}"/>
+                                                                            </Button>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <StackPanel IsVisible="{Binding HasSecretRulesOff}" Margin="0,4,0,0">
+                                                                    <TextBlock Text="Turned off in this profile — click one to turn it back on:" Classes="hint"/>
+                                                                    <ItemsControl ItemsSource="{Binding SecretRulesOff}" Margin="0,2,0,0">
+                                                                        <ItemsControl.ItemsPanel>
+                                                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                                        </ItemsControl.ItemsPanel>
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:DetectorChipViewModel">
+                                                                                <Button Classes="chip off" Command="{Binding ToggleCommand}"
+                                                                                        ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="filters.secrets.off">
+                                                                                    <TextBlock Text="{Binding Name}"/>
+                                                                                </Button>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </StackPanel>
 
                                                         <!-- 2 Personal data: chips, and an editor on demand. -->
                                                         <StackPanel IsVisible="{Binding IsPersonalData}">

@@ -100,6 +100,8 @@
       the file from a newer release. MIT — see Rules/gitleaks.LICENSE and THIRD-PARTY-NOTICES.md.
     -->
     <EmbeddedResource Include="Filters/Rules/gitleaks.toml" LogicalName="RavensPort.Core.Filters.gitleaks.toml" />
+    <!-- RavensPort's own rules in the same format: passwords, usernames and tokens gitleaks does not look for. -->
+    <EmbeddedResource Include="Filters/Rules/ravensport.toml" LogicalName="RavensPort.Core.Filters.ravensport.toml" />
   </ItemGroup>
 
   <ItemGroup>
