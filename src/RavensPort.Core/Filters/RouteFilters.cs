@@ -106,7 +106,7 @@ public static class RouteFilters
     {
         log?.Log($"{what} -> blocked: {reason}");
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        await context.Response.WriteAsJsonAsync(new { error = "blocked_by_filter", reason });
+        await context.Response.WriteAsJsonAsync(new { error = "blocked_by_filter", reason }, context.RequestAborted);
     }
 
     /// <summary>The request as the texts a filter reads: query values under "query.name", then the body.</summary>
