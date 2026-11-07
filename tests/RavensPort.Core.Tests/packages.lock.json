@@ -395,7 +395,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "RavensPort.Core": "[5.0.4, )"
+          "RavensPort.Core": "[5.1.0, )"
         }
       }
     },
@@ -799,7 +799,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "RavensPort.Core": "[5.0.4, )"
+          "RavensPort.Core": "[5.1.0, )"
         }
       }
     }
