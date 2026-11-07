@@ -5,6 +5,12 @@ public sealed class RouteMapping
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string PathPrefix { get; set; }
     public Guid UpstreamId { get; set; }
+
+    /// <summary>
+    /// The filter profile requests through this route are checked with before they are forwarded
+    /// (their query values and a JSON, form or text body). Null: not filtered.
+    /// </summary>
+    public Guid? FilterProfileId { get; set; }
     public bool StripPrefix { get; set; } = true;
     public bool Enabled { get; set; } = true;
 

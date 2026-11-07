@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
 using RavensPort.Core.Proxy;
@@ -117,7 +118,7 @@ public class MultiCredentialForwardingTests : IAsyncLifetime
         });
 
         _proxy.UseLocalAccessGuard();
-        _proxy.MapReverseProxy();
+        _proxy.MapRavensPortProxy();
         await _proxy.StartAsync();
 
         var cache = _proxy.Services.GetRequiredService<ConfigStoreCache>();

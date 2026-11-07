@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Proxy;
@@ -591,7 +592,7 @@ public partial class App : Application
                 _webApp.UseMcpApiBridgeGate();
                 _webApp.MapMcpApiBridge();
 
-                _webApp.MapReverseProxy();
+                _webApp.MapRavensPortProxy();
                 await _webApp.StartAsync();
             });
         }

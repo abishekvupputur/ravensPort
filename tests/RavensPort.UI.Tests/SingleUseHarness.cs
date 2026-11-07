@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using System.Text.Json;
+using RavensPort.Core.Filters;
 using RavensPort.Core;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
@@ -154,7 +155,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         proxy.UseLocalAccessGuard();
         proxy.UseMcpFunnelGate();
         proxy.MapMcpFunnel();
-        proxy.MapReverseProxy();
+        proxy.MapRavensPortProxy();
 
         await proxy.StartAsync();
 
