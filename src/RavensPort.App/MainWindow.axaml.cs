@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using RavensPort.Helpers;
 using RavensPort.Platform;
 using RavensPort.UI.ViewModels;
@@ -10,6 +10,7 @@ public partial class MainWindow : Window
     private readonly RoutesViewModel? _routes;
     private readonly McpFunnelViewModel? _funnels;
     private readonly ApiBridgeViewModel? _bridges;
+    private readonly FiltersViewModel? _filters;
     private readonly SettingsViewModel? _settings;
 
     /// <summary>
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
         RoutesViewModel routesViewModel,
         McpFunnelViewModel mcpFunnelViewModel,
         ApiBridgeViewModel apiBridgeViewModel,
+        FiltersViewModel filtersViewModel,
         SettingsViewModel settingsViewModel)
         : this()
     {
@@ -45,11 +47,13 @@ public partial class MainWindow : Window
         RoutesViewControl.DataContext = routesViewModel;
         McpFunnelViewControl.DataContext = mcpFunnelViewModel;
         ApiBridgeViewControl.DataContext = apiBridgeViewModel;
+        FiltersViewControl.DataContext = filtersViewModel;
         SettingsViewControl.DataContext = settingsViewModel;
 
         _routes = routesViewModel;
         _funnels = mcpFunnelViewModel;
         _bridges = apiBridgeViewModel;
+        _filters = filtersViewModel;
         _settings = settingsViewModel;
 
         // Opened, where WPF used SourceInitialized: both mean "the native window now exists", and
@@ -81,6 +85,9 @@ public partial class MainWindow : Window
         // The API to MCP tab lists routes owned by the Routes tab, and its endpoint URLs embed
         // the listen port owned by Settings — both can change while this tab is off screen.
         _bridges?.Reload();
+
+        // The Filters tab lists the funnels owned by the MCP Funnel tab.
+        _filters?.Reload();
 
         // Settings shows state the tray menu can also change.
         _settings?.Reload();

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using RavensPort.Core.Models;
 using RavensPort.Core.Vault;
 
@@ -401,6 +401,9 @@ public sealed class ConfigStoreCache
         List<McpSourceRecord> McpSources,
         List<McpFunnelRecord> McpFunnels,
         List<McpApiBridgeRecord> McpApiBridges,
+        List<EmbeddingProviderRecord> EmbeddingProviders,
+        List<EntityModelRecord> EntityModels,
+        List<FilterProfileRecord> FilterProfiles,
         int ListenPort,
         bool McpFunnelEnabled,
         bool McpApiBridgeEnabled,
@@ -415,6 +418,9 @@ public sealed class ConfigStoreCache
         [.. store.McpSources],
         [.. store.McpFunnels],
         [.. store.McpApiBridges],
+        [.. store.EmbeddingProviders],
+        [.. store.EntityModels],
+        [.. store.FilterProfiles],
         store.Settings.ListenPort,
         store.Settings.McpFunnelEnabled,
         store.Settings.McpApiBridgeEnabled,
@@ -430,6 +436,9 @@ public sealed class ConfigStoreCache
         ReplaceAll(store.McpSources, snapshot.McpSources);
         ReplaceAll(store.McpFunnels, snapshot.McpFunnels);
         ReplaceAll(store.McpApiBridges, snapshot.McpApiBridges);
+        ReplaceAll(store.EmbeddingProviders, snapshot.EmbeddingProviders);
+        ReplaceAll(store.EntityModels, snapshot.EntityModels);
+        ReplaceAll(store.FilterProfiles, snapshot.FilterProfiles);
 
         store.Settings.ListenPort = snapshot.ListenPort;
         store.Settings.McpFunnelEnabled = snapshot.McpFunnelEnabled;

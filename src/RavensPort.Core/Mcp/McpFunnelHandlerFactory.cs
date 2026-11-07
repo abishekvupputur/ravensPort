@@ -1,8 +1,9 @@
-using ModelContextProtocol;
+﻿using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RavensPort.Core.Diagnostics;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
 
@@ -32,15 +33,18 @@ public sealed class McpFunnelHandlerFactory
     private readonly ConfigStoreCache _configStoreCache;
     private readonly McpSourceConnectionPool _connectionPool;
     private readonly ActivityLog _activityLog;
+    private readonly FilterService _filters;
 
     public McpFunnelHandlerFactory(
         ConfigStoreCache configStoreCache,
         McpSourceConnectionPool connectionPool,
-        ActivityLog activityLog)
+        ActivityLog activityLog,
+        FilterService filters)
     {
         _configStoreCache = configStoreCache;
         _connectionPool = connectionPool;
         _activityLog = activityLog;
+        _filters = filters;
     }
 
     /// <summary>A funnel's membership row paired with the source record it points at.</summary>
@@ -57,7 +61,7 @@ public sealed class McpFunnelHandlerFactory
         ListToolsHandler = (_, ct) => ListToolsAsync(funnelId, funnelName, ct),
         CallToolHandler = (request, ct) => CallToolAsync(funnelId, funnelName, request, ct),
         ListPromptsHandler = (_, ct) => ListPromptsAsync(funnelId, funnelName, ct),
-        GetPromptHandler = (request, ct) => GetPromptAsync(funnelId, request, ct),
+        GetPromptHandler = (request, ct) => GetPromptAsync(funnelId, funnelName, request, ct),
         ListResourcesHandler = (_, ct) => ListResourcesAsync(funnelId, funnelName, ct),
         ListResourceTemplatesHandler = (_, ct) => ListResourceTemplatesAsync(funnelId, ct),
         ReadResourceHandler = (request, ct) => ReadResourceAsync(funnelId, request, ct),
@@ -150,6 +154,17 @@ public sealed class McpFunnelHandlerFactory
             throw new McpException($"Unknown tool '{exposedName}'.");
         }
 
+        if (await CheckFiltersAsync(funnelId, funnelName, match.Link, $"call {exposedName}", upstreamName, request.Params?.Arguments, ct) is { } blocked)
+        {
+            // A tool result, not a protocol error: the tool exists and the agent is entitled to
+            // know why this call did not happen, so it can change course instead of retrying.
+            return new CallToolResult
+            {
+                Content = [new TextContentBlock { Text = BlockedMessage(blocked) }],
+                IsError = true,
+            };
+        }
+
         try
         {
             var result = await _connectionPool.ExecuteAsync(
@@ -224,7 +239,7 @@ public sealed class McpFunnelHandlerFactory
     }
 
     private async ValueTask<GetPromptResult> GetPromptAsync(
-        Guid funnelId, RequestContext<GetPromptRequestParams> request, CancellationToken ct)
+        Guid funnelId, string funnelName, RequestContext<GetPromptRequestParams> request, CancellationToken ct)
     {
         var exposedName = request.Params?.Name ?? "";
 
@@ -233,6 +248,11 @@ public sealed class McpFunnelHandlerFactory
             !match.Link.AllowsPrompt(upstreamName))
         {
             throw new McpException($"Unknown prompt '{exposedName}'.");
+        }
+
+        if (await CheckFiltersAsync(funnelId, funnelName, match.Link, $"prompt {exposedName}", upstreamName, request.Params?.Arguments, ct) is { } blocked)
+        {
+            throw new McpException(BlockedMessage(blocked));
         }
 
         return await _connectionPool.ExecuteAsync(
@@ -358,6 +378,52 @@ public sealed class McpFunnelHandlerFactory
         // forced to Private -- see AsFunnelCacheable.
         return result.AsFunnelCacheable(result.TimeToLive);
     }
+
+    // ---- filters ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Runs the filters that apply to this call — the upstream's profile in this funnel, else the
+    /// funnel's (see <see cref="FilterProfiles.Choose"/>) — over its arguments. Read from the store
+    /// at call time like everything else here, so a changed profile applies to the very next call.
+    /// Logs every hit with the profile that decided it — by detector and field, never the value —
+    /// and returns the hit that blocks the call, or null to let it through.
+    /// </summary>
+    private async Task<FilterHit?> CheckFiltersAsync(
+        Guid funnelId, string funnelName, McpFunnelSource link, string what, string toolName,
+        IEnumerable<KeyValuePair<string, System.Text.Json.JsonElement>>? arguments, CancellationToken ct)
+    {
+        var store = _configStoreCache.Current;
+        if (store.McpFunnels.FirstOrDefault(f => f.Id == funnelId) is not { } funnel) return null;
+
+        FilterChoice choice;
+        try
+        {
+            choice = FilterProfiles.Choose(store, funnel, link);
+        }
+        catch (FilterProfileMissingException ex)
+        {
+            // Fail closed: falling through to the funnel's profile would apply a rule nobody chose.
+            var missing = new FilterHit(FilterCategory.Secrets, FilterAction.Block, ex.Message, "call", Step: "Filter profile");
+            _activityLog.Log($"MCP funnel '{funnelName}' {what} -> blocked: {ex.Message}");
+            return missing;
+        }
+
+        if (choice.Filters.Count == 0) return null;
+
+        var hits = await _filters.EvaluateAsync(choice.Filters, toolName, arguments, ct).ConfigureAwait(false);
+
+        foreach (var hit in hits)
+        {
+            var verdict = hit.Action == FilterAction.Block ? "blocked" : "watched";
+            _activityLog.Log($"MCP funnel '{funnelName}' {what} -> {verdict} by {choice.Source}: {hit.Describe()}");
+        }
+
+        return hits.FirstOrDefault(h => h.Action == FilterAction.Block);
+    }
+
+    private static string BlockedMessage(FilterHit hit) =>
+        $"Blocked by a RavensPort filter ({hit.Describe()}). The call was not sent. " +
+        "Remove that data from the call, or ask the user to change the filter in RavensPort.";
 
     // ---- plumbing --------------------------------------------------------------------------
 

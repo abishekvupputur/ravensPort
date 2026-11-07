@@ -137,3 +137,42 @@ public class VaultRedactionTests
         return store;
     }
 }
+
+/// <summary>
+/// The note is written compact because Proton Pass refuses one past roughly 40 KB, and indentation
+/// was 28% of a real one. Notes an earlier version wrote indented must still load.
+/// </summary>
+public class VaultNoteSizeTests
+{
+    private static ConfigStore StoreWithFilters() => new()
+    {
+        McpFunnels =
+        [
+            new McpFunnelRecord
+            {
+                Name = "f", Slug = "f",
+                Filters = [new FunnelFilter { Category = FilterCategory.RiskyActions, Level = FilterLevel.Balanced, DenyExamples = ["rm -rf /"] }],
+            },
+        ],
+    };
+
+    [Fact]
+    public void TheNoteIsWrittenWithoutIndentation()
+    {
+        var json = new VaultDocument { Store = StoreWithFilters() }.Serialize();
+
+        Assert.DoesNotContain('\n', json);
+    }
+
+    [Fact]
+    public void ANoteWrittenIndentedByAnEarlierVersion_StillLoads_WithItsFilters()
+    {
+        var indented = System.Text.Json.JsonSerializer.Serialize(
+            new VaultDocument { Store = StoreWithFilters() },
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+        var loaded = VaultDocument.TryParse(indented);
+
+        Assert.Equal("rm -rf /", loaded!.Store.McpFunnels.Single().Filters.Single().DenyExamples.Single());
+    }
+}

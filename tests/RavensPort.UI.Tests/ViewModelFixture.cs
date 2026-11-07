@@ -63,6 +63,7 @@ internal sealed class ViewModelFixture : IDisposable
         services.AddSingleton<CredentialsViewModel>();
         services.AddSingleton<RoutesViewModel>();
         services.AddSingleton<McpFunnelViewModel>();
+        services.AddSingleton<FiltersViewModel>();
         services.AddSingleton<ApiBridgeViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<AppTabs>();

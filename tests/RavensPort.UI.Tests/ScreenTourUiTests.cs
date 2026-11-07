@@ -1,9 +1,10 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using RavensPort.Core.Models;
+using RavensPort.Core.Storage;
 using RavensPort.UI.ViewModels;
 using RavensPort.Views;
 
@@ -107,8 +108,41 @@ public class ScreenTourUiTests
         await ApprovalSeeding.SeedCredentialsAsync(harness);
         await ApprovalSeeding.SeedRouteMatrixAsync(harness);
 
+        // A funnel, so the Filters tab shows a card rather than its empty state.
+        await ApprovalSeeding.EnableFunnelAsync(harness);
+        await ApprovalSeeding.SeedFunnelAsync(harness, "claude-code");
+
+        // Some filters on, so the tour shows chips, the step editors and the CPU/GPU picker, not only
+        // Off rows. The model is never loaded: the tour only draws the page.
+        var provider = new EmbeddingProviderRecord { Name = "stella 400M", Kind = EmbeddingProviderKind.Onnx, ModelFolder = @"C:\Models\stella-en-400M-v5.onnx" };
+        await harness.Services.GetRequiredService<ConfigStoreCache>().MutateAsync(store =>
+        {
+            store.EmbeddingProviders.Add(provider);
+            store.McpFunnels.Single(f => f.Slug == "claude-code").Filters =
+            [
+                new FunnelFilter { Category = FilterCategory.Secrets, Level = FilterLevel.Balanced },
+                new FunnelFilter
+                {
+                    Category = FilterCategory.PersonalData, Level = FilterLevel.Balanced, DisabledDetectors = ["German mobile number"],
+                    EnabledDetectors = ["IPv6 address"], Patterns = [new CustomPattern { Name = "Customer id", Regex = @"\bKD-\d{6}\b" }],
+                },
+                new FunnelFilter
+                {
+                    Category = FilterCategory.Entities, Level = FilterLevel.Balanced, Action = FilterAction.Watch,
+                    EntityLabels = ["person", "address", "medical condition"],
+                },
+                new FunnelFilter
+                {
+                    Category = FilterCategory.RiskyActions, Level = FilterLevel.Balanced, EmbeddingProviderId = provider.Id,
+                    DenyInstructions = ["delete files, folders or whole disks", "drop or truncate database tables"],
+                    DenyExamples = ["rm -rf /", "DROP TABLE users"], AllowExamples = ["rm -rf ./build"],
+                },
+            ];
+        });
+        harness.Services.GetRequiredService<FiltersViewModel>().Reload();
+
         var window = await OpenReadyAsync(harness);
-        var names = new[] { "credentials", "routes", "api-to-mcp", "funnel", "settings" };
+        var names = new[] { "credentials", "routes", "api-to-mcp", "funnel", "filters", "settings" };
 
         for (var index = 0; index < names.Length; index++)
         {

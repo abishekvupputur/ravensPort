@@ -133,6 +133,7 @@ internal sealed class SingleUseHarness : IAsyncDisposable
         builder.Services.AddSingleton<CredentialsViewModel>();
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
+        builder.Services.AddSingleton<FiltersViewModel>();
         builder.Services.AddSingleton<ApiBridgeViewModel>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<AppTabs>();

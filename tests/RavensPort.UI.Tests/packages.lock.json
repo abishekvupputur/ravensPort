@@ -209,6 +209,11 @@
           "Newtonsoft.Json": "13.0.4"
         }
       },
+      "Google.Protobuf": {
+        "type": "Transitive",
+        "resolved": "3.30.2",
+        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
+      },
       "HarfBuzzSharp": {
         "type": "Transitive",
         "resolved": "8.3.1.3",
@@ -338,6 +343,30 @@
         "type": "Transitive",
         "resolved": "10.0.13",
         "contentHash": "ZjTwxzhiw2TMEzIbUDkMF0dfDB2I4NQgIfKD0ELu9/5Mk+SRGdKZcD0/lvBrRCAPo6KN2r0BW86MRancoyJkoA=="
+      },
+      "Microsoft.ML.OnnxRuntime": {
+        "type": "Transitive",
+        "resolved": "1.31.1",
+        "contentHash": "XtsO/1JoKepkWbGk9/DcYtRUTduwJD68kw0eeaH5yy77YBivUZWhC1NBNlVecsBt9EitlQIjCd1hHDNXJ2jbQA==",
+        "dependencies": {
+          "Microsoft.ML.OnnxRuntime.Managed": "1.31.1"
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed": {
+        "type": "Transitive",
+        "resolved": "1.31.1",
+        "contentHash": "158JCbNXN9/90LtjF4vHFiJYCF0bqF7CxLjm031jq7dJLEn/CtlHpMJm3UItQSIhQenlx+9Zuqi3zulwnsRVtA==",
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
+        }
+      },
+      "Microsoft.ML.Tokenizers": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
+        "dependencies": {
+          "Google.Protobuf": "3.30.2"
+        }
       },
       "Microsoft.NETCore.Platforms": {
         "type": "Transitive",
@@ -472,6 +501,11 @@
           "System.CodeDom": "7.0.0"
         }
       },
+      "System.Numerics.Tensors": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
+      },
       "Tmds.DBus.Protocol": {
         "type": "Transitive",
         "resolved": "0.94.1",
@@ -546,6 +580,8 @@
         "dependencies": {
           "Google.Apis.Auth": "[1.78.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
+          "Microsoft.ML.OnnxRuntime": "[1.31.1, )",
+          "Microsoft.ML.Tokenizers": "[2.0.1, )",
           "Microsoft.OpenApi": "[3.11.0, )",
           "Microsoft.OpenApi.YamlReader": "[3.11.0, )",
           "ModelContextProtocol.AspNetCore": "[2.3.1, )",
@@ -768,6 +804,11 @@
           "Newtonsoft.Json": "13.0.4"
         }
       },
+      "Google.Protobuf": {
+        "type": "Transitive",
+        "resolved": "3.30.2",
+        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
+      },
       "HarfBuzzSharp": {
         "type": "Transitive",
         "resolved": "8.3.1.3",
@@ -809,6 +850,11 @@
         "type": "Transitive",
         "resolved": "0.11.6",
         "contentHash": "NdNWGDiZ6eS/Mf/9+QHR91cj1K7Hy+PX9yrHI/zM7xFYuj9IWT2uxtB6sCHjrnxAeLV9fut1R6zHDUGKX6f9lQ=="
+      },
+      "Microsoft.AI.DirectML": {
+        "type": "Transitive",
+        "resolved": "1.15.4",
+        "contentHash": "UblWBtQxcXcxwcn+jh0pfbq4zv2b6w7ThJ35qUV9gd8niGofrFWzVqZ6yqYDMiE+IJf8LRpG+H1cZpswceOeiA=="
       },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
@@ -891,6 +937,31 @@
         "type": "Transitive",
         "resolved": "10.0.13",
         "contentHash": "ZjTwxzhiw2TMEzIbUDkMF0dfDB2I4NQgIfKD0ELu9/5Mk+SRGdKZcD0/lvBrRCAPo6KN2r0BW86MRancoyJkoA=="
+      },
+      "Microsoft.ML.OnnxRuntime.DirectML": {
+        "type": "Transitive",
+        "resolved": "1.24.4",
+        "contentHash": "rXEy9biJdgr55TdDaHrhl35K0FRXRCbvyRUv4S4C3jTxyxrqSh8YcEp5bzw4S9UlcqQKNfpb3sE+VWvO2DZY6A==",
+        "dependencies": {
+          "Microsoft.AI.DirectML": "1.15.4",
+          "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed": {
+        "type": "Transitive",
+        "resolved": "1.24.4",
+        "contentHash": "e5jsEo0HcCKDMkuRsMSievKoMv10Odv4MGmxbCin8SEm4Pto1qTpwti47xRwMtk9I/zVvfAiFIWquOq/0+22DA==",
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
+        }
+      },
+      "Microsoft.ML.Tokenizers": {
+        "type": "Transitive",
+        "resolved": "2.0.1",
+        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
+        "dependencies": {
+          "Google.Protobuf": "3.30.2"
+        }
       },
       "Microsoft.NETCore.Platforms": {
         "type": "Transitive",
@@ -1019,6 +1090,11 @@
           "System.CodeDom": "7.0.0"
         }
       },
+      "System.Numerics.Tensors": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
+      },
       "Tmds.DBus.Protocol": {
         "type": "Transitive",
         "resolved": "0.94.1",
@@ -1084,6 +1160,7 @@
           "Avalonia.Controls.DataGrid": "[12.1.2, )",
           "Avalonia.Desktop": "[12.1.5, )",
           "Avalonia.Themes.Fluent": "[12.1.5, )",
+          "Microsoft.AI.DirectML": "[1.15.4, )",
           "RavensPort.Core": "[5.0.4, )",
           "RavensPort.UI": "[5.0.4, )"
         }
@@ -1093,6 +1170,8 @@
         "dependencies": {
           "Google.Apis.Auth": "[1.78.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
+          "Microsoft.ML.OnnxRuntime.DirectML": "[1.24.4, )",
+          "Microsoft.ML.Tokenizers": "[2.0.1, )",
           "Microsoft.OpenApi": "[3.11.0, )",
           "Microsoft.OpenApi.YamlReader": "[3.11.0, )",
           "ModelContextProtocol.AspNetCore": "[2.3.1, )",

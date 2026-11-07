@@ -60,6 +60,11 @@ platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
 
 - **MCP Funnel** — an MCP gateway that pools several MCP servers behind one endpoint per agent,
   with per-tool filtering of tools, resources and prompts
+- **Call filters** — per agent, four steps check what goes out before any server sees it:
+  secrets (the gitleaks rule set, always denied), personal data by editable patterns, personal
+  data by a local entity model (GLiNER), and meaning by an embedding model (local ONNX on CPU or
+  GPU, Ollama, llama.cpp, OpenAI or Voyage AI). Each step's matches are replaced before the next
+  reads the call; matched values are never logged
 - **API to MCP** — turn a REST API you already proxy into an MCP server from a JSON manifest, or
   import an OpenAPI (Swagger) spec and pick which of its operations become tools
 - **OAuth2, handled** — Google, GitHub, Nextcloud or any custom provider; device-code sign-in;

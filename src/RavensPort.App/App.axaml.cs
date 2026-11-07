@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -241,6 +241,7 @@ public partial class App : Application
         builder.Services.AddSingleton<CredentialsViewModel>();
         builder.Services.AddSingleton<RoutesViewModel>();
         builder.Services.AddSingleton<McpFunnelViewModel>();
+        builder.Services.AddSingleton<FiltersViewModel>();
         builder.Services.AddSingleton<ApiBridgeViewModel>();
 
         // The tabs as one dependency: everything that rebuilds them rebuilds all of them.

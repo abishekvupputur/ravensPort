@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using RavensPort.Core.Models;
 
@@ -18,10 +18,17 @@ public static class VaultRedaction
     /// <summary>
     /// The note's contract: everything except the secrets, which live in their own items so the
     /// password manager can show and protect them properly.
+    ///
+    /// Compact, not indented. Proton Pass rejects an item's content past roughly 40 KB (a 39 KB
+    /// note was accepted; one a little larger, once funnels carried filters, was refused with a
+    /// bare "Error creating note item"), and indentation alone was 28% of a real note. Readers
+    /// accept either form, so notes written indented by earlier versions still load.
     /// </summary>
+    // ponytail: compact JSON buys ~40% headroom, not a ceiling. If notes keep growing, split the
+    // index into its own item or compress the note once it nears the limit.
     public static readonly JsonSerializerOptions NoteOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
         TypeInfoResolver = new DefaultJsonTypeInfoResolver
         {
             Modifiers = { StripSecrets },

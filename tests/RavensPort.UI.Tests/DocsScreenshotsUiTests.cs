@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -145,7 +145,8 @@ public class DocsScreenshotsUiTests
         // Recent activity as a day with these routes would log it, in the app's own line formats.
         // The real log at this point holds only the harness's startup, which no reader would
         // recognise. Set straight on the view model: the 2s refresh does not run before the snap.
-        SelectTab(window, 4);
+        // Index 5: the Filters tab sits at 4, between MCP Funnel and Settings.
+        SelectTab(window, 5);
         var settingsView = window.GetVisualDescendants().OfType<SettingsView>().First();
         var day = DateTime.Today.AddHours(9).AddMinutes(41);
         string At(int seconds) => day.AddSeconds(seconds).ToString("yyyy-MM-dd HH:mm:ss");

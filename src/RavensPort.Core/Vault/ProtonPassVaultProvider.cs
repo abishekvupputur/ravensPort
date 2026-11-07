@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Models;
@@ -541,9 +541,11 @@ public sealed class ProtonPassVaultProvider(
         // After every secret item and before any deletion, so at no point does the note reference
         // something that is gone. A crash before it leaves unreferenced new items; a crash after
         // leaves superseded old ones. The next save sweeps both.
+        var noteBytes = 0;
         try
         {
             var noteSpec = VaultMapper.BuildConfigNote(store, index, _loadedRevision + 1);
+            noteBytes = System.Text.Encoding.UTF8.GetByteCount(noteSpec.Fields[0].Value);
             await CreateItemAsync(noteSpec, ct);
             _loadedRevision++;
 
@@ -551,8 +553,15 @@ public sealed class ProtonPassVaultProvider(
         }
         catch (Exception ex) when (ex is VaultCliException or VaultSaveException)
         {
+            // Proton Pass refuses an oversized note with nothing but "Error creating note item",
+            // so say the size when it is anywhere near the ceiling (see VaultRedaction.NoteOptions).
+            var size = noteBytes > 32 * 1024
+                ? $" The configuration is {noteBytes / 1024} KB, and Proton Pass refuses notes past roughly 40 KB — " +
+                  "removing unused routes, sources or bridges makes it smaller."
+                : "";
+
             throw new VaultSaveException(
-                $"Could not save the configuration item to Proton Pass: {ex.Message}",
+                $"Could not save the configuration item to Proton Pass: {ex.Message}{size}",
                 partiallyApplied: written > 0,
                 ex);
         }

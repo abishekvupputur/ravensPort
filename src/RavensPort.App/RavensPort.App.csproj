@@ -160,6 +160,27 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
   </ItemGroup>
 
+  <!--
+    DirectML.dll for running filter models on a GPU. ONNX Runtime's DirectML package (in Core)
+    depends on it, but the redistributable's build targets copy the DLL only for a project whose
+    PlatformTarget is a concrete architecture, and only into the project referencing it directly.
+    Without both, the app quietly picked up Windows' own, older DirectML from System32. So the app
+    references it itself, and a win-x64 build targets x64.
+  -->
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.0-windows'))">
+    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PlatformTarget>x64</PlatformTarget>
+    <!-- The runtime DLL only: the debug layer and both .pdb files are ~14 MB nobody runs. -->
+    <Microsoft_AI_DirectML_SkipDebugLayerCopy>true</Microsoft_AI_DirectML_SkipDebugLayerCopy>
+  </PropertyGroup>
+  <Target Name="DropDirectMLSymbols" AfterTargets="ResolveAssemblyReferences" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <ItemGroup>
+      <Content Remove="@(Content)" Condition="'%(Filename)%(Extension)' == 'DirectML.pdb'" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\RavensPort.Core\RavensPort.Core.csproj" />
     <ProjectReference Include="..\RavensPort.UI\RavensPort.UI.csproj" />
