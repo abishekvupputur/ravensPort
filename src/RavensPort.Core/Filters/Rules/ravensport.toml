@@ -1,0 +1,102 @@
+# RavensPort's own secret rules, in gitleaks' format, loaded after gitleaks' rule set.
+#
+# gitleaks is written for source code and its rules require a secret to look random (entropy) and
+# usually to sit in an assignment. A tool call is different: an agent sends {"password": "hunter2"},
+# where the key and the value arrive as separate texts, and human-chosen passwords are short and not
+# random. These rules close that gap.
+#
+# One extension to gitleaks' format: `keyName`. A rule with a keyName matches a JSON field whose name
+# matches it, whatever the value (placeholders such as "", "***", "<password>" or "${PASSWORD}"
+# excepted). With a regex as well, the value must also match the regex.
+#
+# A rule here, or in your own rules file, with the same id as a gitleaks rule replaces it.
+
+title = "RavensPort secret rules"
+
+# ---- fields named like a secret --------------------------------------------------------------
+
+[[rules]]
+id = "ravensport-password-field"
+description = "A field named like a password or passphrase (password, passwd, pwd, passphrase, pin)."
+keyName = '''(?i)^(?:[\w.-]*[_.-])?(?:pass(?:word|wd|phrase)?|pwd|pw|pin)$'''
+
+[[rules]]
+id = "ravensport-secret-field"
+description = "A field named like a secret or key (secret, client_secret, api_key, private_key, credential)."
+keyName = '''(?i)^(?:[\w.-]*[_.-])?(?:secret|client[_-]?secret|api[_-]?key|apikey|private[_-]?key|credentials?|signing[_-]?key|encryption[_-]?key)$'''
+
+[[rules]]
+id = "ravensport-token-field"
+description = "A field named like a token (token, refresh_token, access_token, id_token, session_token, bearer)."
+keyName = '''(?i)^(?:[\w.-]*[_.-])?(?:(?:refresh|access|id|auth|session|bearer|api)[_-]?)?token$|^bearer$'''
+
+[[rules]]
+id = "ravensport-username-field"
+description = "A field named like a username or login (username, user, login, uid). Usernames are half of a credential."
+keyName = '''(?i)^(?:[\w.-]*[_.-])?(?:user(?:[_-]?name)?|login|uid|account[_-]?name)$'''
+
+# ---- secrets written into text ----------------------------------------------------------------
+
+[[rules]]
+id = "ravensport-password-assignment"
+description = "A password written into text: password=…, pwd: …, however short or simple."
+regex = '''(?i)(?:^|[^\w])(?:pass(?:word|wd|phrase)?|pwd)["']?\s*(?::=|=>|[:=])\s*["']?([^\s"',;}{)]{3,})'''
+keywords = ["pass", "pwd"]
+
+[[rules]]
+id = "ravensport-password-flag"
+description = "A password passed on a command line: --password …, --pass=…"
+regex = '''(?i)--pass(?:word)?(?:=|\s+)["']?([^\s"']{3,})'''
+keywords = ["--pass"]
+
+[[rules]]
+id = "ravensport-username-assignment"
+description = "A username written into text: username=…, user: …, login …"
+regex = '''(?i)(?:^|[^\w])(?:user(?:[_-]?name)?|login)["']?\s*(?::=|=>|[:=])\s*["']?([^\s"',;}{)]{2,})'''
+keywords = ["user", "login"]
+
+[[rules]]
+id = "ravensport-token-assignment"
+description = "A token written into text: refresh_token=…, access_token: …, id_token …"
+regex = '''(?i)(?:refresh|access|id|auth|session|bearer)[_-]?token["']?\s*(?::=|=>|[:=])\s*["']?([A-Za-z0-9._~+/=-]{8,})'''
+keywords = ["token"]
+
+[[rules]]
+id = "ravensport-bearer-header"
+description = "An Authorization: Bearer header with its token."
+regex = '''(?i)\bauthorization["']?\s*[:=]\s*["']?bearer\s+([A-Za-z0-9._~+/=-]{8,})'''
+keywords = ["bearer"]
+
+[[rules]]
+id = "ravensport-basic-auth-header"
+description = "An Authorization: Basic header — a base64 username and password."
+regex = '''(?i)\bauthorization["']?\s*[:=]\s*["']?basic\s+([A-Za-z0-9+/=]{8,})'''
+keywords = ["basic"]
+
+[[rules]]
+id = "ravensport-url-credentials"
+description = "A username and password inside a URL: scheme://user:password@host."
+regex = '''\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@"']+:([^\s@/"']+)@'''
+keywords = ["://"]
+
+[[rules]]
+id = "ravensport-google-refresh-token"
+description = "A Google OAuth refresh token (1//0…)."
+regex = '''\b(1//0[A-Za-z0-9_-]{30,})'''
+keywords = ["1//0"]
+
+# Values that stand for a secret rather than being one: empty, masked, templated or a variable.
+[allowlist]
+description = "placeholders"
+regexes = [
+    '''^\s*$''',
+    '''(?i)^(?:null|none|nil|undefined|true|false|n/?a|redacted|hidden)$''',
+    '''(?i)^(?:example|sample|placeholder|dummy|your[_-]?(?:password|pass|token|secret|key|username|user))$''',
+    '''^[*•xX.]+$''',
+    '''^<[^>]*>$''',
+    '''^\$\{[^}]*\}$''',
+    '''^\$[A-Za-z_][A-Za-z0-9_]*$''',
+    '''^%[A-Za-z_][A-Za-z0-9_]*%$''',
+    '''^\{\{.*\}\}$''',
+    '''^\[[^\]]+\]$''',
+]

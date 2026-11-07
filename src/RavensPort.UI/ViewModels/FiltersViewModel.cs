@@ -21,11 +21,16 @@ public sealed partial class FiltersViewModel : ObservableObject
     private readonly FilterService _filterService;
     private readonly EmbeddingClientFactory _clients;
 
-    public FiltersViewModel(ConfigStoreCache configStoreCache, FilterService filterService, EmbeddingClientFactory clients)
+    private readonly RavensPort.UI.Services.IPlatformLauncher _launcher;
+
+    public FiltersViewModel(
+        ConfigStoreCache configStoreCache, FilterService filterService, EmbeddingClientFactory clients, RavensPort.UI.Services.IPlatformLauncher launcher)
     {
         _configStoreCache = configStoreCache;
         _filterService = filterService;
         _clients = clients;
+        _launcher = launcher;
+        _rulesStatus = DescribeRules(SecretRuleSet.Current);
 
         Gpus = OnnxSessions.DetectGpus();
         NewRuns = new DevicePickerViewModel(OnnxDevice.Cpu, 0, Gpus);
@@ -147,10 +152,57 @@ public sealed partial class FiltersViewModel : ObservableObject
     }
     public bool HasModels => Providers.Count + EntityModels.Count > 0;
 
-    /// <summary>Secrets step: how many gitleaks rules this build carries, for the row's description.</summary>
-    public static string SecretsDescription { get; } =
-        $"{SecretScanner.Default.RuleCount} rules from gitleaks {SecretScanner.GitleaksVersion} (MIT): cloud and API keys, tokens, " +
-        "private keys, connection strings and passwords. No agent or tool needs any of these, so a match is always denied.";
+    /// <summary>Secrets step: what the rules in use cover, for the row's description.</summary>
+    public static string SecretsDescription()
+    {
+        var rules = SecretRuleSet.Current;
+        var yours = rules.CountFrom(SecretRuleSet.UserSource);
+        return $"All {rules.RuleCount} rules are on: {rules.CountFrom(SecretRuleSet.GitleaksSource)} from gitleaks {SecretScanner.GitleaksVersion} " +
+               $"(cloud and API keys, tokens, private keys, connection strings), {rules.CountFrom(SecretRuleSet.RavensPortSource)} from RavensPort " +
+               "(passwords, usernames, refresh and bearer tokens, credentials in URLs and fields named like them)" +
+               (yours > 0 ? $", and {yours} of yours" : "") +
+               ". No agent or tool needs any of these, so a match is always denied. Find a rule below to turn it off for this profile.";
+    }
+
+    // ---- secret rules (step 1) -------------------------------------------------------------
+
+    public string UserRulesPath => SecretRuleSet.UserFilePath;
+
+    [ObservableProperty] private string _rulesStatus;
+
+    private static string DescribeRules(SecretScanner rules)
+    {
+        var line = $"{rules.RuleCount} rules in use: {rules.CountFrom(SecretRuleSet.GitleaksSource)} gitleaks, " +
+                   $"{rules.CountFrom(SecretRuleSet.RavensPortSource)} RavensPort, {rules.CountFrom(SecretRuleSet.UserSource)} yours.";
+        return rules.SkippedRules.Count == 0
+            ? line
+            : line + " Not used: " + string.Join("; ", rules.SkippedRules.Take(5)) + (rules.SkippedRules.Count > 5 ? " …" : "");
+    }
+
+    [RelayCommand]
+    private async Task OpenRulesFileAsync()
+    {
+        try
+        {
+            await _launcher.OpenPathAsync(SecretRuleSet.EnsureUserFile());
+            StatusMessage = "Rules file opened. Save it, then press Reload rules.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Could not open the rules file: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ReloadRules()
+    {
+        var rules = SecretRuleSet.Reload();
+        RulesStatus = DescribeRules(rules);
+        StatusMessage = rules.SkippedRules.Count == 0
+            ? $"Rules reloaded: {rules.RuleCount} in use. Applies to the agent's next call."
+            : $"Rules reloaded with problems — see Secret rules. {rules.RuleCount} in use.";
+        Reload();
+    }
 
     [ObservableProperty] private string _statusMessage = "";
 
@@ -816,7 +868,7 @@ public sealed partial class UpstreamAssignmentViewModel : ObservableObject
 /// One Personal data pattern as a chip. Clicking switches it off for this funnel (struck through,
 /// not hidden, so it can be switched back on). Editing happens in the pattern list below the chips.
 /// </summary>
-public sealed partial class DetectorChipViewModel(string name, bool isCustom, bool isOn, Action<DetectorChipViewModel> onToggle)
+public sealed partial class DetectorChipViewModel(string name, bool isCustom, bool isOn, Action<DetectorChipViewModel> onToggle, string? description = null)
     : ObservableObject
 {
     public string Name { get; } = name;
@@ -824,7 +876,8 @@ public sealed partial class DetectorChipViewModel(string name, bool isCustom, bo
 
     [ObservableProperty] private bool _isOn = isOn;
 
-    public string Tip => IsOn ? "Checked on this funnel. Click to stop checking for it." : "Not checked on this funnel. Click to check for it.";
+    public string Tip => (description is { Length: > 0 } d ? d + "\n" : "") +
+        (IsOn ? "On in this profile. Click to turn it off." : "Off in this profile. Click to turn it back on.");
 
     partial void OnIsOnChanged(bool value) => OnPropertyChanged(nameof(Tip));
 
@@ -935,6 +988,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
         _thresholdText = existing?.Threshold?.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) ?? "";
 
         RebuildPatterns();
+        RebuildSecretRules();
     }
 
     public FilterCategory Category { get; }
@@ -974,7 +1028,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
     /// <summary>What this step does, in words.</summary>
     public string LevelExplained => Category switch
     {
-        FilterCategory.Secrets => FiltersViewModel.SecretsDescription,
+        FilterCategory.Secrets => FiltersViewModel.SecretsDescription(),
         FilterCategory.PersonalData => IsOn
             ? "Checks for each pattern below, on this PC. Click one to switch it off; Edit patterns changes a regex or adds your own."
             : "Off. Finds personal data by pattern — emails, card numbers (Luhn), IBANs (mod-97), phone numbers, German tax and social security numbers, and your own regexes.",
@@ -999,6 +1053,61 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
     {
         Store($"step {Step} ({Name}) {(value == FilterLevel.Off ? "off" : LevelChoices.First(c => c.Level == value).Label)}.");
         RebuildPatterns();
+        RebuildSecretRules();
+    }
+
+    // ---- secrets: every rule on; find one to turn it off -----------------------------------
+
+    /// <summary>Rules matching the search, to turn off (or back on) for this profile.</summary>
+    public ObservableCollection<DetectorChipViewModel> SecretRuleMatches { get; } = [];
+
+    /// <summary>Rules this profile turned off.</summary>
+    public ObservableCollection<DetectorChipViewModel> SecretRulesOff { get; } = [];
+
+    public bool HasSecretRulesOff => SecretRulesOff.Count > 0;
+
+    [ObservableProperty] private string _secretRuleSearch = "";
+    [ObservableProperty] private string _secretRuleSearchHint = "";
+
+    partial void OnSecretRuleSearchChanged(string value) => RebuildSecretRules();
+
+    private void RebuildSecretRules()
+    {
+        SecretRuleMatches.Clear();
+        SecretRulesOff.Clear();
+        if (!IsSecrets) return;
+
+        var off = Filter?.DisabledDetectors.ToHashSet(StringComparer.Ordinal) ?? [];
+        var rules = SecretRuleSet.Current.Rules;
+
+        foreach (var rule in rules.Where(r => off.Contains(r.Id)))
+            SecretRulesOff.Add(new DetectorChipViewModel(rule.Id, isCustom: false, isOn: false, ToggleSecretRule, $"{rule.Source}: {rule.Description}"));
+
+        var query = SecretRuleSearch.Trim();
+        if (query.Length >= 2)
+        {
+            var found = rules.Where(r => !off.Contains(r.Id) &&
+                (r.Id.Contains(query, StringComparison.OrdinalIgnoreCase) || r.Description.Contains(query, StringComparison.OrdinalIgnoreCase))).ToList();
+            foreach (var rule in found.Take(15))
+                SecretRuleMatches.Add(new DetectorChipViewModel(rule.Id, isCustom: rule.Source == SecretRuleSet.UserSource, isOn: true, ToggleSecretRule, $"{rule.Source}: {rule.Description}"));
+            SecretRuleSearchHint = found.Count == 0 ? "No rule matches." : found.Count > 15 ? $"{found.Count} rules match — the first 15 are shown. Click one to turn it off." : "Click a rule to turn it off.";
+        }
+        else
+        {
+            SecretRuleSearchHint = "";
+        }
+
+        OnPropertyChanged(nameof(HasSecretRulesOff));
+    }
+
+    private void ToggleSecretRule(DetectorChipViewModel chip)
+    {
+        var filter = EnsureFilter();
+        filter.DisabledDetectors.Remove(chip.Name);
+        if (!chip.IsOn) filter.DisabledDetectors.Add(chip.Name);
+
+        _onChanged($"'{_ownerName()}': secret rule {chip.Name} {(chip.IsOn ? "turned back on" : "turned off")}.");
+        RebuildSecretRules();
     }
 
     partial void OnActionChanged(FilterAction value) => Store($"step {Step} ({Name}) set to {value} on a match.");

@@ -4,14 +4,27 @@ using System.Text.RegularExpressions;
 
 namespace RavensPort.Core.Filters;
 
-/// <summary>A secret found in a text: where, and which gitleaks rule found it.</summary>
+/// <summary>A secret found in a text: where, and which rule found it.</summary>
 public readonly record struct SecretMatch(int Start, int Length, string RuleId);
 
+/// <summary>One rule as the UI lists it.</summary>
+/// <param name="Source">Where it came from: "gitleaks", "RavensPort" or "your rules".</param>
+public sealed record SecretRuleInfo(string Id, string Description, string Source);
+
 /// <summary>
-/// Step 1 of the call filters: gitleaks' rule set (MIT), embedded unchanged, matched the way
-/// gitleaks matches it — keywords as a cheap pre-check, the rule's regex, its secret group, the
-/// Shannon-entropy floor (plus gitleaks' "generic rules need a digit"), and the per-rule and global
-/// allowlists of regexes and stopwords. Path and commit allowlists do not apply to a tool call.
+/// Step 1 of the call filters: secret rules in gitleaks' format, matched the way gitleaks matches
+/// them — keywords as a cheap pre-check, the rule's regex, its secret group, the Shannon-entropy
+/// floor (plus gitleaks' "generic rules need a digit"), and the per-rule and global allowlists of
+/// regexes and stopwords. Path and commit allowlists do not apply to a tool call.
+///
+/// Rules come from several sources, read in order: gitleaks' own rule set, RavensPort's (passwords,
+/// usernames and tokens, which gitleaks does not look for — see Rules/ravensport.toml), and the
+/// user's rules file. A rule with an id seen before replaces the earlier one, which is how a user
+/// edits a built-in rule.
+///
+/// One extension to the format: `keyName`. A tool call's arguments are JSON, so a password arrives
+/// as the field "password" and the value "hunter2" — two texts, neither of which a text regex can
+/// tie together. A keyName rule matches the value of a field whose name matches it.
 ///
 /// Regexes run with <see cref="RegexOptions.NonBacktracking"/>: gitleaks writes them for Go's RE2,
 /// which is linear-time, and so is this — no pattern can be made to stall a call.
@@ -30,7 +43,10 @@ public sealed class SecretScanner
     private sealed class Rule
     {
         public string Id { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Source { get; set; } = "";
         public Regex? Regex { get; set; }
+        public Regex? KeyName { get; set; }
         public double Entropy { get; set; }
         public int SecretGroup { get; set; }
         public List<string> Keywords { get; } = [];
@@ -38,69 +54,94 @@ public sealed class SecretScanner
     }
 
     private readonly List<Rule> _rules = [];
-    private readonly Allowlist _global = new();
+    private readonly List<Allowlist> _global = [];
 
     /// <summary>Rules that could not be used, with why — reported by the UI and pinned by a test.</summary>
     public IReadOnlyList<string> SkippedRules { get; }
 
     public int RuleCount => _rules.Count;
 
+    /// <summary>Every rule in use, for the UI's list.</summary>
+    public IReadOnlyList<SecretRuleInfo> Rules => [.. _rules.Select(r => new SecretRuleInfo(r.Id, r.Description, r.Source))];
+
+    public int CountFrom(string source) => _rules.Count(r => r.Source == source);
+
     /// <summary>The gitleaks release the embedded rules come from.</summary>
     public const string GitleaksVersion = "v8.30.1";
 
-    private static readonly Lazy<SecretScanner> Embedded = new(() =>
-    {
-        using var stream = typeof(SecretScanner).Assembly.GetManifestResourceStream("RavensPort.Core.Filters.gitleaks.toml")
-                           ?? throw new InvalidOperationException("The gitleaks rule set is missing from this build.");
-        using var reader = new StreamReader(stream);
-        return new SecretScanner(reader.ReadToEnd());
-    });
+    /// <summary>One rule set from text — mostly for tests.</summary>
+    public SecretScanner(string toml, string source = "rules") : this([(source, toml)]) { }
 
-    /// <summary>The rule set that ships with RavensPort.</summary>
-    public static SecretScanner Default => Embedded.Value;
-
-    public SecretScanner(string toml)
+    public SecretScanner(IEnumerable<(string Source, string Toml)> sources)
     {
         var skipped = new List<string>();
+        var byId = new Dictionary<string, Rule>(StringComparer.Ordinal);
+        var order = new List<string>();
+
+        foreach (var (source, toml) in sources)
+        {
+            try
+            {
+                Load(source, toml, byId, order, skipped);
+            }
+            catch (Exception ex)
+            {
+                // A user's file with a typo must not take the built-in rules down with it.
+                skipped.Add($"{source}: could not be read — {ex.Message}");
+            }
+        }
+
+        // A rule with neither a regex nor a keyName is a path-only rule (it flags file names),
+        // which a tool call does not have.
+        _rules.AddRange(order.Select(id => byId[id]).Where(r => r.Regex is not null || r.KeyName is not null));
+        SkippedRules = skipped;
+    }
+
+    private void Load(string source, string toml, Dictionary<string, Rule> byId, List<string> order, List<string> skipped)
+    {
         Rule? rule = null;
         Allowlist? allowlist = null;
 
         foreach (var (section, key, value) in TomlLite.Read(toml))
         {
-            switch (section)
+            if (key is null)
             {
-                case "[allowlist]":
-                    allowlist = _global;
-                    break;
-                case "[[rules]]":
-                    if (key is null)
-                    {
-                        rule = new Rule();
-                        _rules.Add(rule);
+                switch (section)
+                {
+                    case "[allowlist]":
+                        allowlist = new Allowlist();
+                        _global.Add(allowlist);
+                        rule = null;
+                        break;
+                    case "[[rules]]":
+                        rule = new Rule { Source = source };
                         allowlist = null;
-                        continue;
-                    }
-                    break;
-                case "[[rules.allowlists]]":
-                    if (key is null)
-                    {
+                        break;
+                    case "[[rules.allowlists]]":
                         allowlist = new Allowlist();
                         rule?.Allowlists.Add(allowlist);
-                        continue;
-                    }
-                    break;
+                        break;
+                }
+                continue;
             }
-
-            if (key is null) continue;
 
             if (section == "[[rules]]" && rule is not null)
             {
                 switch (key)
                 {
-                    case "id": rule.Id = (string)value!; break;
+                    case "id":
+                        rule.Id = (string)value!;
+                        if (!byId.ContainsKey(rule.Id)) order.Add(rule.Id);
+                        byId[rule.Id] = rule;
+                        break;
+                    case "description": rule.Description = (string)value!; break;
                     case "regex":
                         try { rule.Regex = Compile((string)value!); }
-                        catch (Exception ex) { skipped.Add($"{rule.Id}: {ex.Message}"); }
+                        catch (Exception ex) { skipped.Add($"{source} {rule.Id}: {ex.Message}"); }
+                        break;
+                    case "keyName":
+                        try { rule.KeyName = Compile((string)value!); }
+                        catch (Exception ex) { skipped.Add($"{source} {rule.Id}: {ex.Message}"); }
                         break;
                     case "entropy": rule.Entropy = Convert.ToDouble(value, CultureInfo.InvariantCulture); break;
                     case "secretGroup": rule.SecretGroup = Convert.ToInt32(value, CultureInfo.InvariantCulture); break;
@@ -115,7 +156,7 @@ public sealed class SecretScanner
                         foreach (var r in ((List<object>)value!).Cast<string>())
                         {
                             try { allowlist.Regexes.Add(Compile(r)); }
-                            catch (Exception ex) { skipped.Add($"allowlist regex: {ex.Message}"); }
+                            catch (Exception ex) { skipped.Add($"{source} allowlist regex: {ex.Message}"); }
                         }
                         break;
                     case "regexTarget": allowlist.RegexTarget = (string)value!; break;
@@ -125,10 +166,6 @@ public sealed class SecretScanner
                 }
             }
         }
-
-        // A rule with no regex is a path-only rule (it flags file names), which a tool call does not have.
-        _rules.RemoveAll(r => r.Regex is null);
-        SkippedRules = skipped;
     }
 
     /// <summary>
@@ -150,18 +187,20 @@ public sealed class SecretScanner
         return new Regex(pattern, RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
     }
 
-    /// <summary>Every secret in <paramref name="text"/>.</summary>
-    public IEnumerable<SecretMatch> Find(string text)
+    /// <summary>Every secret in <paramref name="text"/>, skipping rules in <paramref name="disabled"/>.</summary>
+    public IEnumerable<SecretMatch> Find(string text, IReadOnlyCollection<string>? disabled = null)
     {
-        if (text.Length < 8) yield break;
+        if (text.Length < 3) yield break;
 
         var lower = text.ToLowerInvariant();
 
         foreach (var rule in _rules)
         {
+            if (rule.Regex is null || rule.KeyName is not null) continue;
+            if (disabled?.Contains(rule.Id) == true) continue;
             if (rule.Keywords.Count > 0 && !rule.Keywords.Any(k => lower.Contains(k, StringComparison.Ordinal))) continue;
 
-            foreach (Match match in rule.Regex!.Matches(text))
+            foreach (Match match in rule.Regex.Matches(text))
             {
                 var secretGroup = SecretGroupOf(rule, match);
                 var secret = secretGroup.Value;
@@ -173,10 +212,30 @@ public sealed class SecretScanner
                 }
 
                 var line = LineAround(text, match.Index, match.Length);
-                if (IsAllowed(_global, secret, match.Value, line) || rule.Allowlists.Any(a => IsAllowed(a, secret, match.Value, line))) continue;
+                if (_global.Any(a => IsAllowed(a, secret, match.Value, line)) || rule.Allowlists.Any(a => IsAllowed(a, secret, match.Value, line))) continue;
 
                 yield return new SecretMatch(secretGroup.Index, secretGroup.Length, rule.Id);
             }
+        }
+    }
+
+    /// <summary>
+    /// The value of a field named <paramref name="key"/>, judged by the keyName rules: the whole
+    /// value is a secret when the name matches (and the value matches the rule's regex, if it has
+    /// one), unless an allowlist says the value is only a placeholder.
+    /// </summary>
+    public IEnumerable<SecretMatch> FindByKey(string key, string value, IReadOnlyCollection<string>? disabled = null)
+    {
+        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(value)) yield break;
+
+        foreach (var rule in _rules)
+        {
+            if (rule.KeyName is null || disabled?.Contains(rule.Id) == true) continue;
+            if (!rule.KeyName.IsMatch(key)) continue;
+            if (rule.Regex is not null && !rule.Regex.IsMatch(value)) continue;
+            if (_global.Any(a => IsAllowed(a, value, value, value)) || rule.Allowlists.Any(a => IsAllowed(a, value, value, value))) continue;
+
+            yield return new SecretMatch(0, value.Length, rule.Id);
         }
     }
 
@@ -231,6 +290,118 @@ public sealed class SecretScanner
 }
 
 /// <summary>
+/// The secret rules in use: gitleaks', RavensPort's and the user's own file, which lives on this
+/// PC (not in the vault — gitleaks' rule set alone is larger than a vault note can be) and is read
+/// again when the user asks.
+/// </summary>
+public static class SecretRuleSet
+{
+    public const string GitleaksSource = "gitleaks";
+    public const string RavensPortSource = "RavensPort";
+    public const string UserSource = "your rules";
+
+    internal static string? DirectoryOverride { get; set; }
+
+    /// <summary>Where the user's rules file is: %LocalAppData%\RavensPort\filters\secret-rules.toml.</summary>
+    public static string UserFilePath => Path.Combine(
+        DirectoryOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RavensPort", "filters"),
+        "secret-rules.toml");
+
+    private static SecretScanner? _current;
+    private static readonly Lock Gate = new();
+
+    public static SecretScanner Current
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _current ??= Build();
+            }
+        }
+    }
+
+    /// <summary>Reads every source again — after the user saved their file.</summary>
+    public static SecretScanner Reload()
+    {
+        var scanner = Build();
+        lock (Gate)
+        {
+            _current = scanner;
+        }
+        return scanner;
+    }
+
+    private static SecretScanner Build()
+    {
+        var sources = new List<(string, string)>
+        {
+            (GitleaksSource, Embedded("RavensPort.Core.Filters.gitleaks.toml")),
+            (RavensPortSource, Embedded("RavensPort.Core.Filters.ravensport.toml")),
+        };
+
+        if (File.Exists(UserFilePath))
+        {
+            try
+            {
+                sources.Add((UserSource, File.ReadAllText(UserFilePath)));
+            }
+            catch (IOException)
+            {
+                // Open in an editor with a lock, say. The built-in rules still apply; Reload tries again.
+            }
+        }
+
+        return new SecretScanner(sources);
+    }
+
+    private static string Embedded(string name)
+    {
+        using var stream = typeof(SecretRuleSet).Assembly.GetManifestResourceStream(name)
+                           ?? throw new InvalidOperationException($"The rule set {name} is missing from this build.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>The user's rules file, created with a short guide the first time it is asked for.</summary>
+    public static string EnsureUserFile()
+    {
+        if (!File.Exists(UserFilePath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(UserFilePath)!);
+            File.WriteAllText(UserFilePath, UserFileTemplate);
+        }
+        return UserFilePath;
+    }
+
+    internal const string UserFileTemplate = """
+        # Your own secret rules for RavensPort's Secrets step, in gitleaks' format:
+        # https://github.com/gitleaks/gitleaks#configuration
+        #
+        # They are read after gitleaks' rules and RavensPort's. A rule with the same id as a built-in
+        # one replaces it — copy a rule from gitleaks' config, change it here, and the change wins.
+        # After saving, press "Reload rules" on the Filters tab.
+        #
+        # Besides gitleaks' fields, a rule can have `keyName`: it then matches the value of a JSON field
+        # whose name matches the keyName regex, whatever the value looks like.
+        #
+        # Examples (remove the leading # to use them):
+        #
+        # [[rules]]
+        # id = "my-internal-token"
+        # description = "Tokens of our internal API"
+        # regex = '''\bint_[A-Za-z0-9]{32}\b'''
+        # keywords = ["int_"]
+        #
+        # [[rules]]
+        # id = "my-customer-number-field"
+        # description = "Fields named customerNumber"
+        # keyName = '''(?i)^customer[_-]?number$'''
+
+        """;
+}
+
+/// <summary>
 /// The slice of TOML gitleaks.toml is written in: [table] and [[array-of-tables]] headers, and
 /// key = value with literal '''…''' or '…' strings, basic "…" strings, numbers, booleans and
 /// arrays of those spanning lines. Yields (header, null, null) at each header, then its keys.
@@ -259,6 +430,7 @@ internal static class TomlLite
             }
 
             var eq = toml.IndexOf('=', i);
+            if (eq < 0) throw new FormatException($"expected 'key = value' near \"{Snippet(toml, i)}\"");
             var key = toml[i..eq].Trim().Trim('"');
             i = eq + 1;
             var value = ReadValue(toml, ref i);
@@ -266,13 +438,17 @@ internal static class TomlLite
         }
     }
 
+    private static string Snippet(string s, int i) => s.Substring(i, Math.Min(40, s.Length - i)).Split('\n')[0];
+
     private static object ReadValue(string s, ref int i)
     {
         while (i < s.Length && s[i] is ' ' or '\t') i++;
+        if (i >= s.Length) throw new FormatException("a key has no value");
 
         if (s.AsSpan(i).StartsWith("'''"))
         {
             var end = s.IndexOf("'''", i + 3, StringComparison.Ordinal);
+            if (end < 0) throw new FormatException("a ''' string is not closed");
             // A literal string may end in up to two extra quotes that belong to it.
             while (end + 3 < s.Length && s[end + 3] == '\'') end++;
             var value = s[(i + 3)..end];
@@ -284,6 +460,7 @@ internal static class TomlLite
         if (s[i] == '\'')
         {
             var end = s.IndexOf('\'', i + 1);
+            if (end < 0) throw new FormatException("a ' string is not closed");
             var value = s[(i + 1)..end];
             i = end + 1;
             return value;
@@ -298,6 +475,7 @@ internal static class TomlLite
             while (true)
             {
                 SkipSpaceAndComments(s, ref i);
+                if (i >= s.Length) throw new FormatException("an array is not closed");
                 if (s[i] == ']') { i++; return items; }
                 if (s[i] == ',') { i++; continue; }
                 items.Add(ReadValue(s, ref i));
@@ -308,16 +486,18 @@ internal static class TomlLite
         while (i < s.Length && s[i] is not ('\n' or '\r' or ',' or ']' or '#')) i++;
         var bare = s[start..i].Trim();
         if (bare is "true" or "false") return bare == "true";
-        return double.Parse(bare, CultureInfo.InvariantCulture);
+        return double.TryParse(bare, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            ? number
+            : throw new FormatException($"cannot read the value \"{bare}\"");
     }
 
     private static string ReadBasic(string s, ref int i)
     {
         var sb = new StringBuilder();
         i++;
-        while (s[i] != '"')
+        while (i < s.Length && s[i] != '"')
         {
-            if (s[i] == '\\')
+            if (s[i] == '\\' && i + 1 < s.Length)
             {
                 i++;
                 switch (s[i])
@@ -325,7 +505,7 @@ internal static class TomlLite
                     case 'n': sb.Append('\n'); break;
                     case 't': sb.Append('\t'); break;
                     case 'r': sb.Append('\r'); break;
-                    case 'u':
+                    case 'u' when i + 4 < s.Length:
                         sb.Append((char)Convert.ToInt32(s.Substring(i + 1, 4), 16));
                         i += 4;
                         break;
@@ -338,6 +518,7 @@ internal static class TomlLite
             }
             i++;
         }
+        if (i >= s.Length) throw new FormatException("a \" string is not closed");
         i++;
         return sb.ToString();
     }

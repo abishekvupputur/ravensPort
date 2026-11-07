@@ -45,9 +45,27 @@ public static class FilterNames
 /// </summary>
 public static class FilterEngine
 {
-    /// <summary>Step 1 on one text.</summary>
-    public static IEnumerable<Span> FindSecrets(string text, SecretScanner? scanner = null) =>
-        (scanner ?? SecretScanner.Default).Find(text).Select(m => new Span(m.Start, m.Length, m.RuleId));
+    /// <summary>
+    /// Step 1 on one text: the text rules over it, and — when it is the value of a JSON field — the
+    /// field-name rules over its key. <paramref name="disabled"/> holds the rule ids a profile turned off.
+    /// </summary>
+    public static IEnumerable<Span> FindSecrets(CallText text, IReadOnlyCollection<string>? disabled = null, SecretScanner? scanner = null)
+    {
+        var rules = scanner ?? SecretRuleSet.Current;
+        var found = rules.Find(text.Text, disabled).Select(m => new Span(m.Start, m.Length, m.RuleId));
+
+        return text.IsValue
+            ? found.Concat(rules.FindByKey(KeyOf(text.Path), text.Text, disabled).Select(m => new Span(m.Start, m.Length, m.RuleId)))
+            : found;
+    }
+
+    /// <summary>The field name a value sits under: "body.auth.password" → "password", "tokens[2]" → "tokens".</summary>
+    internal static string KeyOf(string path)
+    {
+        var last = path[(path.LastIndexOf('.') + 1)..];
+        var bracket = last.IndexOf('[');
+        return bracket >= 0 ? last[..bracket] : last;
+    }
 
     /// <summary>Step 2 on one text, with the funnel's patterns.</summary>
     public static IEnumerable<Span> FindPersonal(IReadOnlyList<ActivePattern> patterns, string text) =>
