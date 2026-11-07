@@ -1,18 +1,4 @@
-# Your secret rules for RavensPort's Secrets step (step 1), in gitleaks' format:
-# https://github.com/gitleaks/gitleaks#configuration
-#
-# This file starts with RavensPort's strict rules: broad, generic patterns for API keys, JWTs,
-# access and refresh tokens, Authorization headers, session cookies, private keys, certificates,
-# key files, connection-string passwords, cloud account keys and webhook URLs. They sit on top of
-# gitleaks' 221 rules and RavensPort's built-in ones, and like them every rule is on. Edit, delete
-# or add rules here; to stop one for a single profile, turn it off in that profile's Secrets step.
-#
-# A rule with the same id as a built-in one replaces it — copy a rule from gitleaks' config, change
-# it here, and the change wins. After saving, press "Reload rules" on the Filters tab.
-#
-# Rules run with .NET's linear-time regex engine (like gitleaks' Go RE2): no lookarounds and no
-# backreferences. Besides gitleaks' fields, a rule can have `keyName`: it then matches the value of
-# a JSON field whose name matches the keyName regex, e.g. keyName = '''(?i)^customer[_-]?number$'''
+# RavensPort strict rules: broad generic patterns, part of the original secret-rules.toml.
 
 # ---- API keys ---------------------------------------------------------------------------
 

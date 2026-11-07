@@ -102,8 +102,8 @@
     <EmbeddedResource Include="Filters/Rules/gitleaks.toml" LogicalName="RavensPort.Core.Filters.gitleaks.toml" />
     <!-- RavensPort's own rules in the same format: passwords, usernames and tokens gitleaks does not look for. -->
     <EmbeddedResource Include="Filters/Rules/ravensport.toml" LogicalName="RavensPort.Core.Filters.ravensport.toml" />
-    <!-- What a user's own rules file starts as: strict generic rules, all on, theirs to edit. -->
-    <EmbeddedResource Include="Filters/Rules/secret-rules.default.toml" LogicalName="RavensPort.Core.Filters.secret-rules.default.toml" />
+    <!-- Broad generic rules. With gitleaks' and RavensPort's they make up the original rules file. -->
+    <EmbeddedResource Include="Filters/Rules/strict.toml" LogicalName="RavensPort.Core.Filters.strict.toml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -113,6 +113,7 @@
       from outside without waiting a minute per test.
     -->
     <InternalsVisibleTo Include="RavensPort.Core.Tests" />
+    <InternalsVisibleTo Include="RavensPort.UI.Tests" />
   </ItemGroup>
 
 </Project>

@@ -138,12 +138,9 @@ public sealed partial class FiltersViewModel : ObservableObject
     public static string SecretsDescription()
     {
         var rules = SecretRuleSet.Current;
-        var yours = rules.CountFrom(SecretRuleSet.UserSource);
-        return $"All {rules.RuleCount} rules are on: {rules.CountFrom(SecretRuleSet.GitleaksSource)} from gitleaks {SecretScanner.GitleaksVersion} " +
-               $"(cloud and API keys, tokens, private keys, connection strings), {rules.CountFrom(SecretRuleSet.RavensPortSource)} from RavensPort " +
-               "(passwords, usernames, refresh and bearer tokens, credentials in URLs and fields named like them)" +
-               (yours > 0 ? $", and {yours} of yours" : "") +
-               ". No agent or tool needs any of these, so a match is always denied. Find a rule below to turn it off for this profile.";
+        return $"All {rules.RuleCount} rules in the rules file are on ({Origins(rules)}): cloud and API keys, tokens, private keys, " +
+               "passwords, usernames, refresh and bearer tokens, certificates, connection strings and fields named like them. " +
+               "No agent or tool needs any of these, so a match is always denied. Find a rule below to turn it off for this profile.";
     }
 
     // ---- secret rules (step 1) -------------------------------------------------------------
@@ -152,10 +149,19 @@ public sealed partial class FiltersViewModel : ObservableObject
 
     [ObservableProperty] private string _rulesStatus;
 
+    /// <summary>"221 gitleaks, 12 RavensPort, 14 strict, 2 yours" — leaving out origins with none.</summary>
+    private static string Origins(SecretScanner rules) => string.Join(", ",
+        rules.Rules.GroupBy(r => SecretRuleSet.OriginOf(r.Id))
+            .OrderBy(g => Array.IndexOf(OriginOrder, g.Key))
+            .Select(g => $"{g.Count()} {g.Key}"));
+
+    private static readonly string[] OriginOrder =
+        [SecretRuleSet.GitleaksOrigin, SecretRuleSet.RavensPortOrigin, SecretRuleSet.StrictOrigin, SecretRuleSet.YoursOrigin];
+
     private static string DescribeRules(SecretScanner rules)
     {
-        var line = $"{rules.RuleCount} rules in use: {rules.CountFrom(SecretRuleSet.GitleaksSource)} gitleaks, " +
-                   $"{rules.CountFrom(SecretRuleSet.RavensPortSource)} RavensPort, {rules.CountFrom(SecretRuleSet.UserSource)} yours.";
+        var line = $"{rules.RuleCount} rules in use ({Origins(rules)})" +
+                   (SecretRuleSet.UsingOriginal ? " — the original rules file." : " — from your rules file.");
         return rules.SkippedRules.Count == 0
             ? line
             : line + " Not used: " + string.Join("; ", rules.SkippedRules.Take(5)) + (rules.SkippedRules.Count > 5 ? " …" : "");
@@ -173,6 +179,18 @@ public sealed partial class FiltersViewModel : ObservableObject
         {
             StatusMessage = $"Could not open the rules file: {ex.Message}";
         }
+    }
+
+    [RelayCommand]
+    private void ResetRules()
+    {
+        var hadFile = !SecretRuleSet.UsingOriginal;
+        var rules = SecretRuleSet.ResetUserFile();
+        RulesStatus = DescribeRules(rules);
+        StatusMessage = hadFile
+            ? $"Rules reset to the original ({rules.RuleCount}). Your previous file is saved as {Path.GetFileName(SecretRuleSet.BackupFilePath)}."
+            : $"Rules file written with the original rules ({rules.RuleCount}).";
+        Reload();
     }
 
     [RelayCommand]
@@ -978,7 +996,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
         var rules = SecretRuleSet.Current.Rules;
 
         foreach (var rule in rules.Where(r => off.Contains(r.Id)))
-            SecretRulesOff.Add(new DetectorChipViewModel(rule.Id, isCustom: false, isOn: false, ToggleSecretRule, $"{rule.Source}: {rule.Description}"));
+            SecretRulesOff.Add(new DetectorChipViewModel(rule.Id, isCustom: SecretRuleSet.OriginOf(rule.Id) == SecretRuleSet.YoursOrigin, isOn: false, ToggleSecretRule, $"{SecretRuleSet.OriginOf(rule.Id)}: {rule.Description}"));
 
         var query = SecretRuleSearch.Trim();
         if (query.Length >= 2)
@@ -986,7 +1004,7 @@ public sealed partial class McpFunnelFilterItemViewModel : ObservableObject
             var found = rules.Where(r => !off.Contains(r.Id) &&
                 (r.Id.Contains(query, StringComparison.OrdinalIgnoreCase) || r.Description.Contains(query, StringComparison.OrdinalIgnoreCase))).ToList();
             foreach (var rule in found.Take(15))
-                SecretRuleMatches.Add(new DetectorChipViewModel(rule.Id, isCustom: rule.Source == SecretRuleSet.UserSource, isOn: true, ToggleSecretRule, $"{rule.Source}: {rule.Description}"));
+                SecretRuleMatches.Add(new DetectorChipViewModel(rule.Id, isCustom: SecretRuleSet.OriginOf(rule.Id) == SecretRuleSet.YoursOrigin, isOn: true, ToggleSecretRule, $"{SecretRuleSet.OriginOf(rule.Id)}: {rule.Description}"));
             SecretRuleSearchHint = found.Count == 0 ? "No rule matches." : found.Count > 15 ? $"{found.Count} rules match — the first 15 are shown. Click one to turn it off." : "Click a rule to turn it off.";
         }
         else
