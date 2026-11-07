@@ -59,7 +59,8 @@ public sealed partial class FiltersViewModel
         _ =>
             "Any Hugging Face zero-shot (NLI) or cross-encoder model exported to ONNX: the folder with model.onnx (or onnx/model.onnx), " +
             "tokenizer.json and config.json. For example MoritzLaurer/deberta-v3-base-zeroshot-v2.0, MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7, " +
-            "facebook/bart-large-mnli, or a bge-reranker. The call is the premise, your statement the hypothesis.",
+            "facebook/bart-large-mnli, or a bge-reranker. The call is the premise, your statement the hypothesis — phrase it as " +
+            "\"This text is about deleting files or data.\"; that is how these models were trained, and they score far better for it.",
     };
 
     partial void OnNewDecisionKindChanged(DecisionModelKind value)

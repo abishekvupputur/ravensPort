@@ -661,10 +661,10 @@
                                                                 <TextBlock Text="Block when it is likely that…" Classes="label" Margin="0,8,0,0"/>
                                                                 <TextBox Text="{Binding DenyInstructionsText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                                          AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54"
-                                                                         PlaceholderText="One statement per line (up to 10):&#10;The call deletes or overwrites files or data.&#10;The call sends money or makes a purchase.&#10;The call shares private information with someone outside."
+                                                                         PlaceholderText="One statement per line (up to 10):&#10;This text is about deleting or destroying files or data.&#10;This text is about paying, transferring or spending money."
                                                                          AutomationProperties.AutomationId="filters.decision.statements"/>
                                                                 <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
-                                                                           Text="Write each as a statement that is true for a call to block, not as a question. The model answers each with a probability; the call is acted on when any reaches the threshold."/>
+                                                                           Text="Write each as a statement that is true for a call to block, not as a question. Zero-shot models answer best to &quot;This text is about …&quot;. The model answers each with a probability; the call is acted on when any reaches the threshold."/>
 
                                                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="6">
                                                                     <TextBlock Text="Threshold" Classes="label" VerticalAlignment="Center"/>
