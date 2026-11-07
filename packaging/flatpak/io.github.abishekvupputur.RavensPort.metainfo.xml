@@ -88,6 +88,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="5.1.0" date="2026-11-12">
+      <description>
+        <p>Call filters: check every call an agent sends before any server sees it, in up to five steps: secret rules, regular expressions, an entity model, an embedding model and a zero-shot decision model. Models run on this PC, on the CPU or a chosen GPU.</p>
+      </description>
+    </release>
     <release version="5.0.4" date="2026-11-12">
       <description>
         <p>Dependency and CI updates, and the Go toolchain moved to go1.26.11 for a net/http fix.</p>
