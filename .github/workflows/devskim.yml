@@ -77,7 +77,11 @@ jobs:
           # a DevSkim suppression has to sit on the finding's line or the one above it, and both
           # are inside the `<Package>` start tag, where XML forbids a comment. The file is a
           # static manifest with no code in it, so skipping it costs nothing.
-          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/packaging/AppxManifest.xml"
+          #
+          # Filters/Rules/gitleaks.toml is gitleaks' own rule set, embedded byte-for-byte so it can be
+          # updated by dropping in a newer release. Its allowlists hold known example tokens and
+          # hashes on purpose; suppressing each line would mean editing a vendored file.
+          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/packaging/AppxManifest.xml,**/Filters/Rules/gitleaks.toml"
 
       # Uploaded even when it found nothing, for the reason dependency-scan.yml gives: an empty run
       # is what tells code scanning that a previously reported finding is gone, and skipping the
