@@ -8,7 +8,7 @@ namespace RavensPort.Core.Tests.Filters;
 /// </summary>
 public class SecretScannerTests
 {
-    private static readonly SecretScanner Scanner = SecretRuleSet.Current;
+    private static readonly SecretScanner Scanner = new(SecretRuleSet.OriginalRules, SecretRuleSet.UserSource);
 
     [Fact]
     public void EveryGitleaksRuleCompiles_AndNoneIsSkipped()
@@ -116,9 +116,12 @@ public class SecretScannerTests
     [Fact]
     public void EveryRuleIsOnByDefault_FromAllSources()
     {
-        Assert.True(Scanner.CountFrom(SecretRuleSet.GitleaksSource) > 200);
-        Assert.True(Scanner.CountFrom(SecretRuleSet.RavensPortSource) >= 12);
-        Assert.All(Scanner.Rules, r => Assert.False(string.IsNullOrEmpty(r.Id)));
+        var origins = Scanner.Rules.GroupBy(r => SecretRuleSet.OriginOf(r.Id)).ToDictionary(g => g.Key, g => g.Count());
+        Assert.True(origins[SecretRuleSet.GitleaksOrigin] > 200);
+        Assert.Equal(12, origins[SecretRuleSet.RavensPortOrigin]);
+        Assert.Equal(14, origins[SecretRuleSet.StrictOrigin]);
+        Assert.False(origins.ContainsKey(SecretRuleSet.YoursOrigin));
+        Assert.Empty(Scanner.SkippedRules);
     }
 
     [Fact]
@@ -169,13 +172,13 @@ public class SecretScannerTests
     }
 
     [Fact]
-    public void TheDefaultUserFile_IsFilledWithStrictRules_ThatAllCompile()
+    public void TheOriginalRules_HaveOneTitle_AndGlobalAllowlistsAsEntries()
     {
-        var scanner = new SecretScanner(SecretRuleSet.DefaultUserRules, "yours");
+        var original = SecretRuleSet.OriginalRules;
 
-        Assert.Equal(14, scanner.RuleCount);
-        Assert.Empty(scanner.SkippedRules);
-        Assert.All(scanner.Rules, r => Assert.StartsWith("strict-", r.Id));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(original, "(?m)^title ="));
+        Assert.DoesNotMatch("(?m)^\\[allowlist\\]", original);
+        Assert.Empty(Scanner.Find("password=example"));
     }
 
     [Theory]
@@ -193,7 +196,7 @@ public class SecretScannerTests
     [InlineData("https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX", "strict-webhook-url")]
     public void TheDefaultUserRules_CatchWhatTheySayTheyDo(string text, string rule)
     {
-        var scanner = new SecretScanner(SecretRuleSet.DefaultUserRules, "yours");
+        var scanner = Scanner;
 
         Assert.Contains(scanner.Find(text), m => m.RuleId == rule);
     }
@@ -205,7 +208,7 @@ public class SecretScannerTests
     [InlineData("SELECT id, title FROM tasks WHERE done = false")]
     public void TheDefaultUserRules_LeaveOrdinaryTextAlone(string text)
     {
-        Assert.Empty(new SecretScanner(SecretRuleSet.DefaultUserRules, "yours").Find(text));
+        Assert.Empty(Scanner.Find(text));
     }
 
     [Fact]
@@ -220,12 +223,19 @@ public class SecretScannerTests
 
             var reloaded = SecretRuleSet.Reload();
 
-            Assert.Contains(reloaded.Rules, r => r.Id == "my-ticket" && r.Source == SecretRuleSet.UserSource);
+            Assert.False(SecretRuleSet.UsingOriginal);
+            Assert.Contains(reloaded.Rules, r => r.Id == "my-ticket" && SecretRuleSet.OriginOf(r.Id) == SecretRuleSet.YoursOrigin);
             Assert.Single(reloaded.Find("see TKT-1234"));
+
+            var reset = SecretRuleSet.ResetUserFile();
+
+            Assert.DoesNotContain(reset.Rules, r => r.Id == "my-ticket");
+            Assert.Equal(Scanner.RuleCount, reset.RuleCount);
+            Assert.Contains("my-ticket", File.ReadAllText(SecretRuleSet.BackupFilePath));
         }
         finally
         {
-            SecretRuleSet.DirectoryOverride = null;
+            SecretRuleSet.DirectoryOverride = TestRulesDirectory.Path;
             SecretRuleSet.Reload();
             Directory.Delete(dir, recursive: true);
         }

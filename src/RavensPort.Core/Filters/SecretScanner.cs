@@ -108,7 +108,7 @@ public sealed class SecretScanner
             {
                 switch (section)
                 {
-                    case "[allowlist]":
+                    case "[allowlist]" or "[[allowlists]]":
                         allowlist = new Allowlist();
                         _global.Add(allowlist);
                         rule = null;
@@ -290,22 +290,29 @@ public sealed class SecretScanner
 }
 
 /// <summary>
-/// The secret rules in use: gitleaks', RavensPort's and the user's own file, which lives on this
-/// PC (not in the vault — gitleaks' rule set alone is larger than a vault note can be) and is read
-/// again when the user asks.
+/// The secret rules in use: one file, the user's — %LocalAppData%\RavensPort\filters\secret-rules.toml.
+/// It is the whole configuration: whatever rules it holds are the rules, and the user adds, edits
+/// and deletes them freely. Until it exists, and after a reset, it is the original: gitleaks' rule
+/// set, RavensPort's rules and the strict rules, in one file. It lives on this PC, not in the vault
+/// — gitleaks' rules alone are larger than a vault note can be.
 /// </summary>
 public static class SecretRuleSet
 {
-    public const string GitleaksSource = "gitleaks";
-    public const string RavensPortSource = "RavensPort";
-    public const string UserSource = "your rules";
+    public const string UserSource = "your rules file";
+
+    /// <summary>Where a rule came from, judged by its id: for the UI's counts and tooltips.</summary>
+    public const string GitleaksOrigin = "gitleaks", RavensPortOrigin = "RavensPort", StrictOrigin = "strict", YoursOrigin = "yours";
 
     internal static string? DirectoryOverride { get; set; }
 
-    /// <summary>Where the user's rules file is: %LocalAppData%\RavensPort\filters\secret-rules.toml.</summary>
     public static string UserFilePath => Path.Combine(
         DirectoryOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RavensPort", "filters"),
         "secret-rules.toml");
+
+    public static string BackupFilePath => UserFilePath + ".bak";
+
+    /// <summary>True while there is no file of the user's yet, so the original rules apply.</summary>
+    public static bool UsingOriginal => !File.Exists(UserFilePath);
 
     private static SecretScanner? _current;
     private static readonly Lock Gate = new();
@@ -321,7 +328,7 @@ public static class SecretRuleSet
         }
     }
 
-    /// <summary>Reads every source again — after the user saved their file.</summary>
+    /// <summary>Reads the file again — after the user saved it.</summary>
     public static SecretScanner Reload()
     {
         var scanner = Build();
@@ -334,26 +341,77 @@ public static class SecretRuleSet
 
     private static SecretScanner Build()
     {
-        var sources = new List<(string, string)>
+        string rules;
+        try
         {
-            (GitleaksSource, Embedded("RavensPort.Core.Filters.gitleaks.toml")),
-            (RavensPortSource, Embedded("RavensPort.Core.Filters.ravensport.toml")),
-        };
-
-        if (File.Exists(UserFilePath))
+            rules = File.Exists(UserFilePath) ? File.ReadAllText(UserFilePath) : OriginalRules;
+        }
+        catch (IOException)
         {
-            try
-            {
-                sources.Add((UserSource, File.ReadAllText(UserFilePath)));
-            }
-            catch (IOException)
-            {
-                // Open in an editor with a lock, say. The built-in rules still apply; Reload tries again.
-            }
+            // Locked by an editor mid-save, say. Better the original than no rules; Reload tries again.
+            rules = OriginalRules;
         }
 
-        return new SecretScanner(sources);
+        return new SecretScanner(rules, UserSource);
     }
+
+    /// <summary>The user's rules file, written with the original rules the first time it is asked for.</summary>
+    public static string EnsureUserFile()
+    {
+        if (!File.Exists(UserFilePath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(UserFilePath)!);
+            File.WriteAllText(UserFilePath, OriginalRules);
+        }
+        return UserFilePath;
+    }
+
+    /// <summary>Puts the original rules back. The file being replaced is kept as secret-rules.toml.bak.</summary>
+    public static SecretScanner ResetUserFile()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(UserFilePath)!);
+        if (File.Exists(UserFilePath)) File.Copy(UserFilePath, BackupFilePath, overwrite: true);
+        File.WriteAllText(UserFilePath, OriginalRules);
+        return Reload();
+    }
+
+    /// <summary>
+    /// The original rules file: gitleaks' rule set, RavensPort's rules and the strict rules, in one
+    /// valid TOML document — one title, and global allowlists as [[allowlists]] entries, which
+    /// gitleaks itself reads.
+    /// </summary>
+    public static string OriginalRules => _original.Value;
+
+    private static readonly Lazy<string> _original = new(() =>
+        Header +
+        $"\n# ===== gitleaks {SecretScanner.GitleaksVersion} rules (MIT, Copyright (c) 2019 Zachary Rice) =====\n\n" +
+        AsPart(Embedded("RavensPort.Core.Filters.gitleaks.toml")) +
+        "\n# ===== RavensPort rules: passwords, usernames, tokens and fields named like them =====\n\n" +
+        AsPart(Embedded("RavensPort.Core.Filters.ravensport.toml")) +
+        "\n# ===== Strict rules: broad generic patterns =====\n\n" +
+        AsPart(Embedded("RavensPort.Core.Filters.strict.toml")));
+
+    private const string Header = """
+        # RavensPort's secret rules (step 1, Secrets), in gitleaks' format:
+        # https://github.com/gitleaks/gitleaks#configuration
+        #
+        # This file is the whole configuration: the rules here are the rules step 1 uses, all on. Add,
+        # edit or delete any of them. To turn one off for a single profile instead, use that profile's
+        # Secrets step. "Reset rules" on the Filters tab brings back this original file (yours is kept
+        # as secret-rules.toml.bak). After saving, press "Reload rules".
+        #
+        # Rules run with .NET's linear-time regex engine (like gitleaks' Go RE2): no lookarounds and no
+        # backreferences. Besides gitleaks' fields, a rule can have `keyName`: it then matches the value
+        # of a JSON field whose name matches the keyName regex.
+
+        title = "RavensPort secret rules"
+
+        """;
+
+    /// <summary>One embedded file as part of the combined one: no title of its own, global allowlists as entries.</summary>
+    private static string AsPart(string toml) => string.Join('\n', toml.Replace("\r\n", "\n").Split('\n')
+        .Where(line => !line.StartsWith("title ", StringComparison.Ordinal) && !line.StartsWith("minVersion ", StringComparison.Ordinal))
+        .Select(line => line.Trim() == "[allowlist]" ? "[[allowlists]]" : line)) + "\n";
 
     private static string Embedded(string name)
     {
@@ -363,22 +421,15 @@ public static class SecretRuleSet
         return reader.ReadToEnd();
     }
 
-    /// <summary>
-    /// The user's rules file, created the first time it is asked for from RavensPort's strict
-    /// starter rules (Rules/secret-rules.default.toml) — a full file to edit, not an empty one.
-    /// </summary>
-    public static string EnsureUserFile()
-    {
-        if (!File.Exists(UserFilePath))
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(UserFilePath)!);
-            File.WriteAllText(UserFilePath, DefaultUserRules);
-        }
-        return UserFilePath;
-    }
+    private static readonly Lazy<HashSet<string>> GitleaksIds = new(() =>
+        [.. System.Text.RegularExpressions.Regex.Matches(Embedded("RavensPort.Core.Filters.gitleaks.toml"), "(?m)^id = \"([^\"]+)\"").Select(m => m.Groups[1].Value)]);
 
-    /// <summary>The strict starter rules a new user rules file is written with.</summary>
-    public static string DefaultUserRules => Embedded("RavensPort.Core.Filters.secret-rules.default.toml");
+    /// <summary>Where a rule came from: gitleaks, RavensPort, strict, or the user's own.</summary>
+    public static string OriginOf(string id) =>
+        id.StartsWith("ravensport-", StringComparison.Ordinal) ? RavensPortOrigin
+        : id.StartsWith("strict-", StringComparison.Ordinal) ? StrictOrigin
+        : GitleaksIds.Value.Contains(id) ? GitleaksOrigin
+        : YoursOrigin;
 }
 
 /// <summary>
