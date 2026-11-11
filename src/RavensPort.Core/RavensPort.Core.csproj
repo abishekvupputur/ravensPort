@@ -71,10 +71,10 @@
       System.Security.Cryptography.ProtectedData is gone with SecureStore: DPAPI was the whole of
       the old local store, and secrets now live in the user's password manager instead.
     -->
-    <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="3.10.2" />
-    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="3.10.2" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.78.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="3.11.0" />
+    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="3.11.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.1" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageReference Include="IdentityModel.OidcClient" Version="6.0.0" />
   </ItemGroup>
