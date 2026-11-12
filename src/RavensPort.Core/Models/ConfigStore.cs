@@ -1,4 +1,4 @@
-namespace RavensPort.Core.Models;
+﻿namespace RavensPort.Core.Models;
 
 /// <summary>
 /// Everything the app knows, as one object graph. Versioning lives on the vault document that
@@ -12,5 +12,9 @@ public sealed class ConfigStore
     public List<McpSourceRecord> McpSources { get; set; } = [];
     public List<McpFunnelRecord> McpFunnels { get; set; } = [];
     public List<McpApiBridgeRecord> McpApiBridges { get; set; } = [];
+    public List<EmbeddingProviderRecord> EmbeddingProviders { get; set; } = [];
+    public List<EntityModelRecord> EntityModels { get; set; } = [];
+    public List<DecisionModelRecord> DecisionModels { get; set; } = [];
+    public List<FilterProfileRecord> FilterProfiles { get; set; } = [];
     public AppSettings Settings { get; set; } = new();
 }

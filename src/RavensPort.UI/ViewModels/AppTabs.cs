@@ -1,4 +1,4 @@
-namespace RavensPort.UI.ViewModels;
+﻿namespace RavensPort.UI.ViewModels;
 
 /// <summary>
 /// The tabs of the main window, as one dependency.
@@ -13,12 +13,14 @@ public sealed class AppTabs(
     RoutesViewModel routes,
     ApiBridgeViewModel apiBridges,
     McpFunnelViewModel funnels,
+    FiltersViewModel filters,
     SettingsViewModel settings)
 {
     public CredentialsViewModel Credentials { get; } = credentials;
     public RoutesViewModel Routes { get; } = routes;
     public ApiBridgeViewModel ApiBridges { get; } = apiBridges;
     public McpFunnelViewModel Funnels { get; } = funnels;
+    public FiltersViewModel Filters { get; } = filters;
     public SettingsViewModel Settings { get; } = settings;
 
     /// <summary>
@@ -33,6 +35,7 @@ public sealed class AppTabs(
         Routes.Reload();
         ApiBridges.Reload();
         Funnels.Reload();
+        Filters.Reload();
         Settings.Reload();
     }
 }

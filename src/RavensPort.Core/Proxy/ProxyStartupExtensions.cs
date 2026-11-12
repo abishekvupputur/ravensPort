@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using RavensPort.Core.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +6,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RavensPort.Core.Auth;
 using RavensPort.Core.Diagnostics;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Storage;
 using RavensPort.Core.Vault;
@@ -175,6 +176,8 @@ public static class ProxyStartupExtensions
 
         services.AddSingleton<McpSourceConnectionPool>();
         services.AddSingleton<McpCatalogCache>();
+        services.AddSingleton<EmbeddingClientFactory>();
+        services.AddSingleton<FilterService>();
         services.AddSingleton<McpFunnelHandlerFactory>();
         services.AddSingleton<McpApiBridgeHandlerFactory>();
 

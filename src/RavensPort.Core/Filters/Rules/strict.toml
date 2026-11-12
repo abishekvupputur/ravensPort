@@ -1,0 +1,96 @@
+# RavensPort strict rules: broad generic patterns, part of the original secret-rules.toml.
+
+# ---- API keys ---------------------------------------------------------------------------
+
+[[rules]]
+id = "strict-generic-api-key"
+description = "Any value assigned to an API-key-like name (api_key, x-api-key, access_key, secret_key, client_secret, app_secret)."
+regex = '''(?i)\b(?:x-)?(?:api|access|secret|app|client|master|private|service)[_-]?(?:key|secret|token)\b["']?\s*(?::=|=>|[:=])\s*["']?([A-Za-z0-9_\-+/=.]{16,})'''
+entropy = 3.0
+keywords = ["key", "secret", "token"]
+
+[[rules]]
+id = "strict-prefixed-key"
+description = "Keys with a well-known shape: sk-…, pk_live_…, rk_test_…, sk-proj-…, sk-ant-…"
+regex = '''\b((?:sk|pk|rk|ak)[-_](?:live|test|prod|proj|ant)?[-_]?[A-Za-z0-9_-]{20,})'''
+keywords = ["sk-", "sk_", "pk_", "rk_", "ak_", "pk-", "rk-", "ak-"]
+
+# ---- JWTs -------------------------------------------------------------------------------
+
+[[rules]]
+id = "strict-jwt"
+description = "A JSON Web Token: base64url header.payload.signature (also unsigned tokens with an empty signature)."
+regex = '''\b(eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)'''
+keywords = ["eyj"]
+
+# ---- access and refresh tokens ----------------------------------------------------------
+
+[[rules]]
+id = "strict-token-assignment"
+description = "access_token / refresh_token / id_token / session_token / auth_token / oauth_token = …"
+regex = '''(?i)\b(?:access|refresh|id|session|auth|oauth|bearer)[_-]?token\b["']?\s*(?::=|=>|[:=])\s*["']?([A-Za-z0-9._~+/=-]{16,})'''
+keywords = ["token"]
+
+[[rules]]
+id = "strict-token-in-url"
+description = "Tokens or OAuth codes in a URL query: ?access_token=…, &refresh_token=…, &code=…"
+regex = '''(?i)[?&](?:access_token|refresh_token|id_token|token|code|api_key|apikey|key|sig|signature)=([^&\s"'#]{16,})'''
+keywords = ["token=", "code=", "key=", "sig="]
+
+[[rules]]
+id = "strict-bearer"
+description = "An Authorization header with any scheme that carries a credential: Bearer, Token, Basic, Digest."
+regex = '''(?i)\bauthorization["']?\s*[:=]\s*["']?(?:bearer|token|basic|digest)\s+([A-Za-z0-9._~+/=-]{8,})'''
+keywords = ["authorization"]
+
+[[rules]]
+id = "strict-session-cookie"
+description = "A session or auth cookie value: Cookie / Set-Cookie with session, sid, auth or token in its name."
+regex = '''(?i)\b(?:set-)?cookie\s*:[^\n]*?\b[\w.-]*(?:session|sess|sid|auth|token)[\w.-]*=([A-Za-z0-9%._~+/=-]{16,})'''
+keywords = ["cookie"]
+
+# ---- keys and certificates --------------------------------------------------------------
+
+[[rules]]
+id = "strict-pem-private-key"
+description = "Any PEM private key: RSA, EC, DSA, OPENSSH, ENCRYPTED, PGP PRIVATE KEY BLOCK."
+regex = '''-----BEGIN[ A-Z0-9]*PRIVATE KEY(?: BLOCK)?-----'''
+keywords = ["private key"]
+
+[[rules]]
+id = "strict-pem-certificate"
+description = "A PEM certificate or certificate request. Not secret on its own, but often pasted next to its key."
+regex = '''-----BEGIN (?:CERTIFICATE|CERTIFICATE REQUEST|NEW CERTIFICATE REQUEST|X509 CRL|TRUSTED CERTIFICATE)-----'''
+keywords = ["begin certificate", "begin new certificate", "begin x509", "begin trusted"]
+
+[[rules]]
+id = "strict-der-base64"
+description = "A long base64 DER blob (MII…): an encoded certificate, key or PKCS#12 bundle without PEM headers."
+regex = '''\b(MII[A-Za-z0-9+/]{120,}={0,2})'''
+keywords = ["mii"]
+
+[[rules]]
+id = "strict-ssh-private-key-file"
+description = "A path to an SSH or TLS private key file being read or sent."
+regex = '''(?i)(?:^|[\\/\s"'])((?:id_rsa|id_ecdsa|id_ed25519|id_dsa)|[\w.-]+\.(?:pem|key|p12|pfx|jks|keystore|ppk))\b'''
+keywords = ["id_", ".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".ppk"]
+
+# ---- other sensitive things -------------------------------------------------------------
+
+[[rules]]
+id = "strict-connection-string-password"
+description = "A password inside a connection string: Server=…;Password=…, Data Source=…;Pwd=…"
+regex = '''(?i)(?:server|host|data source|address)\s*=[^;"\n]+;[^"\n]*?\b(?:password|pwd)\s*=\s*([^;"'\s]{3,})'''
+keywords = ["password=", "pwd="]
+
+[[rules]]
+id = "strict-cloud-account-key"
+description = "Azure storage AccountKey=… and SharedAccessKey=…, AWS aws_secret_access_key = …"
+regex = '''(?i)(?:accountkey|sharedaccesskey|aws_?secret_?access_?key)["']?\s*[:=]\s*["']?([A-Za-z0-9+/=]{30,})'''
+keywords = ["accountkey", "sharedaccesskey", "secret_access_key", "secretaccesskey"]
+
+[[rules]]
+id = "strict-webhook-url"
+description = "Webhook URLs that grant posting rights: Slack, Discord, Teams, Google Chat."
+regex = '''(https://(?:hooks\.slack\.com/services|discord(?:app)?\.com/api/webhooks|[\w.-]+\.webhook\.office\.com/webhookb2|chat\.googleapis\.com/v1/spaces)/[^\s"'<>]{20,})'''
+keywords = ["hooks.slack.com", "/api/webhooks", "webhook.office.com", "chat.googleapis.com"]

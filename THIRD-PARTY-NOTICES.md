@@ -51,6 +51,21 @@ entirely, so they still ship as real assemblies beside `RavensPort.dll`.
 The list is the resolved set in `packages.lock.json`; regenerate it from there after a dependency
 or target-framework change rather than editing by hand.
 
+### Call filters: models runtime and rules
+
+| Component | Version | License |
+|---|---|---|
+| Microsoft.ML.OnnxRuntime.DirectML (Windows build: ONNX Runtime with DirectML, `onnxruntime.dll`, `DirectML.dll`) | 1.24.4 | MIT (DirectML redistributable: Microsoft's DirectML licence terms, which permit redistribution with an application) |
+| Microsoft.ML.OnnxRuntime (other builds, CPU only) | 1.31.1 | MIT |
+| Microsoft.ML.Tokenizers | 2.0.1 | MIT |
+| Tokenizers.DotNet (+ native `hf_tokenizers` runtimes for win-x64, linux-x64, linux-arm64; Hugging Face tokenizers, Apache-2.0) | 1.4.1 | MIT |
+| gitleaks rule set (`src/RavensPort.Core/Filters/Rules/gitleaks.toml`, embedded unchanged) | v8.30.1 | MIT — Copyright (c) 2019 Zachary Rice; full text in `src/RavensPort.Core/Filters/Rules/gitleaks.LICENSE` |
+
+No model is bundled. Embedding, entity and decision models (for example stella-en-400M-v5, MIT;
+onnx-community/gliner_multi_pii-v1, Apache-2.0; convaiinnovations/laya, Apache-2.0; or a
+zero-shot NLI model) are downloaded by the user and stay under their own licences. Step 5's Laya
+sequence layout follows the Laya SDK (github.com/NandhaKishorM/laya, Apache-2.0).
+
 ### Windows SDK projection
 
 | Component | Version | License |

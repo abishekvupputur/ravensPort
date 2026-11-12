@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using RavensPort.Core.Filters;
 using RavensPort.Core.Diagnostics;
 using RavensPort.Core.Mcp;
 using RavensPort.Core.Models;
@@ -124,7 +125,7 @@ internal sealed class FunnelTestHost : IAsyncDisposable
         proxy.MapMcpFunnel();
         proxy.UseMcpApiBridgeGate();
         proxy.MapMcpApiBridge();
-        proxy.MapReverseProxy();
+        proxy.MapRavensPortProxy();
 
         await proxy.StartAsync();
 

@@ -166,6 +166,10 @@ An agent choosing between one tool's three values does better than the same agen
                         <ContentControl Content="{Binding SelectedBridge.Key}"
                                         ContentTemplate="{StaticResource ProxyKeyEditorTemplate}"/>
 
+                        <!-- What this bridge's tool calls are checked for before they reach the API. -->
+                        <ContentControl Margin="0,10,0,0" Content="{Binding SelectedBridge.FilterProfile}"
+                                        ContentTemplate="{StaticResource FilterProfilePickerTemplate}"/>
+
                         <TextBlock Text="MCP client entry" Classes="label" Margin="0,10,0,0"
                                    ToolTip.Tip="Paste into your client's MCP config. The key travels in the X-Proxy-Key header — it is not read from the URL."/>
                         <TextBox Text="{Binding SelectedBridge.ClientConfigSnippet, Mode=OneWay}" IsReadOnly="True"

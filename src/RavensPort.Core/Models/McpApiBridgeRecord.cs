@@ -36,6 +36,9 @@ public sealed class McpApiBridgeRecord
     /// </summary>
     public Guid RouteId { get; set; }
 
+    /// <summary>The filter profile this bridge's tool calls are checked with. Null: not filtered.</summary>
+    public Guid? FilterProfileId { get; set; }
+
     /// <summary>
     /// Not written to the vault note — see <see cref="Storage.ManifestLocalStore"/>, the manifest's
     /// only home now. Every bridge still carries it in memory (and every tool call reads it from
