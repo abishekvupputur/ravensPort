@@ -83,14 +83,17 @@ INSTALLED_KB=$(du -sk "$STAGE/opt" | cut -f1)
 
 # --- metadata ------------------------------------------------------------------------------------
 # Depends is deliberately short. Everything .NET needs is inside the package; what is listed is what
-# Avalonia's X11 backend and libsecret load at run time and cannot bring with them.
+# Avalonia's X11 backend and libsecret load at run time and cannot bring with them, plus ICU, which
+# the self-contained runtime loads from the system (without it the app dies at startup on a minimal
+# install). ICU's package name carries its version, so each release's name is listed: 78 Ubuntu
+# 26.04, 77/76 Ubuntu 25.x and Debian 13, 74 Ubuntu 24.04, 72 Debian 12, 70 Ubuntu 22.04.
 cat > "$STAGE/DEBIAN/control" <<EOF
 Package: ravensport
 Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: libx11-6, libice6, libsm6, libfontconfig1, libsecret-1-0
+Depends: libx11-6, libice6, libsm6, libfontconfig1, libsecret-1-0, libicu78 | libicu77 | libicu76 | libicu74 | libicu72 | libicu70
 Recommends: gnome-keyring
 Installed-Size: ${INSTALLED_KB}
 Maintainer: RavensPort
