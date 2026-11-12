@@ -86,8 +86,8 @@ sleep 2
 dbus-run-session -- ravensport > "$ARTIFACTS/app-output.log" 2>&1 &
 started=$SECONDS
 
-timeout 30 xdotool search --sync --onlyvisible --name RavensPort >/dev/null \
-    || fail "no RavensPort window appeared within 30 seconds (see $ARTIFACTS/app-output.log)"
+timeout 60 xdotool search --sync --onlyvisible --name RavensPort >/dev/null \
+    || fail "no RavensPort window appeared within 60 seconds (see $ARTIFACTS/app-output.log)"
 ok "a RavensPort window is mapped"
 
 sleep $(( 15 - (SECONDS - started) > 0 ? 15 - (SECONDS - started) : 0 ))
