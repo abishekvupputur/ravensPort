@@ -2,6 +2,9 @@
 // File-based apps default to native AOT, which puts the ILCompiler for this machine's runtime in
 // packages.lock.json and then fails locked restore on any other OS. Nothing here needs AOT.
 #:property PublishAot=false
+// Pinned because a file-based app targets the newest SDK installed, and runner images now carry a
+// .NET 11 SDK next to the 10 that setup-dotnet asks for: net11.0 is not in packages.lock.json.
+#:property TargetFramework=net10.0
 
 // Builds the GitHub Pages site: site/index.html as the landing page, plus one page per wiki page
 // under docs/. The wiki stays the single place documentation is written; this only renders it.

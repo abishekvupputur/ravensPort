@@ -4,13 +4,13 @@
     "net10.0": {
       "Avalonia.Headless": {
         "type": "Direct",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "+iIeqFnh3/Z91hrQjlhpR6I72fV7q6zjAksQvenPblqgHvsF2PY63eXfBz7H7bmk0WHtuROiFQKLxx//AHInJQ==",
+        "requested": "[12.1.5, )",
+        "resolved": "12.1.5",
+        "contentHash": "0s3+IiZ/lP7A2R80OOFc3YiSK3qnWOLO9KVsMBGjLX/kg4JSsU2YJiAMNTZIihDmIOYV0VHECJCzsSNKCTMXww==",
         "dependencies": {
-          "Avalonia": "12.1.1",
-          "Avalonia.Fonts.Inter": "12.1.1",
-          "Avalonia.HarfBuzz": "12.1.1"
+          "Avalonia": "12.1.5",
+          "Avalonia.Fonts.Inter": "12.1.5",
+          "Avalonia.HarfBuzz": "12.1.5"
         }
       },
       "coverlet.collector": {
@@ -89,10 +89,10 @@
       },
       "Avalonia.Fonts.Inter": {
         "type": "Transitive",
-        "resolved": "12.1.1",
-        "contentHash": "V2d7OM1jybcl31KThdhf8XSl5SjQ6Ll/tXIfwQ00kMeWuPegRcOx8DLVpECHOOEKO9JZelXW0enuUu1D7Svikg==",
+        "resolved": "12.1.5",
+        "contentHash": "SeFNLktbuxrHxUzPjYubzWB1O9HVCNo3IezZZ9SgkFBAcKcSYrY2KcD8lfP7QWMGxPUvqdLyn0TmioR9d3nZUg==",
         "dependencies": {
-          "Avalonia": "12.1.1"
+          "Avalonia": "12.1.5"
         }
       },
       "Avalonia.FreeDesktop": {
@@ -537,8 +537,8 @@
           "Avalonia.Controls.DataGrid": "[12.1.2, )",
           "Avalonia.Desktop": "[12.1.5, )",
           "Avalonia.Themes.Fluent": "[12.1.5, )",
-          "RavensPort.Core": "[5.0.3, )",
-          "RavensPort.UI": "[5.0.3, )"
+          "RavensPort.Core": "[5.0.4, )",
+          "RavensPort.UI": "[5.0.4, )"
         }
       },
       "ravensport.core": {
@@ -556,20 +556,20 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "RavensPort.Core": "[5.0.3, )"
+          "RavensPort.Core": "[5.0.4, )"
         }
       }
     },
     "net10.0-windows10.0.19041": {
       "Avalonia.Headless": {
         "type": "Direct",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "+iIeqFnh3/Z91hrQjlhpR6I72fV7q6zjAksQvenPblqgHvsF2PY63eXfBz7H7bmk0WHtuROiFQKLxx//AHInJQ==",
+        "requested": "[12.1.5, )",
+        "resolved": "12.1.5",
+        "contentHash": "0s3+IiZ/lP7A2R80OOFc3YiSK3qnWOLO9KVsMBGjLX/kg4JSsU2YJiAMNTZIihDmIOYV0VHECJCzsSNKCTMXww==",
         "dependencies": {
-          "Avalonia": "12.1.1",
-          "Avalonia.Fonts.Inter": "12.1.1",
-          "Avalonia.HarfBuzz": "12.1.1"
+          "Avalonia": "12.1.5",
+          "Avalonia.Fonts.Inter": "12.1.5",
+          "Avalonia.HarfBuzz": "12.1.5"
         }
       },
       "coverlet.collector": {
@@ -648,10 +648,10 @@
       },
       "Avalonia.Fonts.Inter": {
         "type": "Transitive",
-        "resolved": "12.1.1",
-        "contentHash": "V2d7OM1jybcl31KThdhf8XSl5SjQ6Ll/tXIfwQ00kMeWuPegRcOx8DLVpECHOOEKO9JZelXW0enuUu1D7Svikg==",
+        "resolved": "12.1.5",
+        "contentHash": "SeFNLktbuxrHxUzPjYubzWB1O9HVCNo3IezZZ9SgkFBAcKcSYrY2KcD8lfP7QWMGxPUvqdLyn0TmioR9d3nZUg==",
         "dependencies": {
-          "Avalonia": "12.1.1"
+          "Avalonia": "12.1.5"
         }
       },
       "Avalonia.FreeDesktop": {
@@ -1084,8 +1084,8 @@
           "Avalonia.Controls.DataGrid": "[12.1.2, )",
           "Avalonia.Desktop": "[12.1.5, )",
           "Avalonia.Themes.Fluent": "[12.1.5, )",
-          "RavensPort.Core": "[5.0.3, )",
-          "RavensPort.UI": "[5.0.3, )"
+          "RavensPort.Core": "[5.0.4, )",
+          "RavensPort.UI": "[5.0.4, )"
         }
       },
       "ravensport.core": {
@@ -1103,7 +1103,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "RavensPort.Core": "[5.0.3, )"
+          "RavensPort.Core": "[5.0.4, )"
         }
       }
     }
