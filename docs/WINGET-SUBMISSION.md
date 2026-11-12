@@ -104,8 +104,8 @@ credential.
 The same two scripts, which is the point of them being scripts:
 
 ```powershell
-python packaging/update-winget-manifests.py --version 5.0.3 --sha256 <hash of the published asset>
-python packaging/submit-winget-pr.py --version 5.0.3 --fork <you>/winget-pkgs
+python packaging/update-winget-manifests.py --version 5.0.4 --sha256 <hash of the published asset>
+python packaging/submit-winget-pr.py --version 5.0.4 --fork <you>/winget-pkgs
 ```
 
 `gh` supplies the credentials. The manual route below still works too, and is worth reading once
@@ -131,7 +131,7 @@ for what the automation is actually doing.
    the publisher, lowercased, then the two halves of the identifier, then the version:
 
    ```
-   manifests/a/AbishekNarasimhan/RavensPort/5.0.3/
+   manifests/a/AbishekNarasimhan/RavensPort/5.0.4/
    ```
 
 3. **Open the PR** against `microsoft/winget-pkgs` `master`, one package version per PR. Azure
@@ -150,8 +150,8 @@ for what the automation is actually doing.
 ```powershell
 winget install Microsoft.WingetCreate
 wingetcreate update AbishekNarasimhan.RavensPort `
-  --version 5.0.3 `
-  --urls https://github.com/abishekvupputur/ravensPort/releases/download/v5.0.3/RavensPort-Setup-5.0.3.exe `
+  --version 5.0.4 `
+  --urls https://github.com/abishekvupputur/ravensPort/releases/download/v5.0.4/RavensPort-Setup-5.0.4.exe `
   --submit
 ```
 
