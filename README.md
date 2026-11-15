@@ -6,7 +6,8 @@
 
 <p align="center">
   <b>A local MCP gateway: give each AI agent its own MCP endpoint, choose exactly which tools it
-  sees, turn any REST API or OpenAPI spec into MCP tools, and let RavensPort handle the OAuth.</b>
+  sees, check every call for secrets, personal data and risky actions before it leaves your PC,
+  turn any REST API or OpenAPI spec into MCP tools, and let RavensPort handle the OAuth.</b>
 </p>
 
 <p align="center">

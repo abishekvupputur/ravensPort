@@ -290,6 +290,30 @@ public class FilterServiceTests
     }
 
     [Fact]
+    public async Task Entities_EveryOccurrenceIsReplacedForStep4_EvenOneTheModelReadAcrossAPlaceholder()
+    {
+        // The model reports each occurrence of the name, and one span that runs into step 2's
+        // placeholder. None of the name may reach step 4.
+        var (service, filters, model) = Pipeline(entityModel: text =>
+        {
+            var found = new List<Entity>();
+            for (var at = text.IndexOf("John Doe", StringComparison.Ordinal); at >= 0; at = text.IndexOf("John Doe", at + 1, StringComparison.Ordinal))
+                found.Add(new Entity(at, "John Doe".Length, "person", 0.99));
+            var jane = text.IndexOf("Jane Doe [", StringComparison.Ordinal);
+            if (jane >= 0) found.Add(new Entity(jane, text.IndexOf(']', jane) + 1 - jane, "person", 0.9));
+            return found;
+        });
+
+        await service.RunAsync(filters, "note", Args(new
+        {
+            text = "John Doe asked; tell John Doe the tables are dropped",
+            other = "Jane Doe jane.doe@example.com wants the tables dropped",
+        }), default);
+
+        Assert.DoesNotContain(model.Seen, t => t.Contains("John") || t.Contains("Jane Doe"));
+    }
+
+    [Fact]
     public async Task AnEntityModelThatFails_ReportsTheCallRatherThanWavingItThrough()
     {
         var (service, filters, _) = Pipeline(entities: FilterAction.Block, entityModel: _ => throw new InvalidOperationException("model missing"));
