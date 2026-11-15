@@ -50,7 +50,7 @@ public sealed record FilterOutcome(
 ///
 /// Fails closed: a model that cannot load or answer, or a pattern that throws, counts as a match.
 /// </summary>
-public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory clients)
+public sealed partial class FilterService(ConfigStoreCache store, EmbeddingClientFactory clients)
 {
     private const int MinTextChars = 8;
     private const int MaxTexts = 32;
@@ -181,7 +181,7 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
                     foreach (var entity in await find(redacted, entities.EntityLabels, threshold, ct).ConfigureAwait(false))
                     {
                         var value = redacted.Substring(entity.Start, entity.Length);
-                        foreach (var piece in Placeholder.Split(value).Select(p => p.Trim()).Where(p => p.Length > 0))
+                        foreach (var piece in Placeholder().Split(value).Select(p => p.Trim()).Where(p => p.Length > 0))
                             for (var at = texts[i].Text.IndexOf(piece, StringComparison.Ordinal); at >= 0;
                                  at = texts[i].Text.IndexOf(piece, at + piece.Length, StringComparison.Ordinal))
                                 spans[i].Add(new Span(at, piece.Length, entity.Label));
@@ -242,7 +242,8 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
     }
 
     /// <summary>A step's replacement in redacted text: [Email address], [person].</summary>
-    private static readonly System.Text.RegularExpressions.Regex Placeholder = new(@"\[[^\[\]]*\]");
+    [System.Text.RegularExpressions.GeneratedRegex(@"\[[^\[\]]*\]", System.Text.RegularExpressions.RegexOptions.None, 1000)]
+    private static partial System.Text.RegularExpressions.Regex Placeholder();
 
     private static bool Blocked(List<FilterHit> hits, FilterCategory step) =>
         hits.Any(h => h.Category == step && h.Action == FilterAction.Block);
