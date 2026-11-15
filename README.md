@@ -55,6 +55,8 @@ platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
   your `mcp.json`.
 - **No MCP server at all.** The system you want the agent to reach often has only a REST API.
   RavensPort turns that API into MCP tools without you writing an MCP server.
+- **No say over what leaves.** An agent can paste a key, a customer's address or a
+  `DROP TABLE` into any call. RavensPort checks every call before any server sees it, on your PC.
 
 ## What it does
 
@@ -66,7 +68,10 @@ platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
   GPU, Ollama, llama.cpp, OpenAI or Voyage AI), and your own statements answered with a
   probability by a decision model (TypeSafe Jev, Laya, or any zero-shot / cross-encoder ONNX
   model on CPU or GPU). Each step's matches are replaced before the next reads the call; matched
-  values are never logged
+  values are never logged. Set up as profiles and chosen per route, bridge, funnel or upstream
+  ([how](https://github.com/abishekvupputur/ravensPort/wiki/Call-filters))
+
+  ![The Filters tab: a profile for calls that leave the network, with all five steps set](media/filtersScreen.png)
 - **API to MCP** — turn a REST API you already proxy into an MCP server from a JSON manifest, or
   import an OpenAPI (Swagger) spec and pick which of its operations become tools
 - **OAuth2, handled** — Google, GitHub, Nextcloud or any custom provider; device-code sign-in;
@@ -124,6 +129,7 @@ Everything lives in the **[wiki](https://github.com/abishekvupputur/ravensPort/w
 | [Setting up a route](https://github.com/abishekvupputur/ravensPort/wiki/Routes) | Proxying an upstream, and choosing how the credential is sent |
 | [API to MCP](https://github.com/abishekvupputur/ravensPort/wiki/API-to-MCP) | Manifests, variants, and importing an OpenAPI document |
 | [MCP Funnel](https://github.com/abishekvupputur/ravensPort/wiki/MCP-Funnel) | Pooling sources into one endpoint and filtering what it exposes |
+| [Call filters](https://github.com/abishekvupputur/ravensPort/wiki/Call-filters) | Profiles, the five steps, models on CPU or GPU, and the secret rules |
 | [Calling the proxy](https://github.com/abishekvupputur/ravensPort/wiki/Calling-the-proxy) | Proxy keys, how long they last, and why there is one per endpoint |
 | [Client certificates (mTLS)](https://github.com/abishekvupputur/ravensPort/wiki/Client-certificates) | Requiring a certificate as well as a key |
 | [Where your configuration lives](https://github.com/abishekvupputur/ravensPort/wiki/Configuration-and-storage) | What is in the vault, what is on disk, and what syncs |
