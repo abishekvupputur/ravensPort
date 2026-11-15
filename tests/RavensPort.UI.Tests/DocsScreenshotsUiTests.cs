@@ -142,6 +142,19 @@ public class DocsScreenshotsUiTests
         drive.Tools.IsExpanded = true;
         Snap(window, "mcpFunnelScreen");
 
+        // The profile for calls that leave the network, opened and scrolled to, so its five steps
+        // are on screen rather than the Models and Secrets cards above it.
+        SelectTab(window, 4);
+        var filters = harness.Services.GetRequiredService<FiltersViewModel>();
+        filters.Reload();
+        filters.Profiles.First(p => p.Name == "Leaves the network").IsExpanded = true;
+        window.UpdateLayout();
+        var filtersView = window.GetVisualDescendants().OfType<FiltersView>().First();
+        filtersView.GetVisualDescendants().OfType<Expander>()
+            .First(e => e.DataContext is ProfileItemViewModel { Name: "Leaves the network" })
+            .BringIntoView();
+        Snap(window, "filtersScreen");
+
         // Recent activity as a day with these routes would log it, in the app's own line formats.
         // The real log at this point holds only the harness's startup, which no reader would
         // recognise. Set straight on the view model: the 2s refresh does not run before the snap.
@@ -376,8 +389,57 @@ public class DocsScreenshotsUiTests
             },
         ];
 
+        // Two profiles: everything on for funnels whose calls leave the network, secrets only for
+        // the internal one. The model paths are where someone would unpack them; nothing loads.
+        var gliner = new EntityModelRecord { Name = "gliner_multi_pii-v1", ModelPath = @"C:\Models\gliner_multi_pii-v1" };
+        var stella = new EmbeddingProviderRecord
+        {
+            Name = "stella-en-400M-v5", Kind = EmbeddingProviderKind.Onnx, ModelFolder = @"C:\Models\stella-en-400M-v5",
+        };
+        var deberta = new DecisionModelRecord
+        {
+            Name = "deberta-v3-base-zeroshot-v2.0", Kind = DecisionModelKind.ZeroShotOnnx,
+            ModelPath = @"C:\Models\deberta-v3-base-zeroshot-v2.0",
+        };
+        var strict = new FilterProfileRecord
+        {
+            Name = "Leaves the network",
+            Filters =
+            [
+                new() { Category = FilterCategory.Secrets, Level = FilterLevel.Strict },
+                new() { Category = FilterCategory.PersonalData, Level = FilterLevel.Strict },
+                new()
+                {
+                    Category = FilterCategory.Entities, Level = FilterLevel.Balanced, EntityModelId = gliner.Id,
+                    EntityLabels = ["person", "address", "medical condition"],
+                },
+                new()
+                {
+                    Category = FilterCategory.RiskyActions, Level = FilterLevel.Balanced, Action = FilterAction.Watch,
+                    EmbeddingProviderId = stella.Id, DenyInstructions = ["deletes files or databases", "transfers money"],
+                },
+                new()
+                {
+                    Category = FilterCategory.Decision, Level = FilterLevel.Balanced, DecisionModelId = deberta.Id,
+                    DenyInstructions = ["This text is about deleting files or data.", "This text is about sending money."],
+                },
+            ],
+        };
+        var internalOnly = new FilterProfileRecord
+        {
+            Name = "Trusted internal",
+            Filters = [new() { Category = FilterCategory.Secrets, Level = FilterLevel.Strict }],
+        };
+        funnels[0].FilterProfileId = strict.Id;
+        funnels[1].FilterProfileId = strict.Id;
+        funnels[2].FilterProfileId = internalOnly.Id;
+
         await harness.Services.GetRequiredService<ConfigStoreCache>().MutateAsync(s =>
         {
+            s.EntityModels.Add(gliner);
+            s.EmbeddingProviders.Add(stella);
+            s.DecisionModels.Add(deberta);
+            s.FilterProfiles.AddRange([strict, internalOnly]);
             s.Credentials.AddRange([github, google, maps, tailscale, reports, billing]);
             s.Upstreams.AddRange(upstreams.Values);
             s.Routes.AddRange(routes);
