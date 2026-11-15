@@ -32,7 +32,8 @@
       <img class="logo" src="media/logo.png" alt="RavensPort logo">
       <h1>RavensPort</h1>
       <p class="tagline">Give each AI agent its own MCP endpoint, pooling the servers you choose and
-        exposing only the tools you allow, with OAuth handled for you.</p>
+        exposing only the tools you allow, with OAuth handled for you and every call checked before it
+        leaves your PC.</p>
 
       <div class="install">
         <span class="prompt">&gt;</span>
@@ -63,7 +64,8 @@
         <p class="lead">MCP servers are increasingly behind OAuth2, but most MCP clients expect a bare
           HTTP endpoint with no auth story. Connect three servers and your agent sees all ninety of their
           tools, with no way to say "this agent gets these six". And the system you actually wanted it to
-          reach often has no MCP server at all, just the REST API it has always had.</p>
+          reach often has no MCP server at all, just the REST API it has always had. And nothing stops an
+          agent pasting a key or a customer's address into a call.</p>
         <div class="cards">
           <div class="card">
             <h3>Routes</h3>
@@ -79,6 +81,12 @@
             <h3>API bridges</h3>
             <p>Turn an API you already proxy into an MCP endpoint of your own, from a JSON manifest or an
               OpenAPI document. <a href="docs/API-to-MCP.html">API to MCP →</a></p>
+          </div>
+          <div class="card">
+            <h3>Call filters</h3>
+            <p>Check every call before any server sees it: secrets, personal data and actions you deny
+              are blocked or logged, by rules and models that run on your PC.
+              <a href="docs/Call-filters.html">Call filters →</a></p>
           </div>
         </div>
         <div class="endpoint">http://127.0.0.1:5559/mcp/<b>&lt;agent&gt;</b></div>
@@ -135,6 +143,7 @@
           <figure><img src="media/apiMcpBridgeScreen.png" alt="API to MCP tab" loading="lazy"><figcaption>API to MCP</figcaption></figure>
           <figure><img src="media/openAPIPicker.png" alt="OpenAPI operation picker" loading="lazy"><figcaption>OpenAPI import</figcaption></figure>
           <figure><img src="media/mcpFunnelScreen.png" alt="MCP funnel" loading="lazy"><figcaption>MCP funnel</figcaption></figure>
+          <figure><img src="media/filtersScreen.png" alt="Filters tab" loading="lazy"><figcaption>Call filters</figcaption></figure>
         </div>
       </div>
     </section>
