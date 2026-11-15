@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using RavensPort.Core.Models;
 using RavensPort.Core.Storage;
@@ -174,14 +174,17 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
                 {
                     if (!texts[i].IsValue || texts[i].Text.Trim().Length < 3) continue;
 
-                    // Read the redacted text, then map what it finds back onto the original —
-                    // redaction never makes text longer than [name], so offsets are re-found by search.
+                    // Read the redacted text, then map what it finds back onto the original by
+                    // search: every occurrence, and for a value that runs across an earlier step's
+                    // [placeholder], the pieces either side of it — so none of it reaches step 4.
                     var redacted = FilterEngine.Redact(texts[i].Text, spans[i]);
                     foreach (var entity in await find(redacted, entities.EntityLabels, threshold, ct).ConfigureAwait(false))
                     {
                         var value = redacted.Substring(entity.Start, entity.Length);
-                        var at = texts[i].Text.IndexOf(value, StringComparison.Ordinal);
-                        if (at >= 0) spans[i].Add(new Span(at, value.Length, entity.Label));
+                        foreach (var piece in Placeholder.Split(value).Select(p => p.Trim()).Where(p => p.Length > 0))
+                            for (var at = texts[i].Text.IndexOf(piece, StringComparison.Ordinal); at >= 0;
+                                 at = texts[i].Text.IndexOf(piece, at + piece.Length, StringComparison.Ordinal))
+                                spans[i].Add(new Span(at, piece.Length, entity.Label));
 
                         AddOnce(hits, new FilterHit(FilterCategory.Entities, entities.Action, $"{entity.Label} ({entity.Score:0.00})", texts[i].Path));
                     }
@@ -237,6 +240,9 @@ public sealed class FilterService(ConfigStoreCache store, EmbeddingClientFactory
 
         return Outcome(null);
     }
+
+    /// <summary>A step's replacement in redacted text: [Email address], [person].</summary>
+    private static readonly System.Text.RegularExpressions.Regex Placeholder = new(@"\[[^\[\]]*\]");
 
     private static bool Blocked(List<FilterHit> hits, FilterCategory step) =>
         hits.Any(h => h.Category == step && h.Action == FilterAction.Block);

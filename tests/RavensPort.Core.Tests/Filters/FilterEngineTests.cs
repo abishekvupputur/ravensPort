@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using RavensPort.Core.Filters;
 using RavensPort.Core.Models;
 
@@ -142,6 +142,10 @@ public class FilterEngineTests
         var redacted = FilterEngine.Redact(text, [new Span(email, text.Length - email, "Email address"), new Span(0, "John Doe".Length, "person"), new Span(5, 3, "overlap")]);
 
         Assert.Equal("[person], [Email address]", redacted);
+
+        // A span that starts inside one already replaced but runs past it: its tail goes too.
+        Assert.Equal("[person]", FilterEngine.Redact("John Doe, jane@ex",
+            [new Span(0, 8, "person"), new Span(5, 12, "tail")]));
     }
 
     [Fact]

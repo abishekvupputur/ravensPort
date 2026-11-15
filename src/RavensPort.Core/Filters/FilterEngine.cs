@@ -85,7 +85,8 @@ public static class FilterEngine
         var at = 0;
         foreach (var span in ordered)
         {
-            if (span.Start < at) continue; // overlaps one already replaced
+            // Overlaps one already replaced: drop whatever of it runs past that one's end too.
+            if (span.Start < at) { at = Math.Max(at, span.Start + span.Length); continue; }
             sb.Append(text, at, span.Start - at).Append('[').Append(span.Name).Append(']');
             at = span.Start + span.Length;
         }
