@@ -17,6 +17,8 @@ using ImageMagick.Drawing;
         "OAuth2 for GitHub, Google or any provider. Tokens refresh in the background."),
     ("mcpFunnelScreen.png", "MCP Funnel: one endpoint per agent",
         "Pool several MCP servers and expose only the tools that agent should see."),
+    ("filtersScreen.png", "Call filters: check every call before it leaves",
+        "Secrets, personal data and risky actions are blocked, on this PC, before any server sees them."),
     ("apiMcpBridgeScreen.png", "API to MCP: any REST API becomes MCP tools",
         "Describe the API in a JSON manifest, and the agent gets tools for it."),
     ("openAPIPicker.png", "Or import an OpenAPI spec",
