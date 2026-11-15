@@ -228,7 +228,7 @@
                                 <Border BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="3" Padding="8" Margin="0,0,0,6"
                                         IsVisible="{Binding NewIsRemote}">
                                     <TextBlock Classes="warning"
-                                               Text="Only use an API you trust. Every call step 4 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API to be embedded, after steps 1–3 have replaced what they found. Ollama, a llama.cpp server on this PC, or an ONNX model keep it on this PC."/>
+                                               Text="Only use an API you trust. Every call step 4 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API to be embedded. A call steps 1–3 block never gets here, and what a watching step found is replaced first; anything they miss is sent as it is. Ollama, a llama.cpp server on this PC, or an ONNX model keep it on this PC."/>
                                 </Border>
                             </StackPanel>
 
@@ -309,7 +309,7 @@
                                 <Border BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="3" Padding="8" Margin="0,6,0,6"
                                         IsVisible="{Binding NewDecisionIsRemote}">
                                     <TextBlock Classes="warning" TextWrapping="Wrap"
-                                               Text="Only use an API you trust. Every call step 5 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API, after steps 1–3 have replaced what they found. laya-serve on this PC, or an ONNX model, keep it on this PC."/>
+                                               Text="Only use an API you trust. Every call step 5 checks — the tool's arguments, which can hold your files, messages and data — is sent to this API. A call steps 1–3 block never gets here, and what a watching step found is replaced first; anything they miss is sent as it is. laya-serve on this PC, or an ONNX model, keep it on this PC."/>
                                 </Border>
                             </StackPanel>
 
