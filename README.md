@@ -44,7 +44,7 @@ Cursor, VS Code or any other MCP client at it, and each agent gets one endpoint 
 the tools you granted, from as many MCP servers and APIs as you like. Windows is the supported
 platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
 
-![A tour of RavensPort: sign in once, pool MCP servers into one endpoint per agent with MCP Funnel, and turn a REST API or OpenAPI spec into MCP tools with API to MCP](media/tour.gif)
+![A tour of RavensPort: sign in once, pool MCP servers into one endpoint per agent with MCP Funnel, check every call before it leaves with call filters, and turn a REST API or OpenAPI spec into MCP tools with API to MCP](media/tour.gif)
 
 ## Why
 
