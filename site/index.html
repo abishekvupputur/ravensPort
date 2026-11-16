@@ -136,6 +136,52 @@
 
     <section class="block">
       <div class="wrap">
+        <h2>How it keeps agents safe</h2>
+        <p class="lead">Some things an agent does can't be undone: deleting data, sending money, leaking a
+          key. RavensPort sits between the agent and every server it reaches, with layers that stack, so
+          one failing does not open everything.</p>
+        <div class="cards">
+          <div class="card">
+            <h3>Only the tools you allow</h3>
+            <p>Each agent gets its own endpoint with a closed list of tools, enforced on every call, not
+              just in the list. The surest way to prevent an irreversible action is not to offer the
+              tool.</p>
+          </div>
+          <div class="card">
+            <h3>No credentials in the agent</h3>
+            <p>RavensPort attaches tokens and keys itself. The agent holds one proxy key for one endpoint,
+              which can expire and is revoked the moment you regenerate it.</p>
+          </div>
+          <div class="card">
+            <h3>Every call checked</h3>
+            <p>Secrets, personal data, and actions you deny in plain words are blocked before any server
+              sees them, by rules and models that run on your PC.
+              <a href="docs/Call-filters.html">Call filters →</a></p>
+          </div>
+          <div class="card">
+            <h3>On the record</h3>
+            <p>The activity log records every call, refusal and filter match, but never the values an
+              agent sent.</p>
+          </div>
+        </div>
+        <p class="note">Tested by about 1,400 automated tests, scanned by CodeQL, SonarCloud, gitleaks and
+          more on every change. <a href="https://github.com/abishekvupputur/ravensPort#evidence">The evidence →</a></p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
+        <h2>What it doesn't do</h2>
+        <p class="lead">RavensPort is not a sandbox. It governs only what an agent sends through it: an
+          agent with its own shell or network access can go around it. What a tool returns isn't checked
+          yet, there is no "ask me first" approval, each call is judged on its own, and rules and models
+          miss some things and flag some harmless ones.
+          <a href="https://github.com/abishekvupputur/ravensPort#limitations">All limitations →</a></p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="wrap">
         <h2>A look inside</h2>
         <div class="gallery">
           <figure><img src="media/credentialsScreen.png" alt="Credentials tab" loading="lazy"><figcaption>Credentials</figcaption></figure>
