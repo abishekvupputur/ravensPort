@@ -83,6 +83,106 @@ platform; an experimental Debian/Ubuntu build is available for x86-64 and arm64.
 - **A proxy key per endpoint** — every route, funnel and bridge has its own, so a key leaked from
   one client cannot reach the rest. Optionally require a client certificate as well
 
+## Safety approach
+
+AI agents act through tools, and some actions can't be undone: deleting data, sending money,
+pushing to production, leaking a key. RavensPort sits between the agent and every server it
+reaches. It limits what each agent *can* do, keeps credentials out of the agent's hands, and checks
+what each call *says* before any server sees it. The layers stack, so one failing does not open
+everything.
+
+**1. Each agent gets only the tools you allow (least privilege).**
+- Each agent has its own endpoint. **Include** is a closed list: a tool you don't tick doesn't
+  exist for that agent, and an empty list exposes nothing.
+- Enforced on the call path, not just the tool list. A tool the agent saw before you unticked it,
+  or simply guessed, is refused and never reaches the server. Edits apply on the next call.
+- The surest way to prevent an irreversible action is not to offer the tool. The shipped
+  templates are read-only where it matters ([`google-drive-readonly`](templates/api-mcp/google-drive-readonly.json),
+  [`tailscale-readonly`](templates/api-mcp/tailscale-readonly.json)), and an OpenAPI import only
+  turns into tools the operations you pick.
+
+**2. Agents never hold the credentials.**
+- RavensPort signs in and attaches the token or API key itself. The agent gets only a **proxy key
+  for its own endpoint**: one key opens one endpoint and nothing else. It can expire, and
+  regenerating it revokes the old one at once. Optionally a client certificate (mTLS) is required as
+  well.
+- Secrets live in 1Password or Proton Pass, not on disk.
+- The forwarding path can't be turned against the credential. Redirects are refused rather than
+  followed, a manifest can't set `Authorization` or `Cookie`, tool paths can't leave their route,
+  and requests looping through the proxy are refused.
+
+**3. Every call is checked before it leaves ([call filters](https://github.com/abishekvupputur/ravensPort/wiki/Call-filters)).**
+Five steps, chosen per endpoint as a profile:
+
+| Step | What it catches | How |
+|---|---|---|
+| 1 Secrets | API keys, tokens, passwords, private keys, connection strings | 247 rules (gitleaks plus stricter ones), always denied |
+| 2 RegEx | Emails, card numbers, IBANs, phone numbers, tax IDs | Patterns with checksums |
+| 3 Entities | Names, addresses, medical conditions | A local GLiNER model |
+| 4 Meaning | Calls close to what you deny ("delete files or whole disks") | An embedding model, taught by deny and allow examples |
+| 5 Decision | Your rules in plain words ("This text is about sending money.") | A zero-shot or Laya model returns a probability |
+
+- A Block stops the call before any server sees it, and the agent is told which step stopped it.
+  **Watch** only logs, so a rule can be tried before it is enforced.
+- Steps 4–5 never see what steps 1–3 found: a match there either stops the call or is replaced
+  first.
+- A missing profile, a broken pattern, or a failed model on a Block step blocks the call (fails
+  closed). Everything can run on this PC.
+
+**4. Everything is on record.** The activity log records each call, refusal and filter match, with
+the step and field that matched, but never the matched value or the call's arguments.
+
+## Evidence
+
+- **Demo:** the [tour](media/tour.gif) above, and [screenshots](media/) of every tab. The Filters
+  tab's **Try it** shows each step's verdict and score for a call you paste in.
+- **Tests:** about 1,400 core tests and 120 UI tests run on every pull request. A system suite
+  runs against a real 1Password vault. Coverage and quality are tracked on
+  [SonarCloud](https://sonarcloud.io/summary/new_code?id=abishekvupputur_ravensPort). The safety
+  claims above each have tests, for example:
+
+  | Claim | Tests |
+  |---|---|
+  | An unticked tool is refused on the call path | [`McpFunnelIsolationTests`](tests/RavensPort.Core.Tests/Mcp/McpFunnelIsolationTests.cs): `FilteringHolds_WhenBothEndpointsAreHammeredAtOnce`; [`McpFunnelSelectionTests`](tests/RavensPort.Core.Tests/Mcp/McpFunnelSelectionTests.cs): `IncludeIsAClosedList`, `AnEmptyIncludeListExposesNothing` |
+  | One key opens one endpoint; revoking is immediate | [`McpApiBridgeKeyIsolationTests`](tests/RavensPort.Core.Tests/Mcp/McpApiBridgeKeyIsolationTests.cs): `OnlyTheBridgesOwnKeyOpensIt`, `RegeneratingTheKeyRevokesTheOldOneImmediately`, `AnExpiredKeyStopsOpeningTheEndpoint` |
+  | Redirects don't carry the credential away | [`McpApiBridgeEndToEndTests`](tests/RavensPort.Core.Tests/Mcp/McpApiBridgeEndToEndTests.cs): `ARedirectIsRefusedRatherThanFollowedWithoutTheCredential` |
+  | A blocked call never reaches the server | [`McpFunnelFilterTests`](tests/RavensPort.Core.Tests/Mcp/McpFunnelFilterTests.cs): `ABlockedCall_NeverReachesTheSource_AndSaysWhy`; [`EndpointFilterTests`](tests/RavensPort.Core.Tests/Mcp/EndpointFilterTests.cs): `ARouteWithAProfile_RefusesARequestCarryingAPassword_AndForwardsACleanOne` |
+  | Filters fail closed | `AProfileDeletedUnderneath_BlocksTheCall`, `ARouteWhoseProfileIsGone_RefusesRatherThanForwarding`, [`FilterServiceTests`](tests/RavensPort.Core.Tests/Filters/FilterServiceTests.cs): `AnEntityModelThatFails_ReportsTheCallRatherThanWavingItThrough` |
+  | Personal data found by steps 1–3 doesn't reach steps 4–5 | `FilterServiceTests`: `Entities_EveryOccurrenceIsReplacedForStep4_EvenOneTheModelReadAcrossAPlaceholder` |
+
+- **Measured with real models, through RavensPort's own code:** the zero-shot model
+  `deberta-v3-base-zeroshot-v2.0` (CPU, about 50 ms per call for three statements) scored
+  `rm -rf …` 1.00, a money transfer 1.00 and `DROP TABLE` 0.70, and a weather lookup, `git status`
+  and a file listing 0.00. The embedding model stella-en-400M-v5 scored a paraphrase of a denied
+  action 0.91 and an unrelated text 0.28, in about 70 ms.
+- **Supply chain:** CodeQL, SonarCloud, gitleaks, DevSkim, Trivy, OSV-Scanner, Snyk, zizmor and
+  dependency review run in CI, and the installer is scanned. Every release carries a
+  build-provenance attestation (`gh attestation verify`).
+- **Documentation:** the [wiki](https://github.com/abishekvupputur/ravensPort/wiki), including
+  [Call filters](https://github.com/abishekvupputur/ravensPort/wiki/Call-filters) and
+  [Setting up filter models](https://github.com/abishekvupputur/ravensPort/wiki/Filter-models).
+
+## Limitations
+
+- **Not a sandbox.** RavensPort governs only what an agent sends through it. An agent with its own
+  shell, network access or local (stdio) MCP servers can go around it, and RavensPort can't protect
+  against a process that already controls your user account. Local stdio MCP servers can't be
+  pooled at all.
+- **Outgoing calls only.** What a tool returns isn't checked, so instructions hidden in a web page
+  or a document (prompt injection) reach the agent unfiltered.
+- **No human approval yet.** A step blocks or logs; there is no "ask me first" for a risky call.
+- **Each call is judged on its own.** A harmful action split across several harmless-looking calls
+  isn't recognised.
+- **Detectors make mistakes.** Rules and models miss some things and flag some harmless ones.
+  Steps 4–5 depend on how statements and examples are worded, and most of the suggested models are
+  English. A Watch step whose model fails lets the call through, with the failure logged.
+- **Remote models see call text.** If step 4 or 5 uses an API rather than a local model, that API
+  receives every call it checks, minus what steps 1–3 replaced.
+- **Setup effort.** No model ships with the app; you download and add them yourself. RavensPort's
+  Laya runner hasn't yet been checked against Laya's reference outputs.
+- **Platforms.** Windows is the supported platform. The Linux build is experimental and runs models
+  on the CPU only.
+
 ## Install
 
 ```powershell
