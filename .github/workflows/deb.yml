@@ -287,6 +287,11 @@ jobs:
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
         run: |
+          # apt-ftparchive comes with apt-utils, which the ubuntu-latest image stopped shipping
+          # (v5.1.0's run failed with "command not found").
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends apt-utils
+
           export GNUPGHOME="$(mktemp -d)"
           echo "$APT_SIGNING_KEY" | gpg --batch --import
           fpr=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')
