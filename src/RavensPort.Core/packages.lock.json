@@ -33,12 +33,9 @@
       },
       "Microsoft.ML.Tokenizers": {
         "type": "Direct",
-        "requested": "[2.0.1, )",
-        "resolved": "2.0.1",
-        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
-        }
+        "requested": "[3.0.0, )",
+        "resolved": "3.0.0",
+        "contentHash": "0fee9Ydsd6zmq2ofM5cKeV/CzvEjzPbgwuqWyU3+imlDgbGA6DjnxTK13Gb0IyS9PPYdGphq+mILBcQvF+Z95A=="
       },
       "Microsoft.OpenApi": {
         "type": "Direct",
@@ -113,11 +110,6 @@
         "dependencies": {
           "Newtonsoft.Json": "13.0.4"
         }
-      },
-      "Google.Protobuf": {
-        "type": "Transitive",
-        "resolved": "3.30.2",
-        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
       },
       "IdentityModel": {
         "type": "Transitive",
@@ -220,12 +212,9 @@
       },
       "Microsoft.ML.Tokenizers": {
         "type": "Direct",
-        "requested": "[2.0.1, )",
-        "resolved": "2.0.1",
-        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
-        }
+        "requested": "[3.0.0, )",
+        "resolved": "3.0.0",
+        "contentHash": "0fee9Ydsd6zmq2ofM5cKeV/CzvEjzPbgwuqWyU3+imlDgbGA6DjnxTK13Gb0IyS9PPYdGphq+mILBcQvF+Z95A=="
       },
       "Microsoft.OpenApi": {
         "type": "Direct",
@@ -300,11 +289,6 @@
         "dependencies": {
           "Newtonsoft.Json": "13.0.4"
         }
-      },
-      "Google.Protobuf": {
-        "type": "Transitive",
-        "resolved": "3.30.2",
-        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
       },
       "IdentityModel": {
         "type": "Transitive",

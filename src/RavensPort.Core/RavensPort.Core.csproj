@@ -78,7 +78,7 @@
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageReference Include="IdentityModel.OidcClient" Version="6.0.0" />
     <!-- Filters: tokenizers for the ONNX models (WordPiece for embeddings, SentencePiece for GLiNER). -->
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="3.0.0" />
     <!--
       Step 5's ONNX models: Hugging Face's own tokenizers library (Rust) behind a .NET binding, so any
       model's tokenizer.json encodes exactly as in Python. MIT. Native builds for the RIDs we ship.
