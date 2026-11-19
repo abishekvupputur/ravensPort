@@ -61,11 +61,6 @@
           "Newtonsoft.Json": "13.0.4"
         }
       },
-      "Google.Protobuf": {
-        "type": "Transitive",
-        "resolved": "3.30.2",
-        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
-      },
       "IdentityModel": {
         "type": "Transitive",
         "resolved": "7.0.0",
@@ -180,11 +175,8 @@
       },
       "Microsoft.ML.Tokenizers": {
         "type": "Transitive",
-        "resolved": "2.0.1",
-        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
-        }
+        "resolved": "3.0.0",
+        "contentHash": "0fee9Ydsd6zmq2ofM5cKeV/CzvEjzPbgwuqWyU3+imlDgbGA6DjnxTK13Gb0IyS9PPYdGphq+mILBcQvF+Z95A=="
       },
       "Microsoft.NETCore.Platforms": {
         "type": "Transitive",
@@ -374,7 +366,7 @@
           "Google.Apis.Auth": "[1.78.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
           "Microsoft.ML.OnnxRuntime": "[1.31.1, )",
-          "Microsoft.ML.Tokenizers": "[2.0.1, )",
+          "Microsoft.ML.Tokenizers": "[3.0.0, )",
           "Microsoft.OpenApi": "[3.11.0, )",
           "Microsoft.OpenApi.YamlReader": "[3.11.0, )",
           "ModelContextProtocol.AspNetCore": "[2.3.1, )",
@@ -445,11 +437,6 @@
         "dependencies": {
           "Newtonsoft.Json": "13.0.4"
         }
-      },
-      "Google.Protobuf": {
-        "type": "Transitive",
-        "resolved": "3.30.2",
-        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
       },
       "IdentityModel": {
         "type": "Transitive",
@@ -571,11 +558,8 @@
       },
       "Microsoft.ML.Tokenizers": {
         "type": "Transitive",
-        "resolved": "2.0.1",
-        "contentHash": "RZN3zslVWinBCMDAnbZWEY8lQbMkP54Yxm1s5NigPcrvYFzXMrDjNcVM9afq4SZHf1BV1rEmO0p7ZdfBLDbu4g==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
-        }
+        "resolved": "3.0.0",
+        "contentHash": "0fee9Ydsd6zmq2ofM5cKeV/CzvEjzPbgwuqWyU3+imlDgbGA6DjnxTK13Gb0IyS9PPYdGphq+mILBcQvF+Z95A=="
       },
       "Microsoft.NETCore.Platforms": {
         "type": "Transitive",
@@ -765,7 +749,7 @@
           "Google.Apis.Auth": "[1.78.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
           "Microsoft.ML.OnnxRuntime.DirectML": "[1.24.4, )",
-          "Microsoft.ML.Tokenizers": "[2.0.1, )",
+          "Microsoft.ML.Tokenizers": "[3.0.0, )",
           "Microsoft.OpenApi": "[3.11.0, )",
           "Microsoft.OpenApi.YamlReader": "[3.11.0, )",
           "ModelContextProtocol.AspNetCore": "[2.3.1, )",
