@@ -118,7 +118,7 @@ jobs:
       # (std/net, std/net/http, std/net/url) that go 1.26.6, which go.mod requires, already fixes.
       # Re-running the same command with GOTOOLCHAIN=go1.26.6 returned all seven projects clean.
       - if: steps.token_gate.outputs.ready == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: src/OnePasswordNative/go.mod
           cache-dependency-path: src/OnePasswordNative/go.sum
