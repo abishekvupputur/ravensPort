@@ -52,7 +52,7 @@
       6.0.0 and 6.0.4 (238-byte report, "No assemblies have been covered") against 10.0.1 (a full
       one). See the guard in coverage.yml that now fails the build on an empty report.
     -->
-    <PackageReference Include="coverlet.collector" Version="10.1.0" />
+    <PackageReference Include="coverlet.collector" Version="10.1.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="Moq" Version="4.21.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
