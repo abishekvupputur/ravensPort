@@ -121,16 +121,16 @@
       },
       "Microsoft.ML.OnnxRuntime": {
         "type": "Transitive",
-        "resolved": "1.31.1",
-        "contentHash": "XtsO/1JoKepkWbGk9/DcYtRUTduwJD68kw0eeaH5yy77YBivUZWhC1NBNlVecsBt9EitlQIjCd1hHDNXJ2jbQA==",
+        "resolved": "1.32.0",
+        "contentHash": "3O3isLjl6ChjMvzZMt3in+uUymFxQK5+vd1UuSShmbUjHezHXgcze6KF5NquC/uPuL/++0CpI7qUBRrf+g1ezg==",
         "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.31.1"
+          "Microsoft.ML.OnnxRuntime.Managed": "1.32.0"
         }
       },
       "Microsoft.ML.OnnxRuntime.Managed": {
         "type": "Transitive",
-        "resolved": "1.31.1",
-        "contentHash": "158JCbNXN9/90LtjF4vHFiJYCF0bqF7CxLjm031jq7dJLEn/CtlHpMJm3UItQSIhQenlx+9Zuqi3zulwnsRVtA==",
+        "resolved": "1.32.0",
+        "contentHash": "ApCfJdeUnrO4v+9KWtxnm/Uk3UlzdbNqGb64uBXh85RToxYbW1COJM/avDj3INNTwfEE6LUIWaJIxov0YWNa1g==",
         "dependencies": {
           "System.Numerics.Tensors": "9.0.0"
         }
@@ -142,15 +142,15 @@
       },
       "Microsoft.OpenApi": {
         "type": "Transitive",
-        "resolved": "3.11.0",
-        "contentHash": "kvQz+mL/fnDw2VaE8zMyQhbMv7FmOYUydIhCVNKxQdrLu9XiMT/07DHwJ5YkRO2uzcxTFvMAKFKKywxoyLKHcA=="
+        "resolved": "3.11.1",
+        "contentHash": "WZL9g2+9NPICW4Es6zjIBj4mmKxAnI8RCru3gAZUliCMZPnuaxRynXq4cXoU+IYvI7kXY4ydSrrJ1R9EEHr+Lw=="
       },
       "Microsoft.OpenApi.YamlReader": {
         "type": "Transitive",
-        "resolved": "3.11.0",
-        "contentHash": "AM3Me+AzT9g123P9mc8Po5auLbYE9MeBW42TkR0T/NWelJuy2CqAR7eGpkdeP4lL7FCDZFW2dEdeQTBY+QxmWQ==",
+        "resolved": "3.11.1",
+        "contentHash": "mYEWPSCxHsy0IiZcvQe6ml88lt/ueaKet/D6WYOge2vzOemW1UeDJNYoZSvJV0jDmCCK4PPFAjHoAkLiFhTAhg==",
         "dependencies": {
-          "Microsoft.OpenApi": "3.11.0",
+          "Microsoft.OpenApi": "3.11.1",
           "SharpYaml": "2.1.5"
         }
       },
@@ -247,10 +247,10 @@
         "dependencies": {
           "Google.Apis.Auth": "[1.78.0, )",
           "IdentityModel.OidcClient": "[6.0.0, )",
-          "Microsoft.ML.OnnxRuntime": "[1.31.1, )",
+          "Microsoft.ML.OnnxRuntime": "[1.32.0, )",
           "Microsoft.ML.Tokenizers": "[3.0.0, )",
-          "Microsoft.OpenApi": "[3.11.0, )",
-          "Microsoft.OpenApi.YamlReader": "[3.11.0, )",
+          "Microsoft.OpenApi": "[3.11.1, )",
+          "Microsoft.OpenApi.YamlReader": "[3.11.1, )",
           "ModelContextProtocol.AspNetCore": "[2.4.0, )",
           "Tokenizers.DotNet": "[1.4.1, )",
           "Tokenizers.DotNet.runtime.linux-arm64": "[1.4.1, )",
